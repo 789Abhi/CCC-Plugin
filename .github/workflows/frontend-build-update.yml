@@ -1,0 +1,94 @@
+name: Plugin Update on Frontend Build
+
+on:
+  push:
+    branches:
+      - Master
+    paths:
+      - 'build/**'  # Trigger when build folder changes
+
+jobs:
+  update-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Read Current Manifest
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(jq -r .version manifest.json)
+          echo "Current Version: $CURRENT_VERSION"
+          echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Increment Version
+        id: bump_version
+        run: |
+          IFS='.' read -r -a VERSION_PARTS <<< "${{ steps.current_version.outputs.CURRENT_VERSION }}"
+          
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=$((${VERSION_PARTS[2]} + 1))
+          
+          # Handle version overflow
+          if [[ $PATCH -ge 10 ]]; then
+            PATCH=0
+            MINOR=$((MINOR + 1))
+          fi
+          
+          if [[ $MINOR -ge 10 ]]; then
+            MINOR=0
+            MAJOR=$((MAJOR + 1))
+          fi
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New Version: $NEW_VERSION"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update Manifest
+        run: |
+          NEW_VERSION=${{ steps.bump_version.outputs.NEW_VERSION }}
+          DOWNLOAD_URL="https://github.com/789Abhi/CCC-Plugin/releases/download/v${NEW_VERSION}/custom-craft-component.zip"
+          
+          jq --arg version "$NEW_VERSION" \
+             --arg download_url "$DOWNLOAD_URL" \
+             '.version = $version | 
+              .download_url = $download_url | 
+              .last_updated = "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"' \
+             manifest.json > manifest.tmp.json
+          mv manifest.tmp.json manifest.json
+
+      - name: Commit and Push Changes
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add manifest.json
+          git commit -m "Update plugin version for frontend build"
+          git push
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump_version.outputs.NEW_VERSION }}
+          name: Release v${{ steps.bump_version.outputs.NEW_VERSION }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Zip Plugin
+        run: |
+          zip -r custom-craft-component.zip . \
+          -x '.git*' \
+          -x '.github*' \
+          -x '*.md' \
+          -x 'LICENSE'
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./custom-craft-component.zip
+          asset_name: custom-craft-component.zip
+          asset_content_type: application/zip

@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'build/manifest.json'
+      - 'manifest.json'
 
 jobs:
   create-release:
