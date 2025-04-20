@@ -1,0 +1,49 @@
+name: Automatic Plugin Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'build/manifest.json'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Read Manifest Version
+        id: get_version
+        run: |
+          VERSION=$(jq -r .version build/manifest.json)
+          echo "Detected Version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          name: Release v${{ steps.get_version.outputs.VERSION }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Zip Plugin Contents
+        run: |
+          zip -r custom-craft-component.zip . \
+          -x '.git*' \
+          -x '.github*' \
+          -x '*.md' \
+          -x 'LICENSE'
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./custom-craft-component.zip
+          asset_name: custom-craft-component.zip
+          asset_content_type: application/zip
