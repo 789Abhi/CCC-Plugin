@@ -10,9 +10,13 @@ on:
 jobs:
   update-plugin:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Read Current Manifest
         id: current_version
@@ -60,8 +64,8 @@ jobs:
 
       - name: Commit and Push Changes
         run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
+          git config user.name "Abhishek"
+          git config user.email "abhishektk18@gmail.com"
           git add manifest.json
           git commit -m "Update plugin version for frontend build"
           git push
