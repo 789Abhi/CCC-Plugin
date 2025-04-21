@@ -64,10 +64,9 @@ jobs:
           mv manifest.tmp.json manifest.json
 
       - name: Commit and Push Changes
-    run: |
-         git config user.name "Abhishek"
-         git config user.email "abhishektk18@gmail.com"
-
+        run: |
+          git config user.name "Abhishek"
+          git config user.email "abhishektk18@gmail.com"
           
           # Pull latest changes to avoid conflicts
           git pull origin Master --rebase
