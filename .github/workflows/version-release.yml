@@ -3,7 +3,7 @@ name: Automatic Version and Release
 on:
   push:
     branches:
-      - main
+      - Master
     paths:
       - 'src/**'  # Trigger on frontend changes
 

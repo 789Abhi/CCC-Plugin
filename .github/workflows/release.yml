@@ -3,7 +3,7 @@ name: Automatic Plugin Release
 on:
   push:
     branches:
-      - main
+      - Master
     paths:
       - 'manifest.json'
 
@@ -17,7 +17,7 @@ jobs:
       - name: Read Manifest Version
         id: get_version
         run: |
-          VERSION=$(jq -r .version build/manifest.json)
+          VERSION=$(jq -r .version manifest.json)
           echo "Detected Version: $VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
