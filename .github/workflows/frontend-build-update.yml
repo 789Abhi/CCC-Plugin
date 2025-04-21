@@ -19,6 +19,18 @@ jobs:
           fetch-depth: 0  # Fetch full history
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Git
+        run: |
+          git config --global user.name "Abhishek"
+          git config --global user.email "abhishektk18@gmail.com"
+
+      - name: Debug Initial Git Status
+        run: |
+          echo "Current Git Status:"
+          git status
+          echo "Current Branch:"
+          git branch -v
+
       - name: Read Current Manifest
         id: current_version
         run: |
@@ -64,19 +76,39 @@ jobs:
           mv manifest.tmp.json manifest.json
 
       - name: Commit and Push Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "Abhishek"
-          git config user.email "abhishektk18@gmail.com"
-          
-          # Pull latest changes to avoid conflicts
-          git pull origin Master --rebase
-          
-          # Stage and commit changes
-          git add manifest.json
-          git commit -m "Update plugin version for frontend build" || echo "No changes to commit"
-          
-          # Force push with lease to prevent overwriting others' changes
-          git push origin Master --force-with-lease
+          # Clean and reset working directory
+          git clean -fd
+          git reset --hard HEAD
+
+          # Stage all changes
+          git add .
+
+          # Check for changes
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Changes detected. Committing..."
+            
+            # Commit changes
+            git commit -m "Update plugin version to ${{ steps.bump_version.outputs.NEW_VERSION }}"
+            
+            # Fetch and rebase
+            git fetch origin Master
+            git rebase origin/Master
+            
+            # Push changes with force-with-lease
+            git push origin Master --force-with-lease
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Debug Post-Commit Status
+        run: |
+          echo "Git Status after Commit:"
+          git status
+          echo "Git Log:"
+          git log -n 1
 
       - name: Create GitHub Release
         id: create_release
@@ -105,3 +137,8 @@ jobs:
           asset_path: ./custom-craft-component.zip
           asset_name: custom-craft-component.zip
           asset_content_type: application/zip
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Workflow completed. Cleaning up..."
