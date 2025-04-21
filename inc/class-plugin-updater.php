@@ -1,6 +1,6 @@
 <?php
 class Custom_Craft_Component_Updater {
-    private $remote_manifest_url = 'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/main/manifest.json';
+    private $remote_manifest_url = 'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/manifest.json';
     private $plugin_slug = 'custom-craft-component';
     private $version_option = 'ccc_plugin_build_version';
     private $last_check_option = 'ccc_plugin_last_update_check';
