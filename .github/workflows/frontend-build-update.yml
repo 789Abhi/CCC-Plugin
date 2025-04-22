@@ -145,12 +145,6 @@ jobs:
           files: ./custom-craft-component.zip
         env:
          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./custom-craft-component.zip
-          asset_name: custom-craft-component.zip
-          asset_content_type: application/zip
-
       - name: Cleanup
         if: always()
         run: |
