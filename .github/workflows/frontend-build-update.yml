@@ -128,10 +128,23 @@ jobs:
           -x '*.md' \
           -x 'LICENSE'
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+      - name: Verify zip file
+        run: |
+          ls -la
+          if [ ! -f ./custom-craft-component.zip ]; then
+            echo "Error: Zip file not found!"
+            exit 1
+          fi
+
+      - name: Create GitHub Release with Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump_version.outputs.NEW_VERSION }}
+          name: Release v${{ steps.bump_version.outputs.NEW_VERSION }}
+          generate_release_notes: true
+          files: ./custom-craft-component.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ./custom-craft-component.zip
