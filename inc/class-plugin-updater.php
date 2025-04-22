@@ -2,12 +2,17 @@
 defined('ABSPATH') || exit;
 
 class Custom_Craft_Component_Updater {
-    private $remote_manifest_url = 'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/build/manifest.json';
-    private $plugin_slug = 'custom-craft-component';
-    private $version_option = 'ccc_plugin_build_version';
-    private $last_check_option = 'ccc_plugin_last_update_check';
+    private $remote_manifest_url = 'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/manifest.json';
+        private $plugin_slug = 'custom-craft-component';
+        private $version_option = 'ccc_plugin_build_version';
+        private $last_check_option = 'ccc_plugin_last_update_check';
+        private $plugin_file = 'custom-craft-component/custom-craft-component.php'; // Adjust if needed
 
     public function __construct() {
+         // Store current version on plugin init
+         $plugin_data = get_plugin_data(WP_PLUGIN_DIR . '/' . $this->plugin_file);
+         update_option($this->version_option, $plugin_data['Version']);
+
         add_action('admin_init', [$this, 'schedule_update_check']);
         add_action('ccc_plugin_update_check', [$this, 'check_for_updates']);
         add_action('admin_notices', [$this, 'update_notice']);
@@ -31,18 +36,23 @@ class Custom_Craft_Component_Updater {
         $remote_data = $this->get_remote_manifest();
 
         if (!$remote_data) {
+            error_log('Failed to get remote manifest data for CCC Plugin');
             return;
         }
 
         // Compare versions
         if (version_compare($current_version, $remote_data['version'], '<')) {
-            // Update available
+           // Update available
             update_option('ccc_plugin_update_available', true);
             update_option('ccc_plugin_new_version', $remote_data['version']);
+            update_option('ccc_plugin_download_url', $remote_data['download_url']);
+            error_log("CCC Plugin update available. Current: {$current_version}, New: {$remote_data['version']}");
         } else {
-            // No update available
-            delete_option('ccc_plugin_update_available');
-            delete_option('ccc_plugin_new_version');
+           // No update available
+           delete_option('ccc_plugin_update_available');
+           delete_option('ccc_plugin_new_version');
+           delete_option('ccc_plugin_download_url');
+           error_log("CCC Plugin is up to date. Version: {$current_version}");
         }
 
         // Update last check time
@@ -51,16 +61,33 @@ class Custom_Craft_Component_Updater {
 
     public function get_remote_manifest() {
         $response = wp_remote_get($this->remote_manifest_url, [
-            'timeout' => 30
+            'timeout' => 30,
+            'sslverify' => false,
+            'headers' => [
+                'Accept' => 'application/json',
+            ],
         ]);
         
         if (is_wp_error($response)) {
             error_log('CCC Plugin Update Check Failed: ' . $response->get_error_message());
             return false;
         }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code !== 200) {
+            error_log("CCC Plugin Manifest request returned HTTP {$code}");
+            return false;
+        }
         
         $body = wp_remote_retrieve_body($response);
-        return json_decode($body, true);
+        $data = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('CCC Plugin JSON parse error: ' . json_last_error_msg());
+            error_log('Response body: ' . substr($body, 0, 1000));
+            return false;
+        }
+        return $data;
     }
 
     public function update_notice() {
@@ -125,37 +152,39 @@ class Custom_Craft_Component_Updater {
     private function perform_plugin_update() {
         // Ensure WP_Filesystem is available
         require_once(ABSPATH . 'wp-admin/includes/file.php');
-        WP_Filesystem();
-        global $wp_filesystem;
+        require_once(ABSPATH . 'wp-admin/includes/class-wp-upgrader.php');
+        require_once(ABSPATH . 'wp-admin/includes/plugin.php');
 
-        // Download update
-        $remote_zip = 'https://github.com/789Abhi/CCC-Plugin/archive/Master.zip';
-        $temp_file = download_url($remote_zip);
-
-        if (is_wp_error($temp_file)) {
-            error_log('CCC Plugin Download Failed: ' . $temp_file->get_error_message());
+        // Get the download URL from the stored option
+        $download_url = get_option('ccc_plugin_download_url');
+        if (!$download_url) {
+            error_log('CCC Plugin Update Failed: No download URL available');
             return false;
         }
 
-        // Prepare plugin directory
-        $plugin_dir = plugin_dir_path(__FILE__) . '../';
+        // Download the update
+        $skin = new WP_Ajax_Upgrader_Skin();
+        $upgrader = new Plugin_Upgrader($skin);
+        $result = $upgrader->install($download_url, ['overwrite_package' => true]);
 
-        // Unzip to plugin directory
-        $unzip_result = unzip_file($temp_file, $plugin_dir);
+        if (is_wp_error($result)) {
+            error_log('CCC Plugin Update Error: ' . $result->get_error_message());
+            return false;
+        }
 
-        // Clean up temp file
-        unlink($temp_file);
-
-        if ($unzip_result) {
-            // Update version in database
+        // If installation was successful, update the version in the database
+        if ($result) {
             $remote_data = $this->get_remote_manifest();
             if ($remote_data) {
                 update_option($this->version_option, $remote_data['version']);
+                
+                // Reactivate the plugin if it was active
+                if (is_plugin_active($this->plugin_file)) {
+                    activate_plugin($this->plugin_file);
+                }
             }
-            return true;
         }
 
-        error_log('CCC Plugin Unzip Failed');
-        return false;
+        return $result;
     }
 }

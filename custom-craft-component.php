@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Your Name
  */
 
@@ -21,4 +21,6 @@ function custom_craft_component_init() {
         new Custom_Craft_Component_Updater();
     }
 }
+
+
 add_action('plugins_loaded', 'custom_craft_component_init');
