@@ -6,7 +6,7 @@ class Custom_Craft_Component_Updater {
         private $plugin_slug = 'custom-craft-component';
         private $version_option = 'ccc_plugin_build_version';
         private $last_check_option = 'ccc_plugin_last_update_check';
-        private $plugin_file = 'custom-craft-component/custom-craft-component.php'; // Adjust if needed
+        private $plugin_file = 'custom-craft-component.php'; // Adjust if needed
 
     public function __construct() {
          // Store current version on plugin init
