@@ -15,6 +15,15 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+
+      - name: Validate Build Contents
+        run: |
+          # Check if build directory exists and has content
+          if [ ! -d "build" ] || [ -z "$(ls -A build)" ]; then
+            echo "Build directory is empty or missing"
+            exit 1
+          fi
+
         with:
           fetch-depth: 0  # Fetch full history
           token: ${{ secrets.GITHUB_TOKEN }}

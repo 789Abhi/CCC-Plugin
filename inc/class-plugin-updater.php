@@ -32,100 +32,136 @@ class Custom_Craft_Component_Updater {
     }
 
     public function check_for_updates() {
-        $current_version = get_option($this->version_option, '1.0.0');
+        // Add detailed logging
+        error_log('CCC Plugin Update Check Started');
+    
+        $current_version = get_option($this->version_option, '1.1.2');
+        error_log("Current Version: {$current_version}");
+    
         $remote_data = $this->get_remote_manifest();
-
+    
         if (!$remote_data) {
-            error_log('Failed to get remote manifest data for CCC Plugin');
+            error_log('CRITICAL: Failed to retrieve remote manifest');
             return;
         }
-
-        // Compare versions
-        if (version_compare($current_version, $remote_data['version'], '<')) {
-           // Update available
+    
+        error_log("Remote Version: {$remote_data['version']}");
+    
+        // More verbose version comparison
+        $update_available = version_compare($current_version, $remote_data['version'], '<');
+        error_log("Update Available: " . ($update_available ? 'Yes' : 'No'));
+    
+        if ($update_available) {
             update_option('ccc_plugin_update_available', true);
             update_option('ccc_plugin_new_version', $remote_data['version']);
             update_option('ccc_plugin_download_url', $remote_data['download_url']);
-            error_log("CCC Plugin update available. Current: {$current_version}, New: {$remote_data['version']}");
-        } else {
-           // No update available
-           delete_option('ccc_plugin_update_available');
-           delete_option('ccc_plugin_new_version');
-           delete_option('ccc_plugin_download_url');
-           error_log("CCC Plugin is up to date. Version: {$current_version}");
+            
+            error_log("Update Details: 
+                Current Version: {$current_version}
+                New Version: {$remote_data['version']}
+                Download URL: {$remote_data['download_url']}
+            ");
         }
-
-        // Update last check time
-        update_option($this->last_check_option, time());
     }
+    
 
     public function get_remote_manifest() {
-        $response = wp_remote_get($this->remote_manifest_url, [
-            'timeout' => 30,
-            'sslverify' => false,
-            'headers' => [
-                'Accept' => 'application/json',
-            ],
-        ]);
-        
-        if (is_wp_error($response)) {
-            error_log('CCC Plugin Update Check Failed: ' . $response->get_error_message());
+        try {
+            $response = wp_remote_get($this->remote_manifest_url, [
+                'timeout' => 30,
+                'sslverify' => false,
+                'headers' => [
+                    'Accept' => 'application/json',
+                    'Cache-Control' => 'no-cache'  // Prevent caching
+                ],
+            ]);
+    
+            if (is_wp_error($response)) {
+                throw new Exception('Remote request failed: ' . $response->get_error_message());
+            }
+    
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code !== 200) {
+                throw new Exception("HTTP {$code} returned");
+            }
+    
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+    
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('JSON parsing failed: ' . json_last_error_msg());
+            }
+    
+            // Validate manifest structure
+            $required_keys = ['version', 'download_url'];
+            foreach ($required_keys as $key) {
+                if (!isset($data[$key])) {
+                    throw new Exception("Missing required key: {$key}");
+                }
+            }
+    
+            return $data;
+        } catch (Exception $e) {
+            error_log('CCC Plugin Manifest Error: ' . $e->getMessage());
             return false;
         }
-
-        $code = wp_remote_retrieve_response_code($response);
-        if ($code !== 200) {
-            error_log("CCC Plugin Manifest request returned HTTP {$code}");
-            return false;
-        }
-        
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('CCC Plugin JSON parse error: ' . json_last_error_msg());
-            error_log('Response body: ' . substr($body, 0, 1000));
-            return false;
-        }
-        return $data;
     }
+    
 
     public function update_notice() {
-        // Check if update is available
         if (get_option('ccc_plugin_update_available')) {
             $new_version = get_option('ccc_plugin_new_version');
+            $download_url = get_option('ccc_plugin_download_url');
+    
+            // Log update availability
+            error_log("Update Notice Triggered. New Version: {$new_version}");
+    
             ?>
             <div class="notice notice-success is-dismissible">
                 <p>
-                    A new version (<?php echo esc_html($new_version); ?>) of Custom Craft Component is available. 
-                    <button id="ccc-update-btn" class="button button-primary">Update Now</button>
+                    🚀 Custom Craft Component Update Available: 
+                    Version <?php echo esc_html($new_version); ?>
+                    <a href="<?php echo esc_url($download_url); ?>" target="_blank">
+                        Download
+                    </a>
+                    <button id="ccc-update-btn" class="button button-primary">
+                        Update Automatically
+                    </button>
                 </p>
             </div>
             <script>
             jQuery(document).ready(function($) {
                 $('#ccc-update-btn').on('click', function(e) {
                     e.preventDefault();
-                    $.ajax({
-                        url: ajaxurl,
-                        type: 'POST',
-                        data: {
-                            action: 'ccc_plugin_manual_update',
-                            nonce: '<?php echo wp_create_nonce('ccc_update_nonce'); ?>'
-                        },
-                        success: function(response) {
-                            if (response.success) {
-                                location.reload();
-                            } else {
-                                alert('Update failed: ' + response.data);
+                    if(confirm('Are you sure you want to update the plugin?')) {
+                        $.ajax({
+                            url: ajaxurl,
+                            type: 'POST',
+                            data: {
+                                action: 'ccc_plugin_manual_update',
+                                nonce: '<?php echo wp_create_nonce('ccc_update_nonce'); ?>'
+                            },
+                            success: function(response) {
+                                if (response.success) {
+                                    alert('Plugin updated successfully!');
+                                    location.reload();
+                                } else {
+                                    alert('Update failed: ' + response.data);
+                                }
+                            },
+                            error: function(xhr, status, error) {
+                                console.error('Update Error:', error);
+                                alert('An unexpected error occurred');
                             }
-                        }
-                    });
+                        });
+                    }
                 });
             });
             </script>
             <?php
         }
     }
+    
 
     public function manual_update_handler() {
         // Verify nonce
