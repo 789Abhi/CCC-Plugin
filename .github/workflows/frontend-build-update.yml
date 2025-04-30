@@ -1,42 +1,151 @@
-name: Build Plugin
+name: Plugin Update on Frontend Build
 
 on:
   push:
     branches:
       - Master
-    paths-ignore:
-      - 'assets/**'
-  workflow_dispatch:
+    paths:
+      - 'build/**'  # Trigger when build folder changes
 
 jobs:
-  build-plugin:
+  update-plugin:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
-      - name: Checkout plugin code
+      - name: Checkout Repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch full history
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get current date
-        id: date
-        run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"
-
-      - name: Update plugin version
+      - name: Set up Git
         run: |
-          # Read current version from main file
-          CURRENT_VERSION=$(grep -oP "Version: \K[0-9.]+" ccc-plugin.php)
-          
-          # Update to new version
-          NEW_VERSION="1.0.0.${{ steps.date.outputs.date }}"
-          sed -i "s/Version: $CURRENT_VERSION/Version: $NEW_VERSION/" ccc-plugin.php
-          sed -i "s/define( 'CCC_PLUGIN_VERSION', '$CURRENT_VERSION' );/define( 'CCC_PLUGIN_VERSION', '$NEW_VERSION' );/" ccc-plugin.php
-          
-          # Update version.json
-          echo "{\"version\": \"$NEW_VERSION\", \"updated_at\": \"$(date +'%Y-%m-%d %H:%M:%S')\"}" > assets/version.json
+          git config --global user.name "Abhishek"
+          git config --global user.email "abhishektk18@gmail.com"
 
-      - name: Commit and push changes
+      - name: Debug Initial Git Status
         run: |
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
+          echo "Current Git Status:"
+          git status
+          echo "Current Branch:"
+          git branch -v
+
+      - name: Read Current Manifest
+        id: current_version
+        run: |
+          CURRENT_VERSION=$(jq -r .version manifest.json)
+          echo "Current Version: $CURRENT_VERSION"
+          echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Increment Version
+        id: bump_version
+        run: |
+          IFS='.' read -r -a VERSION_PARTS <<< "${{ steps.current_version.outputs.CURRENT_VERSION }}"
+          
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=$((${VERSION_PARTS[2]} + 1))
+          
+          # Handle version overflow
+          if [[ $PATCH -ge 10 ]]; then
+            PATCH=0
+            MINOR=$((MINOR + 1))
+          fi
+          
+          if [[ $MINOR -ge 10 ]]; then
+            MINOR=0
+            MAJOR=$((MAJOR + 1))
+          fi
+          
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "New Version: $NEW_VERSION"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update Manifest
+        run: |
+          NEW_VERSION=${{ steps.bump_version.outputs.NEW_VERSION }}
+          DOWNLOAD_URL="https://github.com/789Abhi/CCC-Plugin/releases/download/v${NEW_VERSION}/custom-craft-component.zip"
+          
+          jq --arg version "$NEW_VERSION" \
+             --arg download_url "$DOWNLOAD_URL" \
+             '.version = $version | 
+              .download_url = $download_url | 
+              .last_updated = "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"' \
+             manifest.json > manifest.tmp.json
+          mv manifest.tmp.json manifest.json
+
+      - name: Commit and Push Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Clean and reset working directory
+          git clean -fd
+          git reset --hard HEAD
+
+          # Stage all changes
           git add .
-          git commit -m "Update plugin version to ${{ steps.date.outputs.date }}"
-          git push origin Master
+
+          # Check for changes
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Changes detected. Committing..."
+            
+            # Commit changes
+            git commit -m "Update plugin version to ${{ steps.bump_version.outputs.NEW_VERSION }}"
+            
+            # Fetch and rebase
+            git fetch origin Master
+            git rebase origin/Master
+            
+            # Push changes with force-with-lease
+            git push origin Master --force-with-lease
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Debug Post-Commit Status
+        run: |
+          echo "Git Status after Commit:"
+          git status
+          echo "Git Log:"
+          git log -n 1
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump_version.outputs.NEW_VERSION }}
+          name: Release v${{ steps.bump_version.outputs.NEW_VERSION }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Zip Plugin
+        run: |
+          zip -r custom-craft-component.zip . \
+          -x '.git*' \
+          -x '.github*' \
+          -x '*.md' \
+          -x 'LICENSE'
+
+      - name: Verify zip file
+        run: |
+          ls -la
+          if [ ! -f ./custom-craft-component.zip ]; then
+            echo "Error: Zip file not found!"
+            exit 1
+          fi
+
+      - name: Create GitHub Release with Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump_version.outputs.NEW_VERSION }}
+          name: Release v${{ steps.bump_version.outputs.NEW_VERSION }}
+          generate_release_notes: true
+          files: ./custom-craft-component.zip
+        env:
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Workflow completed. Cleaning up..."
