@@ -53,6 +53,7 @@ jobs:
 
       - name: Upload Release Asset
         run: |
+          echo "Uploading plugin asset..."
           curl -X POST $UPLOAD_URL \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -F "file=@custom-craft-component.zip" \
