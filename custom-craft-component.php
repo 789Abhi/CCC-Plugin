@@ -20,7 +20,7 @@ function custom_craft_component_init() {
     // Instantiate your plugin class
     $plugin = new Custom_Craft_Component();
 
-    // Setup plugin update checker
+    // Setup plugin update checker (using manifest.json)
     if (is_admin()) {
         $updateChecker = PucFactory::buildUpdateChecker(
             'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/manifest.json',
@@ -28,7 +28,7 @@ function custom_craft_component_init() {
             'custom-craft-component'
         );
 
-        $updateChecker->setBranch('Master'); 
+        // Note: Do not call setBranch() when using manifest.json
     }
 }
 add_action('plugins_loaded', 'custom_craft_component_init');
