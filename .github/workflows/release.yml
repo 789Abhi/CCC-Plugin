@@ -23,14 +23,26 @@ jobs:
 
       - name: Create GitHub Release
         id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.get_version.outputs.VERSION }}
-          name: Release v${{ steps.get_version.outputs.VERSION }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          TAG=v$VERSION
+          # Create the release using GitHub's API
+          RESPONSE=$(curl -s -X POST https://api.github.com/repos/${{ github.repository }}/releases \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d @- << EOF
+          {
+            "tag_name": "$TAG",
+            "name": "Release $TAG",
+            "body": "Release notes for version $TAG",
+            "draft": false,
+            "prerelease": false
+          }
+          EOF
+          )
+          # Extract the upload_url from the response
+          UPLOAD_URL=$(echo $RESPONSE | jq -r .upload_url | sed "s/{?name,label}//")
+          echo "UPLOAD_URL=$UPLOAD_URL" >> $GITHUB_ENV
+          
       - name: Zip Plugin Contents
         run: |
           zip -r custom-craft-component.zip . \
@@ -40,11 +52,9 @@ jobs:
           -x 'LICENSE'
 
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}  # Correct reference
-          asset_path: ./custom-craft-component.zip
-          asset_name: custom-craft-component.zip
-          asset_content_type: application/zip
+        run: |
+          curl -X POST $UPLOAD_URL \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -F "file=@custom-craft-component.zip" \
+            -F "name=custom-craft-component.zip" \
+            -F "label=custom-craft-component.zip"
