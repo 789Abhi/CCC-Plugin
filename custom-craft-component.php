@@ -2,25 +2,33 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 1.1.0
+ * Version: 1.1.2
  * Author: Abhishek
  */
 
 defined('ABSPATH') || exit;
 
-// Correct file path
+// Include your main plugin logic
 require_once plugin_dir_path(__FILE__) . 'inc/class-custom-component.php';
-require_once plugin_dir_path(__FILE__) . 'inc/class-plugin-updater.php';
 
-// Instantiate the plugin
+// Include the Plugin Update Checker library
+require_once plugin_dir_path(__FILE__) . 'plugin-update-checker/plugin-update-checker.php';
+
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
 function custom_craft_component_init() {
+    // Instantiate your plugin class
     $plugin = new Custom_Craft_Component();
-    
-    // Initialize updater
+
+    // Setup plugin update checker
     if (is_admin()) {
-        new Custom_Craft_Component_Updater();
+        $updateChecker = PucFactory::buildUpdateChecker(
+            'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/manifest.json',
+            __FILE__,
+            'custom-craft-component'
+        );
+
+        $updateChecker->setBranch('Master'); 
     }
 }
-
-
 add_action('plugins_loaded', 'custom_craft_component_init');

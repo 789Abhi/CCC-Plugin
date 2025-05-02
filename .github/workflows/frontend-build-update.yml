@@ -74,6 +74,12 @@ jobs:
               .last_updated = "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"' \
              manifest.json > manifest.tmp.json
           mv manifest.tmp.json manifest.json
+      
+      - name: Update Plugin PHP File Version
+        run: |
+         NEW_VERSION=${{ steps.bump_version.outputs.NEW_VERSION }}
+         sed -i "s/^\(\s*\*\s*Version:\s*\).*/\1$NEW_VERSION/" custom-craft-component.php
+
 
       - name: Commit and Push Changes
         env:
