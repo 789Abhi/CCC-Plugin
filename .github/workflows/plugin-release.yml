@@ -27,21 +27,23 @@ jobs:
           echo "Updating plugin version in $PLUGIN_FILE"
           sed -i -E "s/^( \* Version: ).*/\1$VERSION/" "$PLUGIN_FILE"
 
-      - name: Create plugin zip
+      - name: Prepare Plugin Files (Including Design)
         run: |
           mkdir -p build
-          zip -r build/custom-craft-component.zip . \
-            -x '.git*' \
-            -x '.github*' \
-            -x 'build/*' \
-            -x '*.md' \
-            -x 'LICENSE'
+          rsync -av --progress ./ ./build/ --exclude .git --exclude .github --exclude build --exclude '*.md' --exclude LICENSE
+          echo "Plugin files prepared for zipping."
+
+      - name: Create plugin zip
+        run: |
+          cd build
+          zip -r ../custom-craft-component.zip ./
+          echo "ZIP created with the latest version and design."
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ env.VERSION }}
           name: Release v${{ env.VERSION }}
-          files: build/custom-craft-component.zip
+          files: custom-craft-component.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
