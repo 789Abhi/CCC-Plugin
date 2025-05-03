@@ -1,0 +1,47 @@
+name: Automatic Plugin Release
+
+on:
+  push:
+    branches:
+      - Master
+    paths:
+      - 'manifest.json'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Read Plugin Version
+        id: get_version
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update Version in Plugin File
+        run: |
+          PLUGIN_FILE=$(find . -maxdepth 1 -name "*.php" | head -n 1)
+          echo "Updating plugin version in $PLUGIN_FILE"
+          sed -i -E "s/^( \* Version: ).*/\1$VERSION/" "$PLUGIN_FILE"
+
+      - name: Create plugin zip
+        run: |
+          mkdir -p build
+          zip -r build/custom-craft-component.zip . \
+            -x '.git*' \
+            -x '.github*' \
+            -x 'build/*' \
+            -x '*.md' \
+            -x 'LICENSE'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          files: build/custom-craft-component.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
