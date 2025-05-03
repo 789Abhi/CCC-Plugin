@@ -1,7 +1,7 @@
 <?php
-namespace YahnisElsts\PluginUpdateChecker\v5p5\DebugBar;
+namespace CCC\PluginUpdateChecker\v5p5\DebugBar;
 
-use YahnisElsts\PluginUpdateChecker\v5p5\UpdateChecker;
+use CCC\PluginUpdateChecker\v5p5\UpdateChecker;
 
 if ( !class_exists(Panel::class, false) && class_exists('Debug_Bar_Panel', false) ):
 

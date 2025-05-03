@@ -3,9 +3,9 @@
     "slug": "custom-craft-component",
     "version": "1.2.1",
     "download_url": "https://github.com/789Abhi/CCC-Plugin/releases/download/v1.2.1/custom-craft-component.zip",
-    "requires": "5.9",
+    "requires": "6.8.1",
     "tested": "7.2",
-    "last_updated": "2025-04-19T21:30:00Z",
+    "last_updated": "2025-05-03",
     "changelog": [
         "Automated release process implemented",
         "Improved plugin update mechanism"

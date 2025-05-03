@@ -1,9 +1,9 @@
 <?php
 
-namespace YahnisElsts\PluginUpdateChecker\v5p5\Vcs;
+namespace CCC\PluginUpdateChecker\v5p5\Vcs;
 
-use YahnisElsts\PluginUpdateChecker\v5p5\Theme;
-use YahnisElsts\PluginUpdateChecker\v5p5\Utils;
+use CCC\PluginUpdateChecker\v5p5\Theme;
+use CCC\PluginUpdateChecker\v5p5\Utils;
 
 if ( !class_exists(ThemeUpdateChecker::class, false) ):
 

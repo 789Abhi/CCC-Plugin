@@ -1,11 +1,11 @@
 <?php
 
-namespace YahnisElsts\PluginUpdateChecker\v5p5;
+namespace CCC\PluginUpdateChecker\v5p5;
 
 if ( !class_exists(Autoloader::class, false) ):
 
 	class Autoloader {
-		const DEFAULT_NS_PREFIX = 'YahnisElsts\\PluginUpdateChecker\\';
+		const DEFAULT_NS_PREFIX = 'CCC\\PluginUpdateChecker\\';
 
 		private $prefix;
 		private $rootDir;

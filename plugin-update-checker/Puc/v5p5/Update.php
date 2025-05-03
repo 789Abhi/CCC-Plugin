@@ -1,5 +1,5 @@
 <?php
-namespace YahnisElsts\PluginUpdateChecker\v5p5;
+namespace CCC\PluginUpdateChecker\v5p5;
 
 use stdClass;
 

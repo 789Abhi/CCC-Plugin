@@ -1,8 +1,8 @@
 <?php
 
-namespace YahnisElsts\PluginUpdateChecker\v5p5\Theme;
+namespace CCC\PluginUpdateChecker\v5p5\Theme;
 
-use YahnisElsts\PluginUpdateChecker\v5p5\Update as BaseUpdate;
+use CCC\PluginUpdateChecker\v5p5\Update as BaseUpdate;
 
 if ( !class_exists(Update::class, false) ):
 

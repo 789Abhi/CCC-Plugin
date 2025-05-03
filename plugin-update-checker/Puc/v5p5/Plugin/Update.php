@@ -1,7 +1,7 @@
 <?php
-namespace YahnisElsts\PluginUpdateChecker\v5p5\Plugin;
+namespace CCC\PluginUpdateChecker\v5p5\Plugin;
 
-use YahnisElsts\PluginUpdateChecker\v5p5\Update as BaseUpdate;
+use CCC\PluginUpdateChecker\v5p5\Update as BaseUpdate;
 
 if ( !class_exists(Update::class, false) ):
 
