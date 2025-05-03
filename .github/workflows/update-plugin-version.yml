@@ -1,0 +1,40 @@
+name: Sync Plugin Version from Manifest
+
+on:
+  push:
+    branches:
+      - Master
+    paths:
+      - 'manifest.json'
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Set Up Git
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+      - name: Read version from manifest.json and update plugin
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          echo "Updating plugin version to $VERSION"
+
+          PLUGIN_FILE=$(find . -maxdepth 1 -name "*.php" | head -n 1)
+
+          if grep -q "^ \* Version: " "$PLUGIN_FILE"; then
+            sed -i -E "s/^( \* Version: ).*/\1$VERSION/" "$PLUGIN_FILE"
+          else
+            echo "Plugin file doesn't contain a version line!"
+            exit 1
+          fi
+
+      - name: Commit & Push changes
+        run: |
+          git add .
+          git commit -m "chore: sync plugin version to manifest $VERSION" || echo "No changes to commit"
+          git push
