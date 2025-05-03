@@ -1,7 +1,7 @@
 <?php
-namespace CCC\PluginUpdateChecker\v5p5\Theme;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\Theme;
 
-use CCC\PluginUpdateChecker\v5p5\InstalledPackage;
+use YahnisElsts\PluginUpdateChecker\v5p5\InstalledPackage;
 
 if ( !class_exists(Package::class, false) ):
 

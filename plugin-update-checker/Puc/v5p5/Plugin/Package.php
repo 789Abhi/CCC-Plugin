@@ -1,8 +1,8 @@
 <?php
-namespace CCC\PluginUpdateChecker\v5p5\Plugin;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\Plugin;
 
-use CCC\PluginUpdateChecker\v5p5\InstalledPackage;
-use CCC\PluginUpdateChecker\v5p5\PucFactory;
+use YahnisElsts\PluginUpdateChecker\v5p5\InstalledPackage;
+use YahnisElsts\PluginUpdateChecker\v5p5\PucFactory;
 
 if ( !class_exists(Package::class, false) ):
 

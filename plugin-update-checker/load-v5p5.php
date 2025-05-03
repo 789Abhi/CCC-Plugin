@@ -1,9 +1,9 @@
 <?php
 
-namespace CCC\PluginUpdateChecker\v5p5;
+namespace YahnisElsts\PluginUpdateChecker\v5p5;
 
-use CCC\PluginUpdateChecker\v5\PucFactory as MajorFactory;
-use CCC\PluginUpdateChecker\v5p5\PucFactory as MinorFactory;
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory as MajorFactory;
+use YahnisElsts\PluginUpdateChecker\v5p5\PucFactory as MinorFactory;
 
 require __DIR__ . '/Puc/v5p5/Autoloader.php';
 new Autoloader();

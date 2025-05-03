@@ -3,7 +3,7 @@
 	"type": "library",
 	"description": "A custom update checker for WordPress plugins and themes. Useful if you can't host your plugin in the official WP repository but still want it to support automatic updates.",
 	"keywords": ["wordpress", "plugin updates", "automatic updates", "theme updates"],
-	"homepage": "https://github.com/CCC/plugin-update-checker/",
+	"homepage": "https://github.com/YahnisElsts/plugin-update-checker/",
 	"license": "MIT",
 	"authors": [
 		{

@@ -1,5 +1,5 @@
 <?php
-namespace CCC\PluginUpdateChecker\v5p5;
+namespace YahnisElsts\PluginUpdateChecker\v5p5;
 
 if ( !class_exists(UpgraderStatus::class, false) ):
 

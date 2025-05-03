@@ -33,7 +33,7 @@ Getting Started
 
 ### Self-hosted Plugins and Themes
 
-1. Download [the latest release](https://github.com/CCC/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
+1. Download [the latest release](https://github.com/YahnisElsts/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
 2. Go to the `examples` subdirectory and open the .json file that fits your project type. Replace the placeholder data with your plugin/theme details. 
 	- Plugin example:
 	
@@ -65,7 +65,7 @@ Getting Started
 
 	```php
 	require 'path/to/plugin-update-checker/plugin-update-checker.php';
-	use CCC\PluginUpdateChecker\v5\PucFactory;
+	use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
  
 	$myUpdateChecker = PucFactory::buildUpdateChecker(
 		'https://example.com/path/to/details.json',
@@ -77,7 +77,7 @@ Getting Started
 
 #### How to Release an Update
 
-Change the `version` number in the JSON file and make sure that `download_url` points to the latest version. Update the other fields if necessary. Tip: You can use [wp-update-server](https://github.com/CCC/wp-update-server) to automate this process.
+Change the `version` number in the JSON file and make sure that `download_url` points to the latest version. Update the other fields if necessary. Tip: You can use [wp-update-server](https://github.com/YahnisElsts/wp-update-server) to automate this process.
 
 By default, the library will check the specified URL for changes every 12 hours. You can force it to check immediately by clicking the "Check for updates" link on the "Plugins" page (it's next to the "Visit plugin site" link). Themes don't have that link, but you can also trigger an update check like this:
  
@@ -94,12 +94,12 @@ By default, the library will check the specified URL for changes every 12 hours.
 
 ### GitHub Integration
 
-1. Download [the latest release](https://github.com/CCC/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
+1. Download [the latest release](https://github.com/YahnisElsts/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
 2. Add the following code to the main plugin file or `functions.php`:
 
 	```php
 	require 'plugin-update-checker/plugin-update-checker.php';
-	use CCC\PluginUpdateChecker\v5\PucFactory;
+	use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
  
 	$myUpdateChecker = PucFactory::buildUpdateChecker(
 		'https://github.com/user-name/repo-name/',
@@ -175,12 +175,12 @@ The library will pull update details from the following parts of a release/tag/b
 	
 ### BitBucket Integration
 
-1. Download [the latest release](https://github.com/CCC/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
+1. Download [the latest release](https://github.com/YahnisElsts/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
 2. Add the following code to the main plugin file or `functions.php`:
 
 	```php
 	require 'plugin-update-checker/plugin-update-checker.php';
-	use CCC\PluginUpdateChecker\v5\PucFactory;
+	use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
  
 	$myUpdateChecker = PucFactory::buildUpdateChecker(
 		'https://bitbucket.org/user-name/repo-name',
@@ -192,7 +192,7 @@ The library will pull update details from the following parts of a release/tag/b
 	//and set the authentication credentials like this:
 	//Note: For now you need to check "This is a private consumer" when
 	//creating the consumer to work around #134:
-	// https://github.com/CCC/plugin-update-checker/issues/134
+	// https://github.com/YahnisElsts/plugin-update-checker/issues/134
 	$myUpdateChecker->setAuthentication(array(
 		'consumer_key' => '...',
 		'consumer_secret' => '...',
@@ -233,12 +233,12 @@ BitBucket doesn't have an equivalent to GitHub's releases, so the process is sli
 
 ### GitLab Integration
 
-1. Download [the latest release](https://github.com/CCC/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
+1. Download [the latest release](https://github.com/YahnisElsts/plugin-update-checker/releases/latest) and copy the `plugin-update-checker` directory to your plugin or theme.
 2. Add the following code to the main plugin file or `functions.php` and define how you want to check for updates from Gitlab (refer to: [Gitlab: How to Release an Update](#how-to-release-a-gitlab-update)):
 
 	```php
 	require 'plugin-update-checker/plugin-update-checker.php';
-	use CCC\PluginUpdateChecker\v5\PucFactory;
+	use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 	$myUpdateChecker = PucFactory::buildUpdateChecker(
 		'https://gitlab.com/user-name/repo-name/',
@@ -252,8 +252,8 @@ BitBucket doesn't have an equivalent to GitHub's releases, so the process is sli
 
 	Alternatively, if you're using a self-hosted GitLab instance, initialize the update checker like this:
 	```php
-	use CCC\PluginUpdateChecker\v5p5\Vcs\PluginUpdateChecker;
-	use CCC\PluginUpdateChecker\v5p5\Vcs\GitLabApi;
+	use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\PluginUpdateChecker;
+	use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitLabApi;
 	
 	$myUpdateChecker = new PluginUpdateChecker(
 		new GitLabApi('https://myserver.com/user-name/repo-name/'),
@@ -264,8 +264,8 @@ BitBucket doesn't have an equivalent to GitHub's releases, so the process is sli
 	```
 	If you're using a self-hosted GitLab instance and [subgroups or nested groups](https://docs.gitlab.com/ce/user/group/subgroups/index.html), you have to tell the update checker which parts of the URL are subgroups:
 	```php
-	use CCC\PluginUpdateChecker\v5p5\Vcs\PluginUpdateChecker;
-	use CCC\PluginUpdateChecker\v5p5\Vcs\GitLabApi;
+	use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\PluginUpdateChecker;
+	use YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitLabApi;
    
 	$myUpdateChecker = new PluginUpdateChecker(
 		new GitLabApi(
@@ -333,7 +333,7 @@ $myUpdateChecker = Puc_v4_Factory::buildUpdateChecker(
 
 New code:
 ```php
-use CCC\PluginUpdateChecker\v5\PucFactory;
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
 	'https://example.com/info.json',
@@ -346,20 +346,20 @@ Other classes have also been renamed, usually by simply removing the `Puc_vXpY_`
 
 | Old class name                      | New class name                                                 |
 |-------------------------------------|----------------------------------------------------------------|
-| `Puc_v4_Factory`                    | `CCC\PluginUpdateChecker\v5\PucFactory`                |
-| `Puc_v4p13_Factory`                 | `CCC\PluginUpdateChecker\v5p5\PucFactory`              |
-| `Puc_v4p13_Plugin_UpdateChecker`    | `CCC\PluginUpdateChecker\v5p5\Plugin\UpdateChecker`    |
-| `Puc_v4p13_Theme_UpdateChecker`     | `CCC\PluginUpdateChecker\v5p5\Theme\UpdateChecker`     |
-| `Puc_v4p13_Vcs_PluginUpdateChecker` | `CCC\PluginUpdateChecker\v5p5\Vcs\PluginUpdateChecker` |
-| `Puc_v4p13_Vcs_ThemeUpdateChecker`  | `CCC\PluginUpdateChecker\v5p5\Vcs\ThemeUpdateChecker`  |
-| `Puc_v4p13_Vcs_GitHubApi`           | `CCC\PluginUpdateChecker\v5p5\Vcs\GitHubApi`           |
-| `Puc_v4p13_Vcs_GitLabApi`           | `CCC\PluginUpdateChecker\v5p5\Vcs\GitLabApi`           |
-| `Puc_v4p13_Vcs_BitBucketApi`        | `CCC\PluginUpdateChecker\v5p5\Vcs\BitBucketApi`        |
+| `Puc_v4_Factory`                    | `YahnisElsts\PluginUpdateChecker\v5\PucFactory`                |
+| `Puc_v4p13_Factory`                 | `YahnisElsts\PluginUpdateChecker\v5p5\PucFactory`              |
+| `Puc_v4p13_Plugin_UpdateChecker`    | `YahnisElsts\PluginUpdateChecker\v5p5\Plugin\UpdateChecker`    |
+| `Puc_v4p13_Theme_UpdateChecker`     | `YahnisElsts\PluginUpdateChecker\v5p5\Theme\UpdateChecker`     |
+| `Puc_v4p13_Vcs_PluginUpdateChecker` | `YahnisElsts\PluginUpdateChecker\v5p5\Vcs\PluginUpdateChecker` |
+| `Puc_v4p13_Vcs_ThemeUpdateChecker`  | `YahnisElsts\PluginUpdateChecker\v5p5\Vcs\ThemeUpdateChecker`  |
+| `Puc_v4p13_Vcs_GitHubApi`           | `YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitHubApi`           |
+| `Puc_v4p13_Vcs_GitLabApi`           | `YahnisElsts\PluginUpdateChecker\v5p5\Vcs\GitLabApi`           |
+| `Puc_v4p13_Vcs_BitBucketApi`        | `YahnisElsts\PluginUpdateChecker\v5p5\Vcs\BitBucketApi`        |
 
 License Management
 ------------------
 
-Currently, the update checker doesn't have any built-in license management features. It only provides some hooks that you can use to, for example, append license keys to update requests (`$updateChecker->addQueryArgFilter()`). If you're looking for ways to manage and verify licenses, please post your feedback in [this issue](https://github.com/CCC/plugin-update-checker/issues/222).
+Currently, the update checker doesn't have any built-in license management features. It only provides some hooks that you can use to, for example, append license keys to update requests (`$updateChecker->addQueryArgFilter()`). If you're looking for ways to manage and verify licenses, please post your feedback in [this issue](https://github.com/YahnisElsts/plugin-update-checker/issues/222).
 
 Resources
 ---------

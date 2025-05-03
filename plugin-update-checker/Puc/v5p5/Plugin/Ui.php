@@ -1,5 +1,5 @@
 <?php
-namespace CCC\PluginUpdateChecker\v5p5\Plugin;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\Plugin;
 
 if ( !class_exists(Ui::class, false) ):
 	/**

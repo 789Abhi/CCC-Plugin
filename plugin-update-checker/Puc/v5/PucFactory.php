@@ -1,10 +1,10 @@
 <?php
 
-namespace CCC\PluginUpdateChecker\v5;
+namespace YahnisElsts\PluginUpdateChecker\v5;
 
 if ( !class_exists(PucFactory::class, false) ):
 
-	class PucFactory extends \CCC\PluginUpdateChecker\v5p5\PucFactory {
+	class PucFactory extends \YahnisElsts\PluginUpdateChecker\v5p5\PucFactory {
 	}
 
 endif;

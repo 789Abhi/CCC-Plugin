@@ -1,10 +1,10 @@
 <?php
-namespace CCC\PluginUpdateChecker\v5p5\Plugin;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\Plugin;
 
-use CCC\PluginUpdateChecker\v5p5\InstalledPackage;
-use CCC\PluginUpdateChecker\v5p5\UpdateChecker as BaseUpdateChecker;
-use CCC\PluginUpdateChecker\v5p5\Scheduler;
-use CCC\PluginUpdateChecker\v5p5\DebugBar;
+use YahnisElsts\PluginUpdateChecker\v5p5\InstalledPackage;
+use YahnisElsts\PluginUpdateChecker\v5p5\UpdateChecker as BaseUpdateChecker;
+use YahnisElsts\PluginUpdateChecker\v5p5\Scheduler;
+use YahnisElsts\PluginUpdateChecker\v5p5\DebugBar;
 
 if ( !class_exists(UpdateChecker::class, false) ):
 
@@ -72,7 +72,7 @@ if ( !class_exists(UpdateChecker::class, false) ):
 			}
 
 			//To prevent a crash during plugin uninstallation, remove updater hooks when the user removes the plugin.
-			//Details: https://github.com/CCC/plugin-update-checker/issues/138#issuecomment-335590964
+			//Details: https://github.com/YahnisElsts/plugin-update-checker/issues/138#issuecomment-335590964
 			add_action('uninstall_' . $this->pluginFile, array($this, 'removeHooks'));
 
 			$this->extraUi = new Ui($this);

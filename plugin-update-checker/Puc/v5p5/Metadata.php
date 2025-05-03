@@ -1,5 +1,5 @@
 <?php
-namespace CCC\PluginUpdateChecker\v5p5;
+namespace YahnisElsts\PluginUpdateChecker\v5p5;
 
 use LogicException;
 use stdClass;

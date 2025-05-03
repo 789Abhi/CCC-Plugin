@@ -1,11 +1,11 @@
 <?php
 
-namespace CCC\PluginUpdateChecker\v5p5\Theme;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\Theme;
 
-use CCC\PluginUpdateChecker\v5p5\UpdateChecker as BaseUpdateChecker;
-use CCC\PluginUpdateChecker\v5p5\InstalledPackage;
-use CCC\PluginUpdateChecker\v5p5\Scheduler;
-use CCC\PluginUpdateChecker\v5p5\DebugBar;
+use YahnisElsts\PluginUpdateChecker\v5p5\UpdateChecker as BaseUpdateChecker;
+use YahnisElsts\PluginUpdateChecker\v5p5\InstalledPackage;
+use YahnisElsts\PluginUpdateChecker\v5p5\Scheduler;
+use YahnisElsts\PluginUpdateChecker\v5p5\DebugBar;
 
 if ( !class_exists(UpdateChecker::class, false) ):
 

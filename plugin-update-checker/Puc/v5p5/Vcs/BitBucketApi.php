@@ -1,9 +1,9 @@
 <?php
 
-namespace CCC\PluginUpdateChecker\v5p5\Vcs;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\Vcs;
 
-use CCC\PluginUpdateChecker\v5p5\OAuthSignature;
-use CCC\PluginUpdateChecker\v5p5\Utils;
+use YahnisElsts\PluginUpdateChecker\v5p5\OAuthSignature;
+use YahnisElsts\PluginUpdateChecker\v5p5\Utils;
 
 if ( !class_exists(BitBucketApi::class, false) ):
 

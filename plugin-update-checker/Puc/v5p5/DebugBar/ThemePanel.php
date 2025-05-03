@@ -1,8 +1,8 @@
 <?php
 
-namespace CCC\PluginUpdateChecker\v5p5\DebugBar;
+namespace YahnisElsts\PluginUpdateChecker\v5p5\DebugBar;
 
-use CCC\PluginUpdateChecker\v5p5\Theme\UpdateChecker;
+use YahnisElsts\PluginUpdateChecker\v5p5\Theme\UpdateChecker;
 
 if ( !class_exists(ThemePanel::class, false) ):
 
