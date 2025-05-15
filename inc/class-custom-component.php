@@ -5,6 +5,103 @@ class Custom_Craft_Component {
     public function __construct() {
         add_action('admin_menu', [$this, 'register_admin_pages']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('init', [$this, 'register_cc_component_post_type']);
+
+        add_action('wp_ajax_ccc_save_component', [$this, 'ajax_save_component']);
+        add_action('wp_ajax_ccc_create_component', [$this, 'handle_create_component']);
+        add_action('wp_ajax_nopriv_ccc_create_component', [$this, 'handle_create_component']); // optional for guest users
+        
+        add_action('wp_ajax_ccc_get_components', [$this, 'get_components']);
+    }
+
+
+
+    public function get_components() {
+        check_ajax_referer('ccc_nonce', 'nonce');
+    
+        global $wpdb;
+        $table = $wpdb->prefix . 'cc_components';
+        $results = $wpdb->get_results("SELECT name, handle_name FROM $table", ARRAY_A);
+    
+        wp_send_json_success(['components' => $results]);
+    }
+    
+
+    public function handle_create_component() {
+        check_ajax_referer('ccc_nonce', 'nonce');
+
+        $name = sanitize_text_field($_POST['name'] ?? '');
+        $handle = sanitize_title($_POST['handle'] ?? '');
+
+        if (empty($name) || empty($handle)) {
+            wp_send_json_error(['message' => 'Missing required fields']);
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cc_components';
+        $post_id = wp_insert_post([
+            'post_title'  => $name,
+            'post_type'   => 'cc_component',
+            'post_status' => 'publish'
+        ]);
+        
+        if (is_wp_error($post_id)) {
+            wp_send_json_error(['message' => 'Failed to create post']);
+        }
+        
+        $wpdb->insert($table, [
+            'post_id'     => $post_id,
+            'name'        => $name,
+            'handle_name' => $handle,
+            'instruction' => '',
+            'hidden'      => 0,
+            'created_at'  => current_time('mysql')
+        ]);
+
+     
+
+        wp_send_json_success(['message' => 'Component created successfully']);
+    }
+
+    public function ajax_save_component() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $name = sanitize_text_field($_POST['name']);
+        $handle = sanitize_title($name);
+
+        $post_id = wp_insert_post([
+            'post_title'  => $name,
+            'post_type'   => 'cc_component',
+            'post_status' => 'publish'
+        ]);
+
+        if (is_wp_error($post_id)) {
+            wp_send_json_error('Could not create post');
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'cc_components';
+        $wpdb->insert($table, [
+            'name'   => $name,
+            'handle'=> str_replace('-', '_', $handle)
+        ]);
+
+        wp_send_json_success(['post_id' => $post_id]);
+    }
+
+    public function register_cc_component_post_type() {
+        register_post_type('cc_component', [
+            'label'         => 'Components',
+            'public'        => false,
+            'show_ui'       => true,
+            'supports'      => ['title'],
+            'menu_icon'     => 'dashicons-screenoptions',
+            'capability_type' => 'post',
+            'hierarchical'  => false,
+            'has_archive'   => false,
+        ]);
     }
 
     public function register_admin_pages() {
@@ -68,7 +165,9 @@ class Custom_Craft_Component {
 
             wp_localize_script('ccc-react', 'cccData', [
                 'currentPage' => $current_page,
-                'baseUrl' => $build_url
+                'baseUrl'     => $build_url,
+                'ajaxUrl'     => admin_url('admin-ajax.php'),
+                'nonce'       => wp_create_nonce('ccc_nonce'), // ✅ Added nonce here
             ]);
         }
 
