@@ -12,9 +12,47 @@ class Custom_Craft_Component {
         add_action('wp_ajax_nopriv_ccc_create_component', [$this, 'handle_create_component']); // optional for guest users
         
         add_action('wp_ajax_ccc_get_components', [$this, 'get_components']);
+
+        add_action('wp_ajax_ccc_add_field', 'ccc_add_field_callback');
     }
 
 
+
+    function ccc_add_field_callback() {
+        check_ajax_referer('ccc_nonce', 'nonce');
+    
+        $label = sanitize_text_field($_POST['label']);
+        $name = sanitize_title($_POST['name']);
+        $type = sanitize_text_field($_POST['type']);
+        $component_id = intval($_POST['component_id']);
+    
+        if (!$label || !$name || !$type || !$component_id) {
+            wp_send_json_error(['message' => 'Missing required values.']);
+        }
+    
+        $type_map = [
+            'text' => 'Text',
+            'text-area' => 'Text_Area'
+        ];
+    
+        if (!isset($type_map[$type])) {
+            wp_send_json_error(['message' => 'Invalid field type.']);
+        }
+    
+        $class_name = $type_map[$type];
+        $file_path = plugin_dir_path(__FILE__) . "inc/Fields/{$type}.php";
+    
+        if (!file_exists($file_path)) {
+            wp_send_json_error(['message' => 'Field file not found.']);
+        }
+    
+        require_once $file_path;
+        $full_class = "CCC\\Fields\\$class_name";
+        $field = new $full_class($label, $name, $component_id);
+        $field->save();
+    
+        wp_send_json_success(['message' => 'Field saved.']);
+    }
 
     public function get_components() {
         check_ajax_referer('ccc_nonce', 'nonce');
