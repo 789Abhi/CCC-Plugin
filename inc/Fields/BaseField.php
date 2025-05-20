@@ -4,7 +4,6 @@ namespace CCC\Fields;
 abstract class BaseField {
     protected $label;
     protected $name;
-    protected $type;
     protected $component_id;
 
     public function __construct($label, $name, $component_id) {
