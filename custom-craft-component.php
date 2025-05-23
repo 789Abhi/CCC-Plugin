@@ -65,6 +65,12 @@ function ccc_plugin_activate() {
             FOREIGN KEY (field_id) REFERENCES $fields_table(id) ON DELETE CASCADE
         ) $charset_collate;
     ");
+
+    $theme_dir = get_stylesheet_directory();
+    $templates_dir = $theme_dir . '/ccc-templates';
+    if (!file_exists($templates_dir)) {
+        wp_mkdir_p($templates_dir);
+    }
 }
 
 function custom_craft_component_init() {
@@ -79,3 +85,4 @@ function custom_craft_component_init() {
     }
 }
 add_action('plugins_loaded', 'custom_craft_component_init');
+?>
