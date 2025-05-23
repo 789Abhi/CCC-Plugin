@@ -84,6 +84,8 @@ class Custom_Craft_Component {
         $fields_table = $wpdb->prefix . 'cc_fields';
         $field_values_table = $wpdb->prefix . 'cc_field_values';
 
+        $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
+
         $results = $wpdb->get_results(
             "SELECT id, name, handle_name FROM $components_table",
             ARRAY_A
@@ -91,7 +93,13 @@ class Custom_Craft_Component {
 
         if ($wpdb->last_error) {
             error_log("Database error in get_components: " . $wpdb->last_error);
-            wp_send_json_error(['message' => 'Failed to fetch components: Database error.']);
+            wp_send_json_error(['message' => 'Failed to fetch components: Database error.', 'error' => $wpdb->last_error]);
+            return;
+        }
+
+        if (empty($results)) {
+            error_log("No components found in $components_table");
+            wp_send_json_success(['components' => [], 'message' => 'No components found.']);
             return;
         }
 
@@ -104,18 +112,22 @@ class Custom_Craft_Component {
                 ARRAY_A
             );
 
+            if ($wpdb->last_error) {
+                error_log("Database error fetching fields for component {$component['id']}: " . $wpdb->last_error);
+            }
+
             foreach ($fields as &$field) {
-                $field['values'] = $wpdb->get_results(
+                $field['value'] = $post_id ? $wpdb->get_var(
                     $wpdb->prepare(
-                        "SELECT id, post_id, value FROM $field_values_table WHERE field_id = %d",
-                        $field['id']
-                    ),
-                    ARRAY_A
-                );
+                        "SELECT value FROM $field_values_table WHERE field_id = %d AND post_id = %d",
+                        $field['id'], $post_id
+                    )
+                ) : '';
             }
             $component['fields'] = $fields ? $fields : [];
         }
 
+        error_log("Fetched components for post_id $post_id: " . json_encode($results));
         wp_send_json_success(['components' => $results]);
     }
 
@@ -237,6 +249,7 @@ class Custom_Craft_Component {
         ]);
 
         if ($result === false) {
+            error_log("Database error in handle_create_component: " . $wpdb->last_error);
             wp_send_json_error(['message' => 'Failed to create component']);
             return;
         }
@@ -299,6 +312,9 @@ class Custom_Craft_Component {
         $post_ids = isset($_POST['post_ids']) ? array_map('intval', (array)$_POST['post_ids']) : [];
         $components = isset($_POST['components']) ? json_decode(wp_unslash($_POST['components']), true) : [];
 
+        error_log("Saving assignments for post IDs: " . json_encode($post_ids));
+        error_log("Components: " . json_encode($components));
+
         foreach ($post_ids as $post_id) {
             if ($post_id === 0) {
                 $post_type = isset($_POST['post_type']) ? sanitize_text_field($_POST['post_type']) : 'page';
@@ -337,7 +353,7 @@ class Custom_Craft_Component {
         foreach ($field_values as $field_id => $value) {
             $field_id = intval($field_id);
             $value = wp_kses_post($value);
-            $wpdb->insert(
+            $result = $wpdb->insert(
                 $field_values_table,
                 [
                     'post_id' => $post_id,
@@ -347,6 +363,9 @@ class Custom_Craft_Component {
                 ],
                 ['%d', '%d', '%s', '%s']
             );
+            if ($result === false) {
+                error_log("Failed to insert field value for field_id $field_id: " . $wpdb->last_error);
+            }
         }
 
         wp_send_json_success(['message' => 'Field values saved successfully']);
@@ -383,7 +402,133 @@ class Custom_Craft_Component {
 
     public function render_component_meta_box($post) {
         wp_nonce_field('ccc_component_meta_box', 'ccc_component_nonce');
-        echo '<div id="ccc-component-selector" data-post-id="' . esc_attr($post->ID) . '"></div>';
+        global $wpdb;
+        $components = $wpdb->get_results("SELECT id, name FROM {$wpdb->prefix}cc_components", ARRAY_A);
+        $current_components = get_post_meta($post->ID, '_ccc_components', true);
+        if (!is_array($current_components)) {
+            $current_components = [];
+        }
+        $field_values = [];
+        foreach ($components as $component) {
+            $fields = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT id, label, name, type FROM {$wpdb->prefix}cc_fields WHERE component_id = %d",
+                    $component['id']
+                ),
+                ARRAY_A
+            );
+            foreach ($fields as $field) {
+                $field_values[$field['id']] = $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT value FROM {$wpdb->prefix}cc_field_values WHERE field_id = %d AND post_id = %d",
+                        $field['id'], $post->ID
+                    )
+                );
+            }
+        }
+        ?>
+        <div id="ccc-component-selector" data-post-id="<?php echo esc_attr($post->ID); ?>">
+            <?php if (empty($components)) : ?>
+                <p>No components available. Please create components in the <a href="<?php echo admin_url('admin.php?page=custom-craft-component'); ?>">Custom Components</a> section.</p>
+            <?php else : ?>
+                <p>Select components to assign to this page:</p>
+                <select id="ccc-component-select" name="ccc_components[]" multiple style="width: 100%; height: 150px;">
+                    <?php foreach ($components as $component) : ?>
+                        <option value='<?php echo esc_attr(json_encode(['id' => $component['id'], 'name' => $component['name']])); ?>'
+                            <?php echo in_array(['id' => $component['id'], 'name' => $component['name']], $current_components, true) ? 'selected' : ''; ?>>
+                            <?php echo esc_html($component['name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <div id="ccc-field-inputs" style="margin-top: 20px;">
+                    <?php foreach ($current_components as $comp) : ?>
+                        <?php
+                        $comp_id = $comp['id'];
+                        $fields = $wpdb->get_results(
+                            $wpdb->prepare(
+                                "SELECT id, label, name, type FROM {$wpdb->prefix}cc_fields WHERE component_id = %d",
+                                $comp_id
+                            ),
+                            ARRAY_A
+                        );
+                        if ($fields) : ?>
+                            <div class="ccc-component-fields" data-component-id="<?php echo esc_attr($comp_id); ?>">
+                                <h4><?php echo esc_html($comp['name']); ?> Fields</h4>
+                                <?php foreach ($fields as $field) : ?>
+                                    <div class="ccc-field-input">
+                                        <label for="ccc_field_<?php echo esc_attr($field['id']); ?>">
+                                            <?php echo esc_html($field['label']); ?>
+                                        </label>
+                                        <?php if ($field['type'] === 'text') : ?>
+                                            <input type="text" id="ccc_field_<?php echo esc_attr($field['id']); ?>"
+                                                name="ccc_field_values[<?php echo esc_attr($field['id']); ?>]"
+                                                value="<?php echo esc_attr($field_values[$field['id']] ?: ''); ?>"
+                                                style="width: 100%; margin-bottom: 10px;" />
+                                        <?php elseif ($field['type'] === 'text-area') : ?>
+                                            <textarea id="ccc_field_<?php echo esc_attr($field['id']); ?>"
+                                                name="ccc_field_values[<?php echo esc_attr($field['id']); ?>]"
+                                                rows="5" style="width: 100%; margin-bottom: 10px;"><?php echo esc_textarea($field_values[$field['id']] ?: ''); ?></textarea>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </div>
+                <p><em>Select components above to add or edit their fields. Save the page to store field values.</em></p>
+            <?php endif; ?>
+        </div>
+        <script>
+            jQuery(document).ready(function ($) {
+                var $select = $('#ccc-component-select');
+                var $fieldInputs = $('#ccc-field-inputs');
+                var postId = $('#ccc-component-selector').data('post-id');
+
+                function updateFields() {
+                    var selectedComponents = $select.val() || [];
+                    $fieldInputs.empty();
+                    selectedComponents.forEach(function (compJson) {
+                        var comp = JSON.parse(compJson);
+                        $.ajax({
+                            url: cccData.ajaxUrl,
+                            type: 'POST',
+                            data: {
+                                action: 'ccc_get_components',
+                                nonce: cccData.nonce,
+                                post_id: postId
+                            },
+                            success: function (response) {
+                                if (response.success && response.data.components) {
+                                    var component = response.data.components.find(c => c.id == comp.id);
+                                    if (component && component.fields.length) {
+                                        var $compDiv = $('<div class="ccc-component-fields" data-component-id="' + comp.id + '">');
+                                        $compDiv.append('<h4>' + $('<div>').text(comp.name).html() + ' Fields</h4>');
+                                        component.fields.forEach(function (field) {
+                                            var $fieldDiv = $('<div class="ccc-field-input">');
+                                            $fieldDiv.append('<label for="ccc_field_' + field.id + '">' + $('<div>').text(field.label).html() + '</label>');
+                                            if (field.type === 'text') {
+                                                $fieldDiv.append('<input type="text" id="ccc_field_' + field.id + '" name="ccc_field_values[' + field.id + ']" value="' + (field.value || '') + '" style="width: 100%; margin-bottom: 10px;" />');
+                                            } else if (field.type === 'text-area') {
+                                                $fieldDiv.append('<textarea id="ccc_field_' + field.id + '" name="ccc_field_values[' + field.id + ']" rows="5" style="width: 100%; margin-bottom: 10px;">' + (field.value || '') + '</textarea>');
+                                            }
+                                            $compDiv.append($fieldDiv);
+                                        });
+                                        $fieldInputs.append($compDiv);
+                                    }
+                                }
+                            },
+                            error: function () {
+                                console.error('Failed to fetch component fields.');
+                            }
+                        });
+                    });
+                }
+
+                $select.on('change', updateFields);
+                updateFields(); // Initial load
+            });
+        </script>
+        <?php
     }
 
     public function save_component_data($post_id, $post) {
@@ -399,27 +544,36 @@ class Custom_Craft_Component {
             return;
         }
 
-        $components = isset($_POST['ccc_components']) ? json_decode(wp_unslash($_POST['ccc_components']), true) : [];
+        $components = isset($_POST['ccc_components']) && is_array($_POST['ccc_components']) ? array_map(function($comp) {
+            return json_decode(wp_unslash($comp), true);
+        }, $_POST['ccc_components']) : [];
         update_post_meta($post_id, '_ccc_components', $components);
 
-        $field_values = isset($_POST['ccc_field_values']) ? json_decode(wp_unslash($_POST['ccc_field_values']), true) : [];
+        $field_values = isset($_POST['ccc_field_values']) && is_array($_POST['ccc_field_values']) ? $_POST['ccc_field_values'] : [];
 
         global $wpdb;
         $field_values_table = $wpdb->prefix . 'cc_field_values';
 
         $wpdb->delete($field_values_table, ['post_id' => $post_id], ['%d']);
 
-        foreach ($field_values as $value) {
-            $wpdb->insert(
-                $field_values_table,
-                [
-                    'post_id' => $post_id,
-                    'field_id' => intval($value['field_id']),
-                    'value' => wp_kses_post($value['value']),
-                    'created_at' => current_time('mysql')
-                ],
-                ['%d', '%d', '%s', '%s']
-            );
+        foreach ($field_values as $field_id => $value) {
+            $field_id = intval($field_id);
+            $value = wp_kses_post($value);
+            if ($value !== '') { // Only save non-empty values
+                $result = $wpdb->insert(
+                    $field_values_table,
+                    [
+                        'post_id' => $post_id,
+                        'field_id' => $field_id,
+                        'value' => $value,
+                        'created_at' => current_time('mysql')
+                    ],
+                    ['%d', '%d', '%s', '%s']
+                );
+                if ($result === false) {
+                    error_log("Failed to insert field value for field_id $field_id: " . $wpdb->last_error);
+                }
+            }
         }
     }
 
@@ -432,10 +586,14 @@ class Custom_Craft_Component {
         if (is_singular()) {
             $post_id = get_the_ID();
             $page_template = get_post_meta($post_id, '_wp_page_template', true);
+            error_log("Checking template for post ID $post_id: $page_template");
             if ($page_template === 'ccc-template.php') {
                 $plugin_template = plugin_dir_path(__FILE__) . '../ccc-template.php';
                 if (file_exists($plugin_template)) {
+                    error_log("Loading CCC template: $plugin_template");
                     return $plugin_template;
+                } else {
+                    error_log("CCC template not found: $plugin_template");
                 }
             }
         }
@@ -456,11 +614,8 @@ class Custom_Craft_Component {
         if (!in_array($hook, $plugin_pages)) {
             // Enqueue front-end scripts and styles inline
             if (is_singular()) {
-                // Enqueue jQuery explicitly
                 wp_enqueue_script('jquery');
-
-                // Register a script handle for inline JS
-                wp_enqueue_script('ccc-frontend', plugins_url('js/frontend.js', __FILE__), ['jquery'], '1.2.7', true);
+                wp_enqueue_script('ccc-frontend', '', ['jquery'], '1.2.8', true);
                 $js_code = "
                     console.log('hello');
                     jQuery(document).ready(function ($) {
@@ -504,8 +659,7 @@ class Custom_Craft_Component {
                     'nonce' => wp_create_nonce('ccc_nonce'),
                 ]);
 
-                // Register a style handle for inline CSS
-                wp_enqueue_style('ccc-frontend-style', plugins_url('css/frontend.css', __FILE__), [], '1.2.7');
+                wp_enqueue_style('ccc-frontend-style', '', [], '1.2.8');
                 $css_code = "
                     .ccc-component {
                         margin-bottom: 20px;
@@ -556,11 +710,19 @@ class Custom_Craft_Component {
             return;
         }
 
+        // Ensure React dependencies are loaded
+        wp_enqueue_script('react', 'https://unpkg.com/react@17/umd/react.production.min.js', [], '17.0.2', true);
+        wp_enqueue_script('react-dom', 'https://unpkg.com/react-dom@17/umd/react-dom.production.min.js', ['react'], '17.0.2', true);
+
         $build_dir = plugin_dir_path(__FILE__) . '../build/assets/';
         $build_url = plugin_dir_url(__FILE__) . '../build/assets/';
 
         $js_file = '';
         $css_file = '';
+
+        if (!is_dir($build_dir)) {
+            error_log("Build directory not found: $build_dir. Component selector may fall back to basic UI.");
+        }
 
         foreach (glob($build_dir . '*.js') as $file) {
             $js_file = basename($file);
@@ -575,7 +737,7 @@ class Custom_Craft_Component {
         }
 
         if ($js_file) {
-            wp_enqueue_script('ccc-react', $build_url . $js_file, ['wp-api'], '1.2.7', true);
+            wp_enqueue_script('ccc-react', $build_url . $js_file, ['wp-api', 'react', 'react-dom'], '1.2.8', true);
 
             $current_page = $hook;
             if (strpos($hook, 'custom-craft-component_page_') !== false) {
@@ -589,11 +751,16 @@ class Custom_Craft_Component {
                 'baseUrl' => $build_url,
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('ccc_nonce'),
+                'postId' => isset($_GET['post']) ? intval($_GET['post']) : 0,
             ]);
+        } else {
+            error_log("No JavaScript file found in $build_dir. Component selector will use basic UI.");
         }
 
         if ($css_file) {
-            wp_enqueue_style('ccc-style', $build_url . $css_file, [], '1.2.7');
+            wp_enqueue_style('ccc-style', $build_url . $css_file, [], '1.2.8');
+        } else {
+            error_log("No CSS file found in $build_dir. Component selector styles may be missing.");
         }
 
         wp_enqueue_script('react-beautiful-dnd', 'https://unpkg.com/react-beautiful-dnd@13.1.1/dist/react-beautiful-dnd.min.js', ['react', 'react-dom'], '13.1.1', true);

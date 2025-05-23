@@ -34,7 +34,7 @@ if (have_posts()) :
                 <p>Debug: Components meta: <?php echo esc_html(json_encode($components)); ?></p>
 
                 <?php if (empty($components)) : ?>
-                    <p>No components assigned to this page.</p>
+                    <p>No components assigned to this page. Please assign components in the page editor.</p>
                 <?php else : ?>
                     <form id="ccc-component-form" method="post" action="">
                         <input type="hidden" name="post_id" value="<?php echo esc_attr($post_id); ?>" />
@@ -78,7 +78,10 @@ if (have_posts()) :
         </article>
         <?php
     endwhile;
+else :
+    ?>
+    <p>No content found.</p>
+    <?php
 endif;
 
 get_footer();
-?>
