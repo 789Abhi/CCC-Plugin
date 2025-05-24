@@ -1,17 +1,21 @@
 <?php
 namespace CCC\Fields;
 
-require_once __DIR__ . '/base-field.php';
+use CCC\Models\Field;
 
-class Text extends BaseField {
+defined('ABSPATH') || exit;
+
+class TextField extends BaseField {
     public function save() {
-        global $wpdb;
-        $wpdb->insert($wpdb->prefix . 'cc_fields', [
+        $field = new Field([
             'component_id' => $this->component_id,
             'label' => $this->label,
             'name' => $this->name,
             'type' => 'text',
-            'created_at' => current_time('mysql')
+            'config' => '{}',
+            'field_order' => 0
         ]);
+
+        return $field->save();
     }
 }
