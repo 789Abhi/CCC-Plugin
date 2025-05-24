@@ -3,7 +3,7 @@
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
  * Version: 1.2.7
- * Author: Abhishek
+ * Author: Abhishek T K
  */
 
 defined('ABSPATH') || exit;
