@@ -126,29 +126,7 @@ class ComponentService {
             . "    }\n"
             . "    ?>\n"
             . "</div>\n"
-            . "\n"
-            . "<style>\n"
-            . ".ccc-$handle_name-component {\n"
-            . "    margin: 20px 0;\n"
-            . "    padding: 20px;\n"
-            . "    border: 1px solid #ddd;\n"
-            . "    border-radius: 8px;\n"
-            . "    background: #fff;\n"
-            . "}\n"
-            . "\n"
-            . ".ccc-field-display {\n"
-            . "    margin-bottom: 10px;\n"
-            . "}\n"
-            . "\n"
-            . ".component-title {\n"
-            . "    color: #333;\n"
-            . "    margin-bottom: 15px;\n"
-            . "}\n"
-            . "\n"
-            . ".component-description {\n"
-            . "    color: #666;\n"
-            . "    line-height: 1.6;\n"
-            . "}\n"
-            . "</style>\n";
+            . "\n";
+        
     }
 }
