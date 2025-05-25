@@ -20,6 +20,14 @@ jobs:
           VERSION=$(jq -r .version manifest.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      - name: Delete existing tag and release (if exists)
+        run: |
+          gh release delete "v${VERSION}" --yes || true
+          git tag -d "v${VERSION}" || true
+          git push origin :refs/tags/v${VERSION} || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Plugin Zip
         run: |
           mkdir -p dist
