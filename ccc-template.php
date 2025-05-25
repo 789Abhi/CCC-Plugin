@@ -9,7 +9,7 @@ if (!function_exists('get_ccc_post_components')) {
 }
 
 $post_id = get_the_ID();
-$components = get_ccc_post_components($post_id);
+// $components = get_ccc_post_components($post_id);
 
 global $wpdb;
 $theme_dir = get_stylesheet_directory();
@@ -24,28 +24,15 @@ if (have_posts()) :
         ?>
         <article id="post-<?php the_ID(); ?>" <?php post_class(); ?>>
             <header class="entry-header">
-                <h1 class="entry-title"><?php the_title(); ?></h1>
+                <!-- <h1 class="entry-title"><?php the_title(); ?></h1> -->
             </header>
             <div class="entry-content">
-                <?php the_content(); ?>
-                
-                <!-- Debugging: Output component data -->
-                <p>Debug: <?php echo count($components); ?> component(s) assigned to this page.</p>
-                <p>Debug: Component order: 
-                    <?php 
-                    foreach ($components as $comp) {
-                        echo $comp['name'] . ' (order: ' . ($comp['order'] ?? 0) . '), ';
-                    }
-                    ?>
-                </p>
-
                 <?php if (empty($components)) : ?>
                     <p>No components assigned to this page. Please assign components in the page editor.</p>
                 <?php else : ?>
                     
                     <!-- Display Components in Order (Read-only view) -->
                     <div class="ccc-components-display">
-                        <h3>Components Display (in order):</h3>
                         <?php
                         foreach ($components as $index => $component) {
                             $component_id = isset($component['id']) ? intval($component['id']) : 0;
