@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 1.2.8
- * Author: Abhishek T K
+ * Version: 1.2.7
+ * Author: Abhishek
  */
 
 defined('ABSPATH') || exit;
@@ -27,6 +27,7 @@ spl_autoload_register(function ($class) {
 });
 
 require_once plugin_dir_path(__FILE__) . 'plugin-update-checker/plugin-update-checker.php';
+require_once plugin_dir_path(__FILE__) . 'inc/Helpers/TemplateHelpers.php';
 
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 use CCC\Core\Plugin;

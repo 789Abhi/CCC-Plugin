@@ -1,0 +1,4 @@
+**`get_ccc_field('field_name')`**: Get individual field values
+**`get_ccc_component_fields($component_id)`**: Get all fields for a component
+**`get_ccc_post_components()`**: Get all components for a post in order
+**Global Access**: Functions available in all templates

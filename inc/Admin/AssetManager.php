@@ -32,6 +32,10 @@ class AssetManager {
         wp_enqueue_script('react', 'https://unpkg.com/react@17/umd/react.production.min.js', [], '17.0.2', true);
         wp_enqueue_script('react-dom', 'https://unpkg.com/react-dom@17/umd/react-dom.production.min.js', ['react'], '17.0.2', true);
 
+        // Enqueue jQuery UI for sortable functionality
+        wp_enqueue_script('jquery-ui-sortable');
+        wp_enqueue_style('wp-jquery-ui-dialog');
+
         $build_dir = plugin_dir_path(__FILE__) . '../../build/assets/';
         $build_url = plugin_dir_url(__FILE__) . '../../build/assets/';
 

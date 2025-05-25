@@ -5,6 +5,7 @@ use CCC\Services\ComponentService;
 use CCC\Services\FieldService;
 use CCC\Models\Component;
 use CCC\Models\FieldValue;
+use CCC\Models\Field;
 
 defined('ABSPATH') || exit;
 
@@ -20,6 +21,7 @@ class AjaxHandler {
     public function init() {
         add_action('wp_ajax_ccc_create_component', [$this, 'handleCreateComponent']);
         add_action('wp_ajax_ccc_get_components', [$this, 'getComponents']);
+        add_action('wp_ajax_ccc_get_component_fields', [$this, 'getComponentFields']);
         add_action('wp_ajax_ccc_add_field', [$this, 'addFieldCallback']);
         add_action('wp_ajax_ccc_get_posts', [$this, 'getPosts']);
         add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
@@ -201,6 +203,39 @@ class AjaxHandler {
 
         } catch (\Exception $e) {
             error_log("Exception in saveFieldValues: " . $e->getMessage());
+            wp_send_json_error(['message' => $e->getMessage()]);
+        }
+    }
+
+    public function getComponentFields() {
+        try {
+            check_ajax_referer('ccc_nonce', 'nonce');
+
+            $component_id = intval($_POST['component_id'] ?? 0);
+            $post_id = intval($_POST['post_id'] ?? 0);
+
+            if (!$component_id) {
+                wp_send_json_error(['message' => 'Invalid component ID.']);
+                return;
+            }
+
+            $fields = Field::findByComponent($component_id);
+            $field_data = [];
+
+            foreach ($fields as $field) {
+                $field_data[] = [
+                    'id' => $field->getId(),
+                    'label' => $field->getLabel(),
+                    'name' => $field->getName(),
+                    'type' => $field->getType(),
+                    'value' => $post_id ? $field->getValue($post_id) : ''
+                ];
+            }
+
+            wp_send_json_success(['fields' => $field_data]);
+
+        } catch (\Exception $e) {
+            error_log("Exception in getComponentFields: " . $e->getMessage());
             wp_send_json_error(['message' => $e->getMessage()]);
         }
     }
