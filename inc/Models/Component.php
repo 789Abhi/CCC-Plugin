@@ -110,7 +110,7 @@ class Component {
     public function getComponentOrder() { return $this->component_order; }
     public function getCreatedAt() { return $this->created_at; }
 
-    // Setters
+    // Setterss
     public function setName($name) { $this->name = $name; }
     public function setHandleName($handle) { $this->handle_name = $handle; }
     public function setInstruction($instruction) { $this->instruction = $instruction; }
