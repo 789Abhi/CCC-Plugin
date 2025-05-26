@@ -75,7 +75,7 @@ class MetaBoxManager {
                 <!-- Hidden input to store component data -->
                 <input type="hidden" id="ccc-components-data" name="ccc_components_data" value="<?php echo esc_attr(json_encode($current_components)); ?>" />
                 
-                <p><em>Use the dropdown above to add components, then drag to reorder them. Component values are saved automatically when you save the page.</em></p>
+                <p><em>Use the dropdown above to add components, then drag to reorder them. You can add the same component multiple times. Component values are saved automatically when you save the page.</em></p>
                 <p><strong>Note:</strong> The order you set here will be reflected on the frontend. Components at the top will appear first on your page.</p>
                 
             <?php endif; ?>
@@ -130,6 +130,15 @@ class MetaBoxManager {
                 border-radius: 3px;
                 font-size: 11px;
                 margin-left: 10px;
+            }
+            
+            .ccc-component-instance {
+                background: #28a745;
+                color: white;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-size: 11px;
+                margin-left: 5px;
             }
             
             .ccc-component-actions {
@@ -209,7 +218,7 @@ class MetaBoxManager {
                     }
                 });
 
-                // Add component functionality
+                // Add component functionality - ALLOW DUPLICATES
                 $('#ccc-add-component-btn').on('click', function() {
                     var $dropdown = $('#ccc-component-dropdown');
                     var componentId = $dropdown.val();
@@ -221,22 +230,16 @@ class MetaBoxManager {
                         return;
                     }
                     
-                    // Check if component already exists
-                    var exists = componentsData.some(function(comp) {
-                        return comp.id == componentId;
-                    });
+                    // Generate unique instance ID for this component instance
+                    var instanceId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                     
-                    if (exists) {
-                        alert('This component is already added.');
-                        return;
-                    }
-                    
-                    // Add component to data
+                    // Add component to data (allow duplicates)
                     var newComponent = {
                         id: parseInt(componentId),
                         name: componentName,
                         handle_name: componentHandle,
-                        order: componentsData.length
+                        order: componentsData.length,
+                        instance_id: instanceId // Unique identifier for this instance
                     };
                     
                     componentsData.push(newComponent);
@@ -253,11 +256,14 @@ class MetaBoxManager {
 
                 // Remove component functionality
                 $(document).on('click', '.ccc-remove-btn', function() {
-                    var index = $(this).data('index');
+                    var instanceId = $(this).data('instance-id');
                     var $accordion = $(this).closest('.ccc-component-accordion');
                     
-                    if (confirm('Are you sure you want to remove this component?')) {
-                        componentsData.splice(index, 1);
+                    if (confirm('Are you sure you want to remove this component instance?')) {
+                        // Find and remove by instance_id
+                        componentsData = componentsData.filter(function(comp) {
+                            return comp.instance_id !== instanceId;
+                        });
                         $accordion.remove();
                         updateComponentOrder();
                     }
@@ -273,9 +279,9 @@ class MetaBoxManager {
                 // Update component order
                 function updateComponentOrder() {
                     $('#ccc-components-list .ccc-component-accordion').each(function(index) {
-                        var componentId = $(this).data('component-id');
+                        var instanceId = $(this).data('instance-id');
                         var componentIndex = componentsData.findIndex(function(comp) {
-                            return comp.id == componentId;
+                            return comp.instance_id === instanceId;
                         });
                         
                         if (componentIndex !== -1) {
@@ -285,8 +291,8 @@ class MetaBoxManager {
                         // Update visual order indicator
                         $(this).find('.ccc-component-order').text('Order: ' + (index + 1));
                         
-                        // Update remove button index
-                        $(this).find('.ccc-remove-btn').data('index', componentIndex);
+                        // Update remove button instance ID
+                        $(this).find('.ccc-remove-btn').data('instance-id', instanceId);
                     });
                     
                     // Update hidden input
@@ -319,17 +325,20 @@ class MetaBoxManager {
                 // Render component accordion
                 function renderComponentAccordion(component) {
                     var index = componentsData.length - 1;
+                    var instanceCount = componentsData.filter(c => c.id === component.id).length;
+                    
                     var accordionHtml = `
-                        <div class="ccc-component-accordion" data-component-id="${component.id}">
+                        <div class="ccc-component-accordion" data-instance-id="${component.instance_id}">
                             <div class="ccc-component-header">
                                 <div class="ccc-component-title">
                                     <span class="ccc-drag-handle dashicons dashicons-menu"></span>
                                     ${component.name}
                                     <span class="ccc-component-order">Order: ${index + 1}</span>
+                                    <span class="ccc-component-instance">Instance #${instanceCount}</span>
                                 </div>
                                 <div class="ccc-component-actions">
                                     <button type="button" class="ccc-toggle-btn">Expand</button>
-                                    <button type="button" class="ccc-remove-btn" data-index="${index}">Remove</button>
+                                    <button type="button" class="ccc-remove-btn" data-instance-id="${component.instance_id}">Remove</button>
                                 </div>
                             </div>
                             <div class="ccc-component-content">
@@ -349,22 +358,25 @@ class MetaBoxManager {
                     
                     var fieldsHtml = '';
                     component.fields.forEach(function(field) {
+                        // Use instance_id to make field names unique per component instance
+                        var fieldName = `ccc_field_values[${component.instance_id}][${field.id}]`;
+                        
                         fieldsHtml += `
                             <div class="ccc-field-input">
-                                <label for="ccc_field_${field.id}">${field.label}</label>
+                                <label for="ccc_field_${component.instance_id}_${field.id}">${field.label}</label>
                         `;
                         
                         if (field.type === 'text') {
                             fieldsHtml += `
                                 <input type="text" 
-                                       id="ccc_field_${field.id}" 
-                                       name="ccc_field_values[${field.id}]" 
+                                       id="ccc_field_${component.instance_id}_${field.id}" 
+                                       name="${fieldName}" 
                                        value="${field.value || ''}" />
                             `;
                         } else if (field.type === 'text-area') {
                             fieldsHtml += `
-                                <textarea id="ccc_field_${field.id}" 
-                                          name="ccc_field_values[${field.id}]" 
+                                <textarea id="ccc_field_${component.instance_id}_${field.id}" 
+                                          name="${fieldName}" 
                                           rows="5">${field.value || ''}</textarea>
                             `;
                         }
@@ -375,10 +387,20 @@ class MetaBoxManager {
                     return fieldsHtml;
                 }
 
-                // Initialize existing accordions
+                // Initialize existing accordions with instance IDs
                 $('.ccc-component-accordion').each(function(index) {
-                    $(this).find('.ccc-toggle-btn').text('Expand');
-                    $(this).find('.ccc-component-order').text('Order: ' + (index + 1));
+                    var $this = $(this);
+                    if (!$this.data('instance-id') && componentsData[index]) {
+                        // Add instance_id to existing components if missing
+                        if (!componentsData[index].instance_id) {
+                            componentsData[index].instance_id = Date.now() + '_' + index;
+                        }
+                        $this.attr('data-instance-id', componentsData[index].instance_id);
+                        $this.find('.ccc-remove-btn').attr('data-instance-id', componentsData[index].instance_id);
+                    }
+                    
+                    $this.find('.ccc-toggle-btn').text('Expand');
+                    $this.find('.ccc-component-order').text('Order: ' + (index + 1));
                 });
             });
         </script>
@@ -387,35 +409,51 @@ class MetaBoxManager {
 
     private function renderComponentAccordion($comp, $index, $field_values) {
         $fields = Field::findByComponent($comp['id']);
+        $instance_id = $comp['instance_id'] ?? ('legacy_' . $index);
+        
+        // Count instances of this component
+        $current_components = get_post_meta(get_the_ID(), '_ccc_components', true);
+        if (!is_array($current_components)) {
+            $current_components = [];
+        }
+        $instance_count = count(array_filter($current_components, function($c) use ($comp) {
+            return $c['id'] === $comp['id'];
+        }));
+        
         ?>
-        <div class="ccc-component-accordion" data-component-id="<?php echo esc_attr($comp['id']); ?>">
+        <div class="ccc-component-accordion" data-instance-id="<?php echo esc_attr($instance_id); ?>">
             <div class="ccc-component-header">
                 <div class="ccc-component-title">
                     <span class="ccc-drag-handle dashicons dashicons-menu"></span>
                     <?php echo esc_html($comp['name']); ?>
                     <span class="ccc-component-order">Order: <?php echo esc_attr($index + 1); ?></span>
+                    <span class="ccc-component-instance">Instance #<?php echo esc_attr($instance_count); ?></span>
                 </div>
                 <div class="ccc-component-actions">
                     <button type="button" class="ccc-toggle-btn">Expand</button>
-                    <button type="button" class="ccc-remove-btn" data-index="<?php echo esc_attr($index); ?>">Remove</button>
+                    <button type="button" class="ccc-remove-btn" data-instance-id="<?php echo esc_attr($instance_id); ?>">Remove</button>
                 </div>
             </div>
             <div class="ccc-component-content">
                 <?php if ($fields) : ?>
                     <?php foreach ($fields as $field) : ?>
                         <div class="ccc-field-input">
-                            <label for="ccc_field_<?php echo esc_attr($field->getId()); ?>">
+                            <label for="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>">
                                 <?php echo esc_html($field->getLabel()); ?>
                             </label>
+                            <?php 
+                            $field_name = "ccc_field_values[{$instance_id}][{$field->getId()}]";
+                            $field_value = $field_values[$instance_id][$field->getId()] ?? '';
+                            ?>
                             <?php if ($field->getType() === 'text') : ?>
                                 <input type="text" 
-                                       id="ccc_field_<?php echo esc_attr($field->getId()); ?>"
-                                       name="ccc_field_values[<?php echo esc_attr($field->getId()); ?>]"
-                                       value="<?php echo esc_attr($field_values[$field->getId()] ?: ''); ?>" />
+                                       id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
+                                       name="<?php echo esc_attr($field_name); ?>"
+                                       value="<?php echo esc_attr($field_value); ?>" />
                             <?php elseif ($field->getType() === 'text-area') : ?>
-                                <textarea id="ccc_field_<?php echo esc_attr($field->getId()); ?>"
-                                          name="ccc_field_values[<?php echo esc_attr($field->getId()); ?>]"
-                                          rows="5"><?php echo esc_textarea($field_values[$field->getId()] ?: ''); ?></textarea>
+                                <textarea id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
+                                          name="<?php echo esc_attr($field_name); ?>"
+                                          rows="5"><?php echo esc_textarea($field_value); ?></textarea>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
@@ -440,7 +478,7 @@ class MetaBoxManager {
             return;
         }
 
-        // Save component assignments with order
+        // Save component assignments with order and instance IDs
         $components_data = isset($_POST['ccc_components_data']) ? json_decode(wp_unslash($_POST['ccc_components_data']), true) : [];
         
         // Ensure proper structure and sort by order
@@ -450,7 +488,8 @@ class MetaBoxManager {
                 'id' => intval($comp['id']),
                 'name' => sanitize_text_field($comp['name']),
                 'handle_name' => sanitize_text_field($comp['handle_name']),
-                'order' => intval($comp['order'] ?? 0)
+                'order' => intval($comp['order'] ?? 0),
+                'instance_id' => sanitize_text_field($comp['instance_id'] ?? '')
             ];
         }
         
@@ -461,62 +500,69 @@ class MetaBoxManager {
         
         update_post_meta($post_id, '_ccc_components', $components);
 
-        // Save field values - this preserves all field values
+        // Save field values with instance support
         $field_values = isset($_POST['ccc_field_values']) && is_array($_POST['ccc_field_values']) 
             ? $_POST['ccc_field_values'] 
             : [];
 
-        // Don't delete existing values, just update/add new ones
-        foreach ($field_values as $field_id => $value) {
-            $field_id = intval($field_id);
-            $value = wp_kses_post($value);
+        global $wpdb;
+        $field_values_table = $wpdb->prefix . 'cc_field_values';
+        
+        // Clear existing values for this post
+        $wpdb->delete($field_values_table, ['post_id' => $post_id], ['%d']);
+
+        // Save new values with instance support
+        foreach ($field_values as $instance_id => $instance_fields) {
+            if (!is_array($instance_fields)) continue;
             
-            global $wpdb;
-            $field_values_table = $wpdb->prefix . 'cc_field_values';
-            
-            // Check if value exists
-            $existing = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT id FROM $field_values_table WHERE field_id = %d AND post_id = %d",
-                    $field_id, $post_id
-                )
-            );
-            
-            if ($existing) {
-                // Update existing value
-                $wpdb->update(
-                    $field_values_table,
-                    ['value' => $value],
-                    ['field_id' => $field_id, 'post_id' => $post_id],
-                    ['%s'],
-                    ['%d', '%d']
-                );
-            } else {
-                // Insert new value
-                $wpdb->insert(
-                    $field_values_table,
-                    [
-                        'post_id' => $post_id,
-                        'field_id' => $field_id,
-                        'value' => $value,
-                        'created_at' => current_time('mysql')
-                    ],
-                    ['%d', '%d', '%s', '%s']
-                );
+            foreach ($instance_fields as $field_id => $value) {
+                $field_id = intval($field_id);
+                $value = wp_kses_post($value);
+                
+                if ($value !== '') {
+                    $wpdb->insert(
+                        $field_values_table,
+                        [
+                            'post_id' => $post_id,
+                            'field_id' => $field_id,
+                            'value' => $value,
+                            'created_at' => current_time('mysql')
+                        ],
+                        ['%d', '%d', '%s', '%s']
+                    );
+                }
             }
         }
     }
 
     private function getFieldValues($components, $post_id) {
-        $field_values = [];
+        global $wpdb;
+        $field_values_table = $wpdb->prefix . 'cc_field_values';
         
-        foreach ($components as $component) {
-            $fields = Field::findByComponent($component->getId());
-            foreach ($fields as $field) {
-                $field_values[$field->getId()] = $field->getValue($post_id);
+        // Get all field values for this post
+        $values = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT field_id, value FROM $field_values_table WHERE post_id = %d",
+                $post_id
+            ),
+            ARRAY_A
+        );
+        
+        $field_values = [];
+        foreach ($values as $value) {
+            $field_values[$value['field_id']] = $value['value'];
+        }
+        
+        // Organize by instance (for backward compatibility, use field_id as key)
+        $organized_values = [];
+        $current_components = get_post_meta($post_id, '_ccc_components', true);
+        if (is_array($current_components)) {
+            foreach ($current_components as $comp) {
+                $instance_id = $comp['instance_id'] ?? 'legacy_' . $comp['id'];
+                $organized_values[$instance_id] = $field_values;
             }
         }
         
-        return $field_values;
+        return $organized_values;
     }
 }

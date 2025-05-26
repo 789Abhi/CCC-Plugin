@@ -19,6 +19,9 @@ class Plugin {
     }
 
     public function init() {
+        // Check and update database schema on every load
+        add_action('init', ['\CCC\Core\Database', 'checkAndUpdateSchema'], 1);
+        
         $this->admin_manager->init();
         $this->template_manager->init();
         $this->ajax_handler->init();

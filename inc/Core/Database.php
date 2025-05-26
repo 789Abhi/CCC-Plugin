@@ -5,6 +5,11 @@ defined('ABSPATH') || exit;
 
 class Database {
     public static function activate() {
+        self::createTables();
+        self::createTemplatesDirectory();
+    }
+    
+    public static function createTables() {
         global $wpdb;
 
         $charset_collate = $wpdb->get_charset_collate();
@@ -18,7 +23,18 @@ class Database {
         self::createComponentsTable($components_table, $charset_collate);
         self::createFieldsTable($fields_table, $components_table, $charset_collate);
         self::createFieldValuesTable($field_values_table, $fields_table, $charset_collate);
-        self::createTemplatesDirectory();
+        
+        // Update version to track schema changes
+        update_option('ccc_db_version', '1.3.1.1');
+    }
+    
+    public static function checkAndUpdateSchema() {
+        $current_version = get_option('ccc_db_version', '0.0.0');
+        $plugin_version = '1.3.1.1'; // Update this when you make schema changes
+        
+        if (version_compare($current_version, $plugin_version, '<')) {
+            self::createTables();
+        }
     }
 
     private static function createComponentsTable($table_name, $charset_collate) {
@@ -33,7 +49,9 @@ class Database {
                 hidden BOOLEAN DEFAULT FALSE,
                 component_order INT DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id)
+                PRIMARY KEY (id),
+                KEY handle_name_idx (handle_name),
+                KEY component_order_idx (component_order)
             ) $charset_collate;
         ";
         
@@ -58,6 +76,9 @@ class Database {
                 field_order INT DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
+                KEY component_id_idx (component_id),
+                KEY name_idx (name),
+                KEY field_order_idx (field_order),
                 FOREIGN KEY (component_id) REFERENCES $components_table(id) ON DELETE CASCADE
             ) $charset_collate;
         ";
@@ -80,6 +101,8 @@ class Database {
                 value LONGTEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
+                KEY post_field_idx (post_id, field_id),
+                KEY field_id_idx (field_id),
                 FOREIGN KEY (field_id) REFERENCES $fields_table(id) ON DELETE CASCADE
             ) $charset_collate;
         ";
