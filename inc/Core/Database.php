@@ -25,12 +25,12 @@ class Database {
         self::createFieldValuesTable($field_values_table, $fields_table, $charset_collate);
         
         // Update version to track schema changes
-        update_option('ccc_db_version', '1.3.1.1');
+        update_option('ccc_db_version', '1.3.1.2');
     }
     
     public static function checkAndUpdateSchema() {
         $current_version = get_option('ccc_db_version', '0.0.0');
-        $plugin_version = '1.3.1.1'; // Update this when you make schema changes
+        $plugin_version = '1.3.1.2'; // Update this when you make schema changes
         
         if (version_compare($current_version, $plugin_version, '<')) {
             self::createTables();
@@ -98,11 +98,13 @@ class Database {
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 post_id BIGINT UNSIGNED NOT NULL,
                 field_id BIGINT UNSIGNED NOT NULL,
+                instance_id VARCHAR(255) NOT NULL DEFAULT '',
                 value LONGTEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
-                KEY post_field_idx (post_id, field_id),
+                KEY post_field_instance_idx (post_id, field_id, instance_id),
                 KEY field_id_idx (field_id),
+                KEY instance_id_idx (instance_id),
                 FOREIGN KEY (field_id) REFERENCES $fields_table(id) ON DELETE CASCADE
             ) $charset_collate;
         ";

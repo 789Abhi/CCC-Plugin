@@ -75,8 +75,8 @@ class MetaBoxManager {
                 <!-- Hidden input to store component data -->
                 <input type="hidden" id="ccc-components-data" name="ccc_components_data" value="<?php echo esc_attr(json_encode($current_components)); ?>" />
                 
-                <p><em>Use the dropdown above to add components, then drag to reorder them. You can add the same component multiple times. Component values are saved automatically when you save the page.</em></p>
-                <p><strong>Note:</strong> The order you set here will be reflected on the frontend. Components at the top will appear first on your page.</p>
+                <p><em>Use the dropdown above to add components, then drag to reorder them. You can add the same component multiple times with different values. Component values are saved automatically when you save the page.</em></p>
+                <p><strong>Note:</strong> Each component instance can have different field values. The order you set here will be reflected on the frontend.</p>
                 
             <?php endif; ?>
         </div>
@@ -218,7 +218,7 @@ class MetaBoxManager {
                     }
                 });
 
-                // Add component functionality - ALLOW DUPLICATES
+                // Add component functionality - ALLOW DUPLICATES with unique instances
                 $('#ccc-add-component-btn').on('click', function() {
                     var $dropdown = $('#ccc-component-dropdown');
                     var componentId = $dropdown.val();
@@ -308,7 +308,8 @@ class MetaBoxManager {
                             action: 'ccc_get_component_fields',
                             nonce: cccData.nonce,
                             component_id: component.id,
-                            post_id: postId
+                            post_id: postId,
+                            instance_id: component.instance_id
                         },
                         success: function(response) {
                             if (response.success) {
@@ -350,7 +351,7 @@ class MetaBoxManager {
                     $('#ccc-components-list').append(accordionHtml);
                 }
 
-                // Render component fields
+                // Render component fields with instance-specific naming
                 function renderComponentFields(component, index) {
                     if (!component.fields || component.fields.length === 0) {
                         return '<p>No fields defined for this component.</p>';
@@ -358,7 +359,7 @@ class MetaBoxManager {
                     
                     var fieldsHtml = '';
                     component.fields.forEach(function(field) {
-                        // Use instance_id to make field names unique per component instance
+                        // Use instance-specific field naming
                         var fieldName = `ccc_field_values[${component.instance_id}][${field.id}]`;
                         
                         fieldsHtml += `
@@ -442,6 +443,7 @@ class MetaBoxManager {
                                 <?php echo esc_html($field->getLabel()); ?>
                             </label>
                             <?php 
+                            // Instance-specific field naming
                             $field_name = "ccc_field_values[{$instance_id}][{$field->getId()}]";
                             $field_value = $field_values[$instance_id][$field->getId()] ?? '';
                             ?>
@@ -520,16 +522,23 @@ class MetaBoxManager {
                 $value = wp_kses_post($value);
                 
                 if ($value !== '') {
-                    $wpdb->insert(
+                    $result = $wpdb->insert(
                         $field_values_table,
                         [
                             'post_id' => $post_id,
                             'field_id' => $field_id,
+                            'instance_id' => $instance_id,
                             'value' => $value,
                             'created_at' => current_time('mysql')
                         ],
-                        ['%d', '%d', '%s', '%s']
+                        ['%d', '%d', '%s', '%s', '%s']
                     );
+                    
+                    if ($result === false) {
+                        error_log("CCC: Failed to save field value for field_id: $field_id, instance: $instance_id, post_id: $post_id, error: " . $wpdb->last_error);
+                    } else {
+                        error_log("CCC: Successfully saved field value for field_id: $field_id, instance: $instance_id, post_id: $post_id, value: $value");
+                    }
                 }
             }
         }
@@ -539,10 +548,10 @@ class MetaBoxManager {
         global $wpdb;
         $field_values_table = $wpdb->prefix . 'cc_field_values';
         
-        // Get all field values for this post
+        // Get all field values for this post with instance support
         $values = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT field_id, value FROM $field_values_table WHERE post_id = %d",
+                "SELECT field_id, instance_id, value FROM $field_values_table WHERE post_id = %d",
                 $post_id
             ),
             ARRAY_A
@@ -550,19 +559,12 @@ class MetaBoxManager {
         
         $field_values = [];
         foreach ($values as $value) {
-            $field_values[$value['field_id']] = $value['value'];
+            $instance_id = $value['instance_id'] ?: 'default';
+            $field_values[$instance_id][$value['field_id']] = $value['value'];
         }
         
-        // Organize by instance (for backward compatibility, use field_id as key)
-        $organized_values = [];
-        $current_components = get_post_meta($post_id, '_ccc_components', true);
-        if (is_array($current_components)) {
-            foreach ($current_components as $comp) {
-                $instance_id = $comp['instance_id'] ?? 'legacy_' . $comp['id'];
-                $organized_values[$instance_id] = $field_values;
-            }
-        }
+        error_log("CCC: Retrieved field values for post $post_id: " . count($values) . " total values");
         
-        return $organized_values;
+        return $field_values;
     }
 }

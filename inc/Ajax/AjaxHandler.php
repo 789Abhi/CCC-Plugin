@@ -213,6 +213,7 @@ class AjaxHandler {
 
             $component_id = intval($_POST['component_id'] ?? 0);
             $post_id = intval($_POST['post_id'] ?? 0);
+            $instance_id = sanitize_text_field($_POST['instance_id'] ?? '');
 
             if (!$component_id) {
                 wp_send_json_error(['message' => 'Invalid component ID.']);
@@ -223,12 +224,23 @@ class AjaxHandler {
             $field_data = [];
 
             foreach ($fields as $field) {
+                // Get value for this specific instance
+                $value = '';
+                if ($post_id && $instance_id) {
+                    global $wpdb;
+                    $values_table = $wpdb->prefix . 'cc_field_values';
+                    $value = $wpdb->get_var($wpdb->prepare(
+                        "SELECT value FROM $values_table WHERE post_id = %d AND field_id = %d AND instance_id = %s",
+                        $post_id, $field->getId(), $instance_id
+                    ));
+                }
+
                 $field_data[] = [
                     'id' => $field->getId(),
                     'label' => $field->getLabel(),
                     'name' => $field->getName(),
                     'type' => $field->getType(),
-                    'value' => $post_id ? $field->getValue($post_id) : ''
+                    'value' => $value ?: ''
                 ];
             }
 
