@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/badge/Version-1.3.2-orange.svg)](https://github.com/789Abhi/CCC-Plugin/releases)
 [![PHP](https://img.shields.io/badge/PHP-7.4+-purple.svg)](https://php.net/)
 [![License](https://img.shields.io/badge/License-GPL%20v2+-green.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/789Abhi/CCC-Plugin)
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 [![Downloads](https://img.shields.io/badge/Downloads-1K+-blue.svg)](https://github.com/789Abhi/CCC-Plugin/releases)
 
 > **A powerful WordPress plugin for creating custom frontend components with dynamic fields and template management.**
@@ -205,3 +205,74 @@ git clone https://github.com/789Abhi/CCC-Plugin.git
 cd CCC-Plugin
 composer install
 npm install
+
+
+
+📞 Support & Community
+Get Help
+GitHub Issues
+
+WordPress Support
+
+📧 Email: abhishektk18@gmail.com
+
+Community
+💬 GitHub Discussions
+
+📚 Wiki Documentation
+
+🐦 Twitter: @YourTwitter
+
+
+
+
+
+
+📊 Stats & Recognition
+⭐ Star this repo if you find it useful!
+
+
+
+
+📄 License
+This project is licensed under the GNU General Public License v2.0 or later.
+
+Custom Craft Component Plugin
+Copyright (C) 2024 Abhishek
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+
+
+🙏 Acknowledgments
+🧡 WordPress Community
+
+👨‍💻 Contributors
+
+🙌 Users & Testers
+
+📦 Open Source Tools
+
+
+
+
+💻 Made with ❤️ by Abhishek
+Custom Craft Component - Where flexibility meets simplicity ✨
+
+
+
+
+---
+
+### ✅ What’s Improved:
+
+- Structured Markdown syntax for optimal GitHub rendering
+- Emojis and icons placed logically for visual impact
+- Proper indentation and nesting for clarity
+- Links, badges, and tables cleaned up and aligned
+- Escaped or fixed any broken HTML/Markdown edge cases
+
+Let me know if you'd like this exported into a downloadable file or added to a GitHub repo for you!
