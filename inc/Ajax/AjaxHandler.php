@@ -29,6 +29,9 @@ class AjaxHandler {
         add_action('wp_ajax_ccc_save_assignments', [$this, 'saveAssignments']);
         add_action('wp_ajax_ccc_save_field_values', [$this, 'saveFieldValues']);
         add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
+        
+        // Add media library support
+        add_action('wp_ajax_ccc_upload_image', [$this, 'uploadImage']);
     }
 
     public function handleCreateComponent() {
@@ -75,13 +78,14 @@ class AjaxHandler {
             $name = sanitize_text_field($_POST['name'] ?? '');
             $type = sanitize_text_field($_POST['type'] ?? '');
             $component_id = intval($_POST['component_id'] ?? 0);
+            $max_sets = isset($_POST['max_sets']) ? sanitize_text_field($_POST['max_sets']) : '';
 
             if (empty($label) || empty($name) || empty($type) || empty($component_id)) {
                 wp_send_json_error(['message' => 'Missing required fields.']);
                 return;
             }
 
-            $this->field_service->createField($component_id, $label, $name, $type);
+            $this->field_service->createField($component_id, $label, $name, $type, $max_sets);
             wp_send_json_success(['message' => 'Field added successfully.']);
 
         } catch (\Exception $e) {
@@ -240,7 +244,8 @@ class AjaxHandler {
                     'label' => $field->getLabel(),
                     'name' => $field->getName(),
                     'type' => $field->getType(),
-                    'value' => $value ?: ''
+                    'value' => $value ?: '',
+                    'config' => json_decode($field->getConfig(), true)
                 ];
             }
 
@@ -248,6 +253,50 @@ class AjaxHandler {
 
         } catch (\Exception $e) {
             error_log("Exception in getComponentFields: " . $e->getMessage());
+            wp_send_json_error(['message' => $e->getMessage()]);
+        }
+    }
+    
+    public function uploadImage() {
+        try {
+            check_ajax_referer('ccc_nonce', 'nonce');
+            
+            if (!function_exists('wp_handle_upload')) {
+                require_once(ABSPATH . 'wp-admin/includes/file.php');
+            }
+            
+            $uploadedfile = $_FILES['file'];
+            $upload_overrides = array('test_form' => false);
+            
+            $movefile = wp_handle_upload($uploadedfile, $upload_overrides);
+            
+            if ($movefile && !isset($movefile['error'])) {
+                // Create attachment
+                $attachment = array(
+                    'post_mime_type' => $movefile['type'],
+                    'post_title' => sanitize_file_name($uploadedfile['name']),
+                    'post_content' => '',
+                    'post_status' => 'inherit'
+                );
+                
+                $attach_id = wp_insert_attachment($attachment, $movefile['file']);
+                
+                require_once(ABSPATH . 'wp-admin/includes/image.php');
+                $attach_data = wp_generate_attachment_metadata($attach_id, $movefile['file']);
+                wp_update_attachment_metadata($attach_id, $attach_data);
+                
+                wp_send_json_success([
+                    'id' => $attach_id,
+                    'url' => $movefile['url'],
+                    'message' => 'Image uploaded successfully'
+                ]);
+            } else {
+                wp_send_json_error([
+                    'message' => $movefile['error'] ?? 'Error uploading file'
+                ]);
+            }
+        } catch (\Exception $e) {
+            error_log("Exception in uploadImage: " . $e->getMessage());
             wp_send_json_error(['message' => $e->getMessage()]);
         }
     }
