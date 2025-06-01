@@ -9,7 +9,7 @@ defined('ABSPATH') || exit;
 
 class MetaBoxManager {
     public function init() {
-        add_action('add_meta_boxes', [$this, 'addComponentMetaBox']);
+        add_action('add_meta_boxes', [$this, 'addComponentMetaBox'], 10, 2); // Ensure 2 arguments are passed
         add_action('save_post', [$this, 'saveComponentData'], 10, 2);
         
         // Add media library support
@@ -22,12 +22,30 @@ class MetaBoxManager {
         }
     }
 
-    public function addComponentMetaBox() {
+    /**
+     * Conditionally adds the Custom Components meta box.
+     *
+     * @param string $post_type The post type.
+     * @param \WP_Post|null $post The post object. Made nullable for robustness.
+     */
+    public function addComponentMetaBox($post_type, $post = null) {
+        // Ensure $post object is valid before proceeding
+        if (!$post || !($post instanceof \WP_Post) || empty($post->ID)) {
+            return;
+        }
+
+        // Only add meta box if the post has components assigned to it
+        $current_components = get_post_meta($post->ID, '_ccc_components', true);
+        if (empty($current_components) || !is_array($current_components)) {
+            // If no components are assigned, do not add the meta box
+            return;
+        }
+
         add_meta_box(
             'ccc_component_selector',
             'Custom Components',
             [$this, 'renderComponentMetaBox'],
-            ['post', 'page'],
+            ['post', 'page'], // Apply to posts and pages
             'normal',
             'high'
         );
@@ -213,6 +231,17 @@ class MetaBoxManager {
             }
             
             /* Image field styles */
+            .ccc-image-field {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .ccc-image-field input[type="hidden"] {
+                display: none; /* Hide the actual input */
+            }
+            .ccc-image-preview-container {
+                flex-grow: 1;
+            }
             .ccc-image-preview {
                 max-width: 150px;
                 max-height: 150px;
@@ -236,6 +265,10 @@ class MetaBoxManager {
                 border-radius: 4px;
             }
             
+            .ccc-repeater-items {
+                min-height: 50px; /* Ensure visibility for drag/drop when empty */
+            }
+
             .ccc-repeater-item {
                 border: 1px solid #e0e0e0;
                 padding: 10px;
@@ -252,6 +285,7 @@ class MetaBoxManager {
                 margin-bottom: 10px;
                 padding-bottom: 5px;
                 border-bottom: 1px solid #eee;
+                cursor: move; /* Make header the drag handle */
             }
             
             .ccc-repeater-controls {
@@ -288,6 +322,58 @@ class MetaBoxManager {
                 cursor: move;
                 font-size: 11px;
             }
+            
+            .ccc-nested-field {
+                margin-bottom: 10px;
+            }
+            
+            .ccc-nested-field-label {
+                display: block;
+                font-weight: 500;
+                margin-bottom: 5px;
+            }
+            
+            .ccc-nested-field-input {
+                width: 100%;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+            
+            .ccc-nested-image-field {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .ccc-nested-image-field input[type="hidden"] {
+                display: none;
+            }
+            .ccc-nested-image-preview-container {
+                flex-grow: 1;
+            }
+            .ccc-nested-image-preview {
+                max-width: 100px;
+                max-height: 100px;
+                margin-top: 5px;
+                border: 1px solid #ddd;
+                padding: 2px;
+                background: #f9f9f9;
+            }
+            
+            .ccc-nested-image-preview img {
+                max-width: 100%;
+                height: auto;
+            }
+            
+            .ccc-add-nested-field {
+                margin-top: 10px;
+                display: flex;
+                gap: 5px;
+            }
+            
+            .ccc-add-nested-field select {
+                flex-grow: 1;
+            }
         </style>
 
         <script>
@@ -295,7 +381,7 @@ class MetaBoxManager {
                 var postId = $('#ccc-component-manager').data('post-id');
                 var componentsData = JSON.parse($('#ccc-components-data').val() || '[]');
 
-                // Initialize sortable
+                // Initialize sortable for main components
                 $('#ccc-components-list').sortable({
                     handle: '.ccc-component-header',
                     placeholder: 'ccc-sortable-placeholder',
@@ -453,7 +539,9 @@ class MetaBoxManager {
                     component.fields.forEach(function(field) {
                         // Use instance-specific field naming
                         var fieldName = `ccc_field_values[${component.instance_id}][${field.id}]`;
-                        
+                        var fieldConfig = field.config || {}; // Ensure config exists
+                        var imageReturnType = fieldConfig.return_type || 'url'; // Default to 'url'
+
                         fieldsHtml += `
                             <div class="ccc-field-input" data-field-type="${field.type}">
                                 <label for="ccc_field_${component.instance_id}_${field.id}">${field.label}</label>
@@ -475,7 +563,7 @@ class MetaBoxManager {
                         } else if (field.type === 'image') {
                             var imagePreview = field.value ? `
                                 <div class="ccc-image-preview">
-                                    <img src="${field.value}" alt="Selected image" />
+                                    <img src="${imageReturnType === 'url' ? field.value : (JSON.parse(field.value || '{}').url || '')}" alt="Selected image" />
                                 </div>
                             ` : '';
                             
@@ -484,17 +572,20 @@ class MetaBoxManager {
                                     <input type="hidden" 
                                            id="ccc_field_${component.instance_id}_${field.id}" 
                                            name="${fieldName}" 
-                                           value="${field.value || ''}" />
+                                           value="${field.value || ''}"
+                                           data-return-type="${imageReturnType}" />
                                     <button type="button" 
                                             class="button ccc-upload-image-btn" 
                                             data-field-id="${field.id}"
-                                            data-instance-id="${component.instance_id}">
+                                            data-instance-id="${component.instance_id}"
+                                            data-return-type="${imageReturnType}">
                                         Select Image
                                     </button>
                                     <button type="button" 
                                             class="button ccc-remove-image-btn" 
                                             data-field-id="${field.id}"
                                             data-instance-id="${component.instance_id}"
+                                            data-return-type="${imageReturnType}"
                                             style="display: ${field.value ? 'inline-block' : 'none'}">
                                         Remove Image
                                     </button>
@@ -505,29 +596,33 @@ class MetaBoxManager {
                             `;
                         } else if (field.type === 'repeater') {
                             var repeaterValue = field.value ? JSON.parse(field.value) : [];
-                            var maxSets = field.config && field.config.max_sets ? parseInt(field.config.max_sets) : 0;
+                            var maxSets = fieldConfig.max_sets ? parseInt(fieldConfig.max_sets) : 0;
+                            var nestedFieldDefinitions = fieldConfig.nested_fields ? fieldConfig.nested_fields : [];
                             
                             fieldsHtml += `
                                 <div class="ccc-repeater-container" 
                                      data-field-id="${field.id}"
                                      data-instance-id="${component.instance_id}"
-                                     data-max-sets="${maxSets}">
+                                     data-max-sets="${maxSets}"
+                                     data-nested-field-definitions='${JSON.stringify(nestedFieldDefinitions)}'>
                                     <div class="ccc-repeater-items">
                             `;
                             
                             if (repeaterValue.length > 0) {
                                 repeaterValue.forEach(function(item, itemIndex) {
-                                    fieldsHtml += renderRepeaterItem(component.instance_id, field.id, itemIndex, item);
+                                    fieldsHtml += renderRepeaterItem(component.instance_id, field.id, itemIndex, item, nestedFieldDefinitions);
                                 });
                             } else {
-                                // Add one empty item by default
-                                fieldsHtml += renderRepeaterItem(component.instance_id, field.id, 0, {});
+                                // Add one empty item by default if no max sets or max sets > 0
+                                if (maxSets === 0 || maxSets > 0) {
+                                    fieldsHtml += renderRepeaterItem(component.instance_id, field.id, 0, {}, nestedFieldDefinitions);
+                                }
                             }
                             
                             fieldsHtml += `
                                     </div>
                                     <button type="button" 
-                                            class="ccc-repeater-add"
+                                            class="ccc-repeater-add button"
                                             data-field-id="${field.id}"
                                             data-instance-id="${component.instance_id}">
                                         Add Item
@@ -546,88 +641,97 @@ class MetaBoxManager {
                     return fieldsHtml;
                 }
                 
-                // Render a repeater item
-                function renderRepeaterItem(instanceId, fieldId, itemIndex, itemData) {
+                // Render a repeater item with dynamically defined nested fields
+                function renderRepeaterItem(instanceId, fieldId, itemIndex, itemData, nestedFieldDefinitions) {
+                    var fieldsHtml = '';
+                    
+                    nestedFieldDefinitions.forEach(function(nestedField) {
+                        var nestedFieldValue = itemData[nestedField.name] || ''; // Get value by nested field name
+                        var nestedFieldConfig = nestedField.config || {}; // Ensure config exists
+                        var nestedImageReturnType = nestedFieldConfig.return_type || 'url'; // Default to 'url'
+
+                        fieldsHtml += `
+                            <div class="ccc-nested-field" data-nested-field-name="${nestedField.name}" data-nested-field-type="${nestedField.type}">
+                                <label class="ccc-nested-field-label">${nestedField.label}</label>
+                        `;
+                        
+                        if (nestedField.type === 'text') {
+                            fieldsHtml += `
+                                <input type="text" 
+                                       class="ccc-nested-field-input" 
+                                       data-nested-field-type="text"
+                                       value="${nestedFieldValue}" />
+                            `;
+                        } else if (nestedField.type === 'textarea') {
+                            fieldsHtml += `
+                                <textarea class="ccc-nested-field-input" 
+                                          data-nested-field-type="textarea"
+                                          rows="3">${nestedFieldValue}</textarea>
+                            `;
+                        } else if (nestedField.type === 'image') {
+                            var imageSrc = '';
+                            var displayRemoveBtn = 'none';
+                            if (nestedFieldValue) {
+                                if (nestedImageReturnType === 'url') {
+                                    imageSrc = nestedFieldValue;
+                                } else { // 'array'
+                                    try {
+                                        var imageData = JSON.parse(nestedFieldValue);
+                                        imageSrc = imageData.url || nestedFieldValue; // Handle both URL and full object
+                                    } catch (e) {
+                                        imageSrc = nestedFieldValue; // Fallback if not valid JSON
+                                    }
+                                }
+                                displayRemoveBtn = 'inline-block';
+                            }
+
+                            var imagePreview = imageSrc ? `
+                                <div class="ccc-nested-image-preview">
+                                    <img src="${imageSrc}" alt="Selected image" />
+                                </div>
+                            ` : '';
+                            
+                            fieldsHtml += `
+                                <div class="ccc-nested-image-field">
+                                    <input type="hidden" 
+                                           class="ccc-nested-field-input" 
+                                           data-nested-field-type="image"
+                                           value="${nestedFieldValue}"
+                                           data-return-type="${nestedImageReturnType}" />
+                                    <button type="button" class="button ccc-nested-upload-image" data-return-type="${nestedImageReturnType}">Select Image</button>
+                                    <button type="button" class="button ccc-nested-remove-image" data-return-type="${nestedImageReturnType}" style="display: ${displayRemoveBtn}">Remove</button>
+                                    <div class="ccc-nested-image-preview-container">
+                                        ${imagePreview}
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        fieldsHtml += `</div>`;
+                    });
+                    
                     return `
                         <div class="ccc-repeater-item" data-index="${itemIndex}">
                             <div class="ccc-repeater-item-header">
+                                <span class="ccc-drag-handle dashicons dashicons-menu"></span>
                                 <strong>Item #${itemIndex + 1}</strong>
                                 <div class="ccc-repeater-controls">
-                                    <button type="button" class="ccc-repeater-move">Move</button>
-                                    <button type="button" class="ccc-repeater-remove">Remove</button>
+                                    <button type="button" class="ccc-repeater-remove button">Remove</button>
                                 </div>
                             </div>
                             <div class="ccc-repeater-item-fields">
-                                <div class="ccc-field-input">
-                                    <label>Title</label>
-                                    <input type="text" 
-                                           class="ccc-repeater-field" 
-                                           data-field="title" 
-                                           value="${itemData.title || ''}" />
-                                </div>
-                                <div class="ccc-field-input">
-                                    <label>Content</label>
-                                    <textarea class="ccc-repeater-field" 
-                                              data-field="content" 
-                                              rows="3">${itemData.content || ''}</textarea>
-                                </div>
+                                ${fieldsHtml}
                             </div>
                         </div>
                     `;
                 }
                 
-                // Initialize media uploader for image fields
-                function initializeMediaUploaders(instanceId) {
-                    // Image upload button
-                    $(document).on('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`, function() {
-                        var $button = $(this);
-                        var fieldId = $button.data('field-id');
-                        var instanceId = $button.data('instance-id');
-                        var $input = $(`#ccc_field_${instanceId}_${fieldId}`);
-                        var $previewContainer = $(`#ccc_image_preview_${instanceId}_${fieldId}`);
-                        var $removeButton = $button.siblings('.ccc-remove-image-btn');
-                        
-                        var frame = wp.media({
-                            title: 'Select or Upload Image',
-                            button: {
-                                text: 'Use this image'
-                            },
-                            multiple: false
-                        });
-                        
-                        frame.on('select', function() {
-                            var attachment = frame.state().get('selection').first().toJSON();
-                            $input.val(attachment.url);
-                            $previewContainer.html(`
-                                <div class="ccc-image-preview">
-                                    <img src="${attachment.url}" alt="Selected image" />
-                                </div>
-                            `);
-                            $removeButton.show();
-                        });
-                        
-                        frame.open();
-                    });
-                    
-                    // Image remove button
-                    $(document).on('click', `.ccc-remove-image-btn[data-instance-id="${instanceId}"]`, function() {
-                        var $button = $(this);
-                        var fieldId = $button.data('field-id');
-                        var instanceId = $button.data('instance-id');
-                        var $input = $(`#ccc_field_${instanceId}_${fieldId}`);
-                        var $previewContainer = $(`#ccc_image_preview_${instanceId}_${fieldId}`);
-                        
-                        $input.val('');
-                        $previewContainer.empty();
-                        $button.hide();
-                    });
-                }
-                
-                // Initialize repeater fields
+                // Initialize repeater fields (including nested field logic)
                 function initializeRepeaterFields(instanceId) {
                     // Make repeater items sortable
                     $(`.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-repeater-items`).sortable({
-                        handle: '.ccc-repeater-move',
+                        handle: '.ccc-repeater-item-header', // Use header as handle
+                        placeholder: 'ccc-sortable-placeholder',
                         update: function(event, ui) {
                             var $container = $(this).closest('.ccc-repeater-container');
                             var fieldId = $container.data('field-id');
@@ -644,6 +748,7 @@ class MetaBoxManager {
                         var $items = $container.find('.ccc-repeater-items');
                         var maxSets = parseInt($container.data('max-sets')) || 0;
                         var currentCount = $items.children().length;
+                        var nestedFieldDefinitions = JSON.parse($container.attr('data-nested-field-definitions') || '[]');
                         
                         // Check if we've reached the maximum number of sets
                         if (maxSets > 0 && currentCount >= maxSets) {
@@ -652,8 +757,11 @@ class MetaBoxManager {
                         }
                         
                         var newIndex = currentCount;
-                        var newItem = $(renderRepeaterItem(instanceId, fieldId, newIndex, {}));
+                        var newItem = $(renderRepeaterItem(instanceId, fieldId, newIndex, {}, nestedFieldDefinitions));
                         $items.append(newItem);
+                        
+                        // Initialize media uploader for new nested image fields
+                        initializeNestedMediaUploaders(newItem);
                         
                         // Update the hidden input with JSON data
                         updateRepeaterValue(instanceId, fieldId);
@@ -667,33 +775,136 @@ class MetaBoxManager {
                         var instanceId = $container.data('instance-id');
                         var $items = $container.find('.ccc-repeater-items');
                         
-                        // Don't remove if it's the last item
-                        if ($items.children().length <= 1) {
-                            // Clear values instead
-                            $item.find('input, textarea').val('');
-                        } else {
+                        if (confirm('Are you sure you want to remove this item?')) {
                             $item.remove();
+                            
+                            // Update indices
+                            $items.children().each(function(idx) {
+                                $(this).attr('data-index', idx);
+                                $(this).find('.ccc-repeater-item-header strong').text(`Item #${idx + 1}`);
+                            });
+                            
+                            // Update the hidden input with JSON data
+                            updateRepeaterValue(instanceId, fieldId);
                         }
-                        
-                        // Update indices
-                        $items.children().each(function(idx) {
-                            $(this).attr('data-index', idx);
-                            $(this).find('.ccc-repeater-item-header strong').text(`Item #${idx + 1}`);
-                        });
-                        
-                        // Update the hidden input with JSON data
-                        updateRepeaterValue(instanceId, fieldId);
                     });
                     
-                    // Update repeater value when fields change
-                    $(document).on('change keyup', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-repeater-field`, function() {
-                        var $field = $(this);
-                        var $container = $field.closest('.ccc-repeater-container');
+                    // Update repeater value when nested fields change
+                    $(document).on('change keyup', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-nested-field-input`, function() {
+                        var $fieldInput = $(this);
+                        var $container = $fieldInput.closest('.ccc-repeater-container');
                         var fieldId = $container.data('field-id');
                         var instanceId = $container.data('instance-id');
                         
                         // Update the hidden input with JSON data
                         updateRepeaterValue(instanceId, fieldId);
+                    });
+
+                    // Initialize media uploaders for all existing nested image fields within this repeater
+                    $(`.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-nested-image-field`).each(function() {
+                        initializeNestedMediaUploaders($(this).closest('.ccc-repeater-item'));
+                    });
+                }
+
+                // Initialize media uploader for image fields (top level)
+                function initializeMediaUploaders(instanceId) {
+                    $(document).off('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`).on('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`, function(e) {
+                        e.preventDefault();
+                        var $button = $(this);
+                        var $input = $button.siblings('input[type="hidden"]');
+                        var $previewContainer = $button.siblings('.ccc-image-preview-container');
+                        var $removeButton = $button.siblings('.ccc-remove-image-btn');
+                        var returnType = $input.data('return-type') || 'url'; // Get return type from data attribute
+
+                        var frame = wp.media({
+                            title: 'Select Image',
+                            button: { text: 'Use this image' },
+                            multiple: false
+                        });
+
+                        frame.on('select', function() {
+                            var attachment = frame.state().get('selection').first().toJSON();
+                            
+                            if (returnType === 'url') {
+                                $input.val(attachment.url);
+                            } else { // 'array'
+                                $input.val(JSON.stringify({
+                                    id: attachment.id,
+                                    url: attachment.url,
+                                    alt: attachment.alt,
+                                    title: attachment.title
+                                }));
+                            }
+                            $previewContainer.html('<div class="ccc-image-preview"><img src="' + attachment.url + '" alt="Selected image" /></div>');
+                            $removeButton.show();
+                        });
+
+                        frame.open();
+                    });
+
+                    $(document).off('click', `.ccc-remove-image-btn[data-instance-id="${instanceId}"]`).on('click', `.ccc-remove-image-btn[data-instance-id="${instanceId}"]`, function(e) {
+                        e.preventDefault();
+                        var $button = $(this);
+                        var $input = $button.siblings('input[type="hidden"]');
+                        var $previewContainer = $button.siblings('.ccc-image-preview-container');
+                        
+                        $input.val('');
+                        $previewContainer.empty();
+                        $button.hide();
+                    });
+                }
+
+                // Initialize media uploader for nested image fields
+                function initializeNestedMediaUploaders($item) {
+                    $item.find('.ccc-nested-upload-image').off('click').on('click', function(e) {
+                        e.preventDefault();
+                        var $button = $(this);
+                        var $input = $button.siblings('input[type="hidden"]');
+                        var $previewContainer = $button.siblings('.ccc-nested-image-preview-container');
+                        var $removeButton = $button.siblings('.ccc-nested-remove-image');
+                        var returnType = $input.data('return-type') || 'url'; // Get return type from data attribute
+                        
+                        var frame = wp.media({
+                            title: 'Select Image',
+                            button: { text: 'Use this image' },
+                            multiple: false
+                        });
+                        
+                        frame.on('select', function() {
+                            var attachment = frame.state().get('selection').first().toJSON();
+                            
+                            if (returnType === 'url') {
+                                $input.val(attachment.url);
+                            } else { // 'array'
+                                $input.val(JSON.stringify({
+                                    id: attachment.id,
+                                    url: attachment.url,
+                                    alt: attachment.alt,
+                                    title: attachment.title
+                                }));
+                            }
+                            $previewContainer.html(`<div class="ccc-nested-image-preview"><img src="${attachment.url}" alt="${attachment.alt}" /></div>`);
+                            $removeButton.show();
+                            
+                            // Trigger change on the hidden input to update repeater value
+                            $input.trigger('change');
+                        });
+                        
+                        frame.open();
+                    });
+                    
+                    $item.find('.ccc-nested-remove-image').off('click').on('click', function(e) {
+                        e.preventDefault();
+                        var $button = $(this);
+                        var $input = $button.siblings('input[type="hidden"]');
+                        var $previewContainer = $button.siblings('.ccc-nested-image-preview-container');
+                        
+                        $input.val('');
+                        $previewContainer.empty();
+                        $button.hide();
+                        
+                        // Trigger change on the hidden input to update repeater value
+                        $input.trigger('change');
                     });
                 }
                 
@@ -701,17 +912,21 @@ class MetaBoxManager {
                 function updateRepeaterValue(instanceId, fieldId) {
                     var $container = $(`.ccc-repeater-container[data-instance-id="${instanceId}"][data-field-id="${fieldId}"]`);
                     var $input = $(`#ccc_field_${instanceId}_${fieldId}`);
-                    var $items = $container.find('.ccc-repeater-item');
+                    var $items = $container.find('.ccc-repeater-items');
                     var repeaterData = [];
+                    var nestedFieldDefinitions = JSON.parse($container.attr('data-nested-field-definitions') || '[]');
                     
-                    $items.each(function() {
+                    $items.children('.ccc-repeater-item').each(function() {
                         var $item = $(this);
                         var itemData = {};
                         
-                        $item.find('.ccc-repeater-field').each(function() {
-                            var $field = $(this);
-                            var fieldName = $field.data('field');
-                            itemData[fieldName] = $field.val();
+                        nestedFieldDefinitions.forEach(function(nestedField) {
+                            var $nestedInput = $item.find(`.ccc-nested-field[data-nested-field-name="${nestedField.name}"] .ccc-nested-field-input`);
+                            if ($nestedInput.length) {
+                                var fieldValue = $nestedInput.val();
+                                // For image fields, the value is already JSON stringified or URL based on return-type
+                                itemData[nestedField.name] = fieldValue;
+                            }
                         });
                         
                         repeaterData.push(itemData);
@@ -746,7 +961,15 @@ class MetaBoxManager {
         <?php
     }
 
-    private function renderComponentAccordion($comp, $index, $field_values) {
+    /**
+     * Renders a single component accordion for the meta box.
+     * Changed from private to protected to allow internal calls.
+     *
+     * @param array $comp Component data.
+     * @param int $index Current order index.
+     * @param array $field_values Existing field values for the post.
+     */
+    protected function renderComponentAccordion($comp, $index, $field_values) {
         $fields = Field::findByComponent($comp['id']);
         $instance_id = $comp['instance_id'] ?? ('legacy_' . $index);
         
@@ -797,30 +1020,44 @@ class MetaBoxManager {
                                 <textarea id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
                                           name="<?php echo esc_attr($field_name); ?>"
                                           rows="5"><?php echo esc_textarea($field_value); ?></textarea>
-                                          
-                            <?php elseif ($field->getType() === 'image') : ?>
+                                        
+                            <?php elseif ($field->getType() === 'image') : 
+                                $image_return_type = $field_config['return_type'] ?? 'url';
+                                $image_src = '';
+                                if ($field_value) {
+                                    if ($image_return_type === 'url') {
+                                        $image_src = $field_value;
+                                    } else { // 'array'
+                                        $decoded_value = json_decode($field_value, true);
+                                        $image_src = $decoded_value['url'] ?? '';
+                                    }
+                                }
+                            ?>
                                 <div class="ccc-image-field">
                                     <input type="hidden" 
                                            id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
                                            name="<?php echo esc_attr($field_name); ?>"
-                                           value="<?php echo esc_attr($field_value); ?>" />
+                                           value="<?php echo esc_attr($field_value); ?>"
+                                           data-return-type="<?php echo esc_attr($image_return_type); ?>" />
                                     <button type="button" 
                                             class="button ccc-upload-image-btn" 
                                             data-field-id="<?php echo esc_attr($field->getId()); ?>"
-                                            data-instance-id="<?php echo esc_attr($instance_id); ?>">
+                                            data-instance-id="<?php echo esc_attr($instance_id); ?>"
+                                            data-return-type="<?php echo esc_attr($image_return_type); ?>">
                                         Select Image
                                     </button>
                                     <button type="button" 
                                             class="button ccc-remove-image-btn" 
                                             data-field-id="<?php echo esc_attr($field->getId()); ?>"
                                             data-instance-id="<?php echo esc_attr($instance_id); ?>"
+                                            data-return-type="<?php echo esc_attr($image_return_type); ?>"
                                             style="display: <?php echo $field_value ? 'inline-block' : 'none'; ?>">
                                         Remove Image
                                     </button>
                                     <div class="ccc-image-preview-container" id="ccc_image_preview_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>">
-                                        <?php if ($field_value) : ?>
+                                        <?php if ($image_src) : ?>
                                             <div class="ccc-image-preview">
-                                                <img src="<?php echo esc_url($field_value); ?>" alt="Selected image" />
+                                                <img src="<?php echo esc_url($image_src); ?>" alt="Selected image" />
                                             </div>
                                         <?php endif; ?>
                                     </div>
@@ -830,63 +1067,26 @@ class MetaBoxManager {
                                 <?php 
                                 $repeater_value = $field_value ? json_decode($field_value, true) : [];
                                 $max_sets = isset($field_config['max_sets']) ? intval($field_config['max_sets']) : 0;
+                                $nested_field_definitions = isset($field_config['nested_fields']) ? $field_config['nested_fields'] : [];
                                 ?>
                                 <div class="ccc-repeater-container" 
                                      data-field-id="<?php echo esc_attr($field->getId()); ?>"
                                      data-instance-id="<?php echo esc_attr($instance_id); ?>"
-                                     data-max-sets="<?php echo esc_attr($max_sets); ?>">
+                                     data-max-sets="<?php echo esc_attr($max_sets); ?>"
+                                     data-nested-field-definitions='<?php echo esc_attr(json_encode($nested_field_definitions)); ?>'>
                                     <div class="ccc-repeater-items">
                                         <?php if (!empty($repeater_value)) : ?>
                                             <?php foreach ($repeater_value as $item_index => $item_data) : ?>
-                                                <div class="ccc-repeater-item" data-index="<?php echo esc_attr($item_index); ?>">
-                                                    <div class="ccc-repeater-item-header">
-                                                        <strong>Item #<?php echo esc_html($item_index + 1); ?></strong>
-                                                        <div class="ccc-repeater-controls">
-                                                            <button type="button" class="ccc-repeater-move">Move</button>
-                                                            <button type="button" class="ccc-repeater-remove">Remove</button>
-                                                        </div>
-                                                    </div>
-                                                    <div class="ccc-repeater-item-fields">
-                                                        <div class="ccc-field-input">
-                                                            <label>Title</label>
-                                                            <input type="text" 
-                                                                   class="ccc-repeater-field" 
-                                                                   data-field="title" 
-                                                                   value="<?php echo esc_attr($item_data['title'] ?? ''); ?>" />
-                                                        </div>
-                                                        <div class="ccc-field-input">
-                                                            <label>Content</label>
-                                                            <textarea class="ccc-repeater-field" 
-                                                                      data-field="content" 
-                                                                      rows="3"><?php echo esc_textarea($item_data['content'] ?? ''); ?></textarea>
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                                <?php $this->renderRepeaterItem($instance_id, $field->getId(), $item_index, $item_data, $nested_field_definitions); ?>
                                             <?php endforeach; ?>
                                         <?php else : ?>
-                                            <div class="ccc-repeater-item" data-index="0">
-                                                <div class="ccc-repeater-item-header">
-                                                    <strong>Item #1</strong>
-                                                    <div class="ccc-repeater-controls">
-                                                        <button type="button" class="ccc-repeater-move">Move</button>
-                                                        <button type="button" class="ccc-repeater-remove">Remove</button>
-                                                    </div>
-                                                </div>
-                                                <div class="ccc-repeater-item-fields">
-                                                    <div class="ccc-field-input">
-                                                        <label>Title</label>
-                                                        <input type="text" class="ccc-repeater-field" data-field="title" value="" />
-                                                    </div>
-                                                    <div class="ccc-field-input">
-                                                        <label>Content</label>
-                                                        <textarea class="ccc-repeater-field" data-field="content" rows="3"></textarea>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            <?php if ($max_sets === 0 || $max_sets > 0) : // Render at least one item if not explicitly forbidden ?>
+                                                <?php $this->renderRepeaterItem($instance_id, $field->getId(), 0, [], $nested_field_definitions); ?>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </div>
                                     <button type="button" 
-                                            class="ccc-repeater-add"
+                                            class="ccc-repeater-add button"
                                             data-field-id="<?php echo esc_attr($field->getId()); ?>"
                                             data-instance-id="<?php echo esc_attr($instance_id); ?>">
                                         Add Item
@@ -902,6 +1102,86 @@ class MetaBoxManager {
                 <?php else : ?>
                     <p>No fields defined for this component.</p>
                 <?php endif; ?>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renders a single repeater item with its nested fields.
+     * Changed from private to protected to allow internal calls.
+     *
+     * @param string $instance_id The unique instance ID of the parent component.
+     * @param int $field_id The ID of the repeater field.
+     * @param int $item_index The index of the current repeater item.
+     * @param array $item_data The data for the current repeater item.
+     * @param array $nested_field_definitions Array of nested field definitions.
+     */
+    protected function renderRepeaterItem($instance_id, $field_id, $item_index, $item_data, $nested_field_definitions) {
+        ?>
+        <div class="ccc-repeater-item" data-index="<?php echo esc_attr($item_index); ?>">
+            <div class="ccc-repeater-item-header">
+                <span class="ccc-drag-handle dashicons dashicons-menu"></span>
+                <strong>Item #<?php echo esc_html($item_index + 1); ?></strong>
+                <div class="ccc-repeater-controls">
+                    <button type="button" class="ccc-repeater-remove button">Remove</button>
+                </div>
+            </div>
+            <div class="ccc-repeater-item-fields">
+                <?php foreach ($nested_field_definitions as $nested_field) : 
+                    $nested_field_value = $item_data[$nested_field['name']] ?? '';
+                    $nested_field_config = $nested_field['config'] ?? []; // Get nested field config
+                ?>
+                    <div class="ccc-nested-field" 
+                         data-nested-field-name="<?php echo esc_attr($nested_field['name']); ?>" 
+                         data-nested-field-type="<?php echo esc_attr($nested_field['type']); ?>">
+                        <label class="ccc-nested-field-label"><?php echo esc_html($nested_field['label']); ?></label>
+                        <?php if ($nested_field['type'] === 'text') : ?>
+                            <input type="text" 
+                                   class="ccc-nested-field-input" 
+                                   data-nested-field-type="text"
+                                   value="<?php echo esc_attr($nested_field_value); ?>" />
+                        <?php elseif ($nested_field['type'] === 'textarea') : ?>
+                            <textarea class="ccc-nested-field-input" 
+                                      data-nested-field-type="textarea"
+                                      rows="3"><?php echo esc_textarea($nested_field_value); ?></textarea>
+                        <?php elseif ($nested_field['type'] === 'image') : 
+                            $nested_image_return_type = $nested_field_config['return_type'] ?? 'url';
+                            $image_src = '';
+                            $display_remove_btn = 'none';
+                            if ($nested_field_value) {
+                                if ($nested_image_return_type === 'url') {
+                                    $image_src = $nested_field_value;
+                                } else { // 'array'
+                                    try {
+                                        $imageData = json_decode($nested_field_value, true);
+                                        $image_src = $imageData['url'] ?? ''; // Handle both URL and full object
+                                    } catch (e) {
+                                        $image_src = $nested_field_value; // Fallback if not valid JSON
+                                    }
+                                }
+                                $display_remove_btn = 'inline-block';
+                            }
+                        ?>
+                            <div class="ccc-nested-image-field">
+                                <input type="hidden" 
+                                       class="ccc-nested-field-input" 
+                                       data-nested-field-type="image"
+                                       value="<?php echo esc_attr($nested_field_value); ?>"
+                                       data-return-type="<?php echo esc_attr($nested_image_return_type); ?>" />
+                                <button type="button" class="button ccc-nested-upload-image" data-return-type="<?php echo esc_attr($nested_image_return_type); ?>">Select Image</button>
+                                <button type="button" class="button ccc-nested-remove-image" data-return-type="<?php echo esc_attr($nested_image_return_type); ?>" style="display: <?php echo $display_remove_btn; ?>">Remove</button>
+                                <div class="ccc-nested-image-preview-container">
+                                    <?php if ($image_src) : ?>
+                                        <div class="ccc-nested-image-preview">
+                                            <img src="<?php echo esc_url($image_src); ?>" alt="Selected image" />
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
         <?php
@@ -959,16 +1239,52 @@ class MetaBoxManager {
             
             foreach ($instance_fields as $field_id => $value) {
                 $field_id = intval($field_id);
-                $value = wp_kses_post($value);
                 
-                if ($value !== '') {
+                $field_obj = Field::find($field_id);
+                if (!$field_obj) {
+                    error_log("CCC: Field object not found for field_id: $field_id during save.");
+                    continue;
+                }
+
+                $value_to_save = wp_unslash($value); // Start with unslashed value
+
+                if ($field_obj->getType() === 'repeater') {
+                    // Value is already JSON from JS, no need to wp_kses_post directly on the whole string
+                    // We should ensure it's valid JSON and then sanitize its contents if needed,
+                    // but for now, trust the JS output and store as is.
+                    $decoded_value = json_decode($value_to_save, true);
+                    // Recursively sanitize contents of repeater fields
+                    $sanitized_decoded_value = $this->sanitizeRepeaterData($decoded_value, $field_obj->getConfig());
+                    $value_to_save = json_encode($sanitized_decoded_value); // Re-encode to ensure valid JSON
+                } elseif ($field_obj->getType() === 'image') {
+                    $field_config = json_decode($field_obj->getConfig(), true);
+                    $return_type = $field_config['return_type'] ?? 'url';
+
+                    if ($return_type === 'url') {
+                        // If return type is URL, ensure we save only the URL
+                        $decoded_value = json_decode($value_to_save, true);
+                        if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                            $value_to_save = esc_url_raw($decoded_value['url']);
+                        } else {
+                            $value_to_save = esc_url_raw($value_to_save); // Fallback if not JSON or already URL
+                        }
+                    } else { // 'array'
+                        // If return type is array, save the full JSON string
+                        $decoded_value = json_decode($value_to_save, true);
+                        $value_to_save = json_encode($decoded_value); // Re-encode to ensure valid JSON
+                    }
+                } else {
+                    $value_to_save = wp_kses_post($value_to_save);
+                }
+                
+                if ($value_to_save !== '' && $value_to_save !== '[]') { // Don't save empty strings or empty JSON arrays
                     $result = $wpdb->insert(
                         $field_values_table,
                         [
                             'post_id' => $post_id,
                             'field_id' => $field_id,
                             'instance_id' => $instance_id,
-                            'value' => $value,
+                            'value' => $value_to_save,
                             'created_at' => current_time('mysql')
                         ],
                         ['%d', '%d', '%s', '%s', '%s']
@@ -977,11 +1293,57 @@ class MetaBoxManager {
                     if ($result === false) {
                         error_log("CCC: Failed to save field value for field_id: $field_id, instance: $instance_id, post_id: $post_id, error: " . $wpdb->last_error);
                     } else {
-                        error_log("CCC: Successfully saved field value for field_id: $field_id, instance: $instance_id, post_id: $post_id, value: $value");
+                        error_log("CCC: Successfully saved field value for field_id: $field_id, instance: $instance_id, post_id: $post_id, value: " . substr($value_to_save, 0, 100) . "...");
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Recursively sanitizes repeater field data.
+     *
+     * @param array $data The repeater data array.
+     * @param string $config_json The JSON config string for the repeater field.
+     * @return array Sanitized data.
+     */
+    private function sanitizeRepeaterData($data, $config_json) {
+        $sanitized_data = [];
+        $config = json_decode($config_json, true);
+        $nested_field_definitions = $config['nested_fields'] ?? [];
+
+        foreach ($data as $item) {
+            $sanitized_item = [];
+            foreach ($nested_field_definitions as $nested_field_def) {
+                $field_name = $nested_field_def['name'];
+                $field_type = $nested_field_def['type'];
+                $nested_field_config = $nested_field_def['config'] ?? [];
+
+                if (isset($item[$field_name])) {
+                    $value = $item[$field_name];
+                    if ($field_type === 'image') {
+                        $return_type = $nested_field_config['return_type'] ?? 'url';
+                        if ($return_type === 'url') {
+                            // If return type is URL, ensure we save only the URL
+                            $decoded_value = json_decode($value, true);
+                            if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                            } else {
+                                $sanitized_item[$field_name] = esc_url_raw($value); // Fallback if not JSON or already URL
+                            }
+                        } else { // 'array'
+                            // If return type is array, save the full JSON string
+                            $decoded_value = json_decode($value, true);
+                            $sanitized_item[$field_name] = json_encode($decoded_value); // Re-encode to ensure valid JSON
+                        }
+                    } else {
+                        $sanitized_item[$field_name] = wp_kses_post($value);
+                    }
+                }
+            }
+            $sanitized_data[] = $sanitized_item;
+        }
+        return $sanitized_data;
     }
 
     private function getFieldValues($components, $post_id) {

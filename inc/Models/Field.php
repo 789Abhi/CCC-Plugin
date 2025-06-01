@@ -3,93 +3,109 @@ namespace CCC\Models;
 
 defined('ABSPATH') || exit;
 
+/**
+ * Represents a Field in the Custom Craft Component system.
+ * Handles database operations for fields.
+ */
 class Field {
-    private $id;
-    private $component_id;
-    private $label;
-    private $name;
-    private $type;
-    private $config;
-    private $field_order;
-    private $created_at;
+    protected $id;
+    protected $component_id;
+    protected $label;
+    protected $name;
+    protected $type;
+    protected $config; // JSON string for field-specific configuration
+    protected $field_order;
+    protected $required;
+    protected $placeholder; // Added placeholder property
+    protected $created_at;
 
     public function __construct($data = []) {
-        $this->id = $data['id'] ?? null;
-        $this->component_id = $data['component_id'] ?? null;
-        $this->label = $data['label'] ?? '';
-        $this->name = $data['name'] ?? '';
-        $this->type = $data['type'] ?? '';
-        $this->config = $data['config'] ?? '{}';
-        $this->field_order = $data['field_order'] ?? 0;
-        $this->created_at = $data['created_at'] ?? null;
+        foreach ($data as $key => $value) {
+            if (property_exists($this, $key)) {
+                $this->$key = $value;
+            }
+        }
     }
 
+    /**
+     * Find a field by its ID.
+     *
+     * @param int $id The ID of the field.
+     * @return Field|null The Field object if found, otherwise null.
+     */
+    public static function find($id) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'cc_fields';
+        $result = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_name WHERE id = %d", $id), ARRAY_A);
+        if ($result) {
+            return new self($result);
+        }
+        return null;
+    }
+
+    /**
+     * Find all fields associated with a specific component.
+     *
+     * @param int $component_id The ID of the component.
+     * @return Field[] An array of Field objects.
+     */
+    public static function findByComponent($component_id) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'cc_fields';
+        $results = $wpdb->get_results($wpdb->prepare("SELECT * FROM $table_name WHERE component_id = %d ORDER BY field_order ASC, created_at ASC", $component_id), ARRAY_A);
+        return array_map(function($data) {
+            return new self($data);
+        }, $results);
+    }
+
+    /**
+     * Save the field to the database (insert or update).
+     *
+     * @return bool True on success, false on failure.
+     */
     public function save() {
         global $wpdb;
-        $table = $wpdb->prefix . 'cc_fields';
-
+        $table_name = $wpdb->prefix . 'cc_fields';
         $data = [
             'component_id' => $this->component_id,
             'label' => $this->label,
             'name' => $this->name,
             'type' => $this->type,
             'config' => $this->config,
-            'field_order' => $this->field_order
+            'field_order' => $this->field_order,
+            'required' => $this->required,
+            'placeholder' => $this->placeholder, // Include placeholder in save data
         ];
+        $format = ['%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s'];
 
         if ($this->id) {
-            $result = $wpdb->update($table, $data, ['id' => $this->id]);
+            // Update existing record
+            $result = $wpdb->update($table_name, $data, ['id' => $this->id], $format, ['%d']);
+            return $result !== false;
         } else {
+            // Insert new record
             $data['created_at'] = current_time('mysql');
-            $result = $wpdb->insert($table, $data);
-            if ($result !== false) {
+            $format[] = '%s';
+            $result = $wpdb->insert($table_name, $data, $format);
+            if ($result) {
                 $this->id = $wpdb->insert_id;
             }
+            return $result !== false;
         }
-
-        return $result !== false;
     }
 
+    /**
+     * Delete the field from the database.
+     * Also deletes associated field values.
+     *
+     * @return bool True on success, false on failure.
+     */
     public function delete() {
-        if (!$this->id) {
-            return false;
-        }
-
         global $wpdb;
-        return $wpdb->delete(
-            $wpdb->prefix . 'cc_fields',
-            ['id' => $this->id],
-            ['%d']
-        ) !== false;
-    }
-
-    public static function findByComponent($component_id) {
-        global $wpdb;
-        $table = $wpdb->prefix . 'cc_fields';
-        
-        $results = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM $table WHERE component_id = %d ORDER BY field_order, created_at",
-                $component_id
-            ),
-            ARRAY_A
-        );
-
-        return array_map(function($data) {
-            return new self($data);
-        }, $results);
-    }
-
-    public function getValue($post_id) {
-        global $wpdb;
-        $table = $wpdb->prefix . 'cc_field_values';
-        
-        return $wpdb->get_var(
-            $wpdb->prepare(
-                "SELECT value FROM $table WHERE field_id = %d AND post_id = %d",
-                $this->id, $post_id
-            )
-        );
+        $table_name = $wpdb->prefix . 'cc_fields';
+        // Delete associated field values first
+        $wpdb->delete($wpdb->prefix . 'cc_field_values', ['field_id' => $this->id], ['%d']);
+        return $wpdb->delete($table_name, ['id' => $this->id], ['%d']);
     }
 
     // Getters
@@ -100,13 +116,14 @@ class Field {
     public function getType() { return $this->type; }
     public function getConfig() { return $this->config; }
     public function getFieldOrder() { return $this->field_order; }
+    public function getRequired() { return $this->required; }
+    public function getPlaceholder() { return $this->placeholder; }
     public function getCreatedAt() { return $this->created_at; }
 
     // Setters
-    public function setComponentId($id) { $this->component_id = $id; }
     public function setLabel($label) { $this->label = $label; }
-    public function setName($name) { $this->name = $name; }
-    public function setType($type) { $this->type = $type; }
+    public function setRequired($required) { $this->required = $required; }
+    public function setPlaceholder($placeholder) { $this->placeholder = $placeholder; }
     public function setConfig($config) { $this->config = $config; }
-    public function setFieldOrder($order) { $this->field_order = $order; }
+    public function setType($type) { $this->type = $type; } // Added setType method
 }

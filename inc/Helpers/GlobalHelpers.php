@@ -28,80 +28,60 @@ if (!function_exists('get_ccc_field')) {
         $fields_table = $wpdb->prefix . 'cc_fields';
         $values_table = $wpdb->prefix . 'cc_field_values';
         
-        // Check if this is a repeater field
-        $field_type_query = $wpdb->prepare(
-            "SELECT type, config FROM $fields_table WHERE name = %s",
+        // Get field type and config from the fields table
+        $field_info_query = $wpdb->prepare(
+            "SELECT id, type, config FROM $fields_table WHERE name = %s",
             $field_name
         );
-        
-        $field_info = $wpdb->get_row($field_type_query);
-        
-        if ($field_info && $field_info->type === 'repeater') {
-            // For repeater fields, return the parsed JSON array
-            $query = "
-                SELECT fv.value 
-                FROM $values_table fv
-                INNER JOIN $fields_table f ON f.id = fv.field_id
-                WHERE fv.post_id = %d 
-                AND f.name = %s
-            ";
-            
-            $params = [$post_id, $field_name];
-            
-            // If component_id is specified, add it to the query
-            if ($component_id) {
-                $query .= " AND f.component_id = %d";
-                $params[] = $component_id;
-            }
-            
-            // If instance_id is specified, add it to the query
-            if ($instance_id) {
-                $query .= " AND fv.instance_id = %s";
-                $params[] = $instance_id;
-            }
-            
-            $query .= " ORDER BY fv.id DESC LIMIT 1";
-            
-            $value = $wpdb->get_var($wpdb->prepare($query, $params));
-            
-            // Parse JSON for repeater fields
-            if ($value) {
-                return json_decode($value, true);
-            }
-            
-            return [];
-        } else {
-            // For regular fields, return the value as string
-            $query = "
-                SELECT fv.value 
-                FROM $values_table fv
-                INNER JOIN $fields_table f ON f.id = fv.field_id
-                WHERE fv.post_id = %d 
-                AND f.name = %s
-            ";
-            
-            $params = [$post_id, $field_name];
-            
-            // If component_id is specified, add it to the query
-            if ($component_id) {
-                $query .= " AND f.component_id = %d";
-                $params[] = $component_id;
-            }
-            
-            // If instance_id is specified, add it to the query
-            if ($instance_id) {
-                $query .= " AND fv.instance_id = %s";
-                $params[] = $instance_id;
-            }
-            
-            $query .= " ORDER BY fv.id DESC LIMIT 1";
-            
-            $value = $wpdb->get_var($wpdb->prepare($query, $params));
-            
-            error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
-            
-            return $value ?: '';
+        $field_info = $wpdb->get_row($field_info_query);
+
+        if (!$field_info) {
+            error_log("CCC: Field '$field_name' not found in database.");
+            return '';
         }
+
+        $field_db_id = $field_info->id;
+        $field_type = $field_info->type;
+        $field_config = json_decode($field_info->config, true); // Decode config here
+
+        // Base query to get the field value
+        $query = "
+            SELECT fv.value 
+            FROM $values_table fv
+            WHERE fv.post_id = %d 
+            AND fv.field_id = %d
+        ";
+        
+        $params = [$post_id, $field_db_id];
+        
+        // If instance_id is specified, add it to the query
+        if ($instance_id) {
+            $query .= " AND fv.instance_id = %s";
+            $params[] = $instance_id;
+        }
+        
+        $query .= " ORDER BY fv.id DESC LIMIT 1"; // Get the latest value
+
+        $value = $wpdb->get_var($wpdb->prepare($query, $params));
+        
+        // Process value based on field type
+        if ($field_type === 'repeater') {
+            return json_decode($value, true) ?: [];
+        } elseif ($field_type === 'image') {
+            $return_type = $field_config['return_type'] ?? 'url';
+            $decoded_value = json_decode($value, true);
+
+            if ($return_type === 'array' && is_array($decoded_value)) {
+                return $decoded_value;
+            } elseif ($return_type === 'url' && is_array($decoded_value) && isset($decoded_value['url'])) {
+                return $decoded_value['url'];
+            }
+            return $value ?: ''; // Fallback to raw URL if not an array or URL type
+        }
+        
+        error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
+        
+        return $value ?: '';
     }
 }
 
@@ -148,6 +128,14 @@ if (!function_exists('get_ccc_component_fields')) {
             // For repeater fields, parse the JSON
             if ($result['type'] === 'repeater' && !empty($result['value'])) {
                 $fields[$result['name']] = json_decode($result['value'], true);
+            } else if ($result['type'] === 'image' && !empty($result['value'])) {
+                // For image fields, if return_type is 'array', decode JSON
+                $config = json_decode($result['config'], true);
+                if (isset($config['return_type']) && $config['return_type'] === 'array') {
+                    $fields[$result['name']] = json_decode($result['value'], true);
+                } else {
+                    $fields[$result['name']] = $result['value'];
+                }
             } else {
                 $fields[$result['name']] = $result['value'];
             }
