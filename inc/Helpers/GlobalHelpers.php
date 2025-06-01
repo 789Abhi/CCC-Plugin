@@ -86,6 +86,52 @@ if (!function_exists('get_ccc_field')) {
 }
 
 if (!function_exists('get_ccc_component_fields')) {
+    /**
+     * Recursively processes field values, especially for nested repeaters.
+     *
+     * @param string $value The raw field value from the database.
+     * @param string $field_type The type of the field.
+     * @param array $field_config The configuration array for the field.
+     * @return mixed Processed value.
+     */
+    function _ccc_process_field_value_recursive($value, $field_type, $field_config) {
+        if ($field_type === 'repeater') {
+            $decoded_value = json_decode($value, true) ?: [];
+            $processed_items = [];
+            $nested_field_definitions = $field_config['nested_fields'] ?? [];
+
+            foreach ($decoded_value as $item) {
+                $processed_item = [];
+                foreach ($nested_field_definitions as $nested_field_def) {
+                    $nested_field_name = $nested_field_def['name'];
+                    $nested_field_type = $nested_field_def['type'];
+                    $nested_field_config = $nested_field_def['config'] ?? [];
+
+                    if (isset($item[$nested_field_name])) {
+                        $processed_item[$nested_field_name] = _ccc_process_field_value_recursive(
+                            $item[$nested_field_name],
+                            $nested_field_type,
+                            $nested_field_config
+                        );
+                    }
+                }
+                $processed_items[] = $processed_item;
+            }
+            return $processed_items;
+        } elseif ($field_type === 'image') {
+            $return_type = $field_config['return_type'] ?? 'url';
+            $decoded_value = json_decode($value, true);
+
+            if ($return_type === 'array' && is_array($decoded_value)) {
+                return $decoded_value;
+            } elseif ($return_type === 'url' && is_array($decoded_value) && isset($decoded_value['url'])) {
+                return $decoded_value['url'];
+            }
+            return $value ?: '';
+        }
+        return $value ?: '';
+    }
+
     function get_ccc_component_fields($component_id, $post_id = null, $instance_id = null) {
         global $wpdb, $ccc_current_post_id, $ccc_current_instance_id;
         
@@ -125,20 +171,12 @@ if (!function_exists('get_ccc_component_fields')) {
         
         $fields = [];
         foreach ($results as $result) {
-            // For repeater fields, parse the JSON
-            if ($result['type'] === 'repeater' && !empty($result['value'])) {
-                $fields[$result['name']] = json_decode($result['value'], true);
-            } else if ($result['type'] === 'image' && !empty($result['value'])) {
-                // For image fields, if return_type is 'array', decode JSON
-                $config = json_decode($result['config'], true);
-                if (isset($config['return_type']) && $config['return_type'] === 'array') {
-                    $fields[$result['name']] = json_decode($result['value'], true);
-                } else {
-                    $fields[$result['name']] = $result['value'];
-                }
-            } else {
-                $fields[$result['name']] = $result['value'];
-            }
+            $field_config = json_decode($result['config'], true) ?: [];
+            $fields[$result['name']] = _ccc_process_field_value_recursive(
+                $result['value'],
+                $result['type'],
+                $field_config
+            );
         }
         
         error_log("CCC: get_ccc_component_fields($component_id, $post_id, '$instance_id') returned " . count($fields) . " fields: " . implode(', ', array_keys($fields)));

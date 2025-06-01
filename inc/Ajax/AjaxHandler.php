@@ -71,6 +71,38 @@ class AjaxHandler {
         }
     }
 
+    /**
+     * Recursively sanitizes nested field definitions.
+     *
+     * @param array $nested_fields The array of nested field definitions.
+     * @return array The sanitized nested field definitions.
+     */
+    private function sanitizeNestedFieldDefinitions(array $nested_fields): array {
+        $sanitized_fields = [];
+        foreach ($nested_fields as $nf) {
+            $sanitized_nf = [
+                'label' => sanitize_text_field($nf['label'] ?? ''),
+                'name' => sanitize_title($nf['name'] ?? ''),
+                'type' => sanitize_text_field($nf['type'] ?? ''),
+            ];
+
+            // If it's a repeater, recursively sanitize its config
+            if ($sanitized_nf['type'] === 'repeater' && isset($nf['config'])) {
+                $config = $nf['config'];
+                $sanitized_config = [
+                    'max_sets' => intval($config['max_sets'] ?? 0),
+                    'nested_fields' => $this->sanitizeNestedFieldDefinitions($config['nested_fields'] ?? [])
+                ];
+                $sanitized_nf['config'] = $sanitized_config;
+            } elseif ($sanitized_nf['type'] === 'image' && isset($nf['config']['return_type'])) {
+                $sanitized_nf['config'] = ['return_type' => sanitize_text_field($nf['config']['return_type'])];
+            }
+            
+            $sanitized_fields[] = $sanitized_nf;
+        }
+        return $sanitized_fields;
+    }
+
     public function addFieldCallback() {
         try {
             check_ajax_referer('ccc_nonce', 'nonce');
@@ -94,15 +126,8 @@ class AjaxHandler {
                 $max_sets = intval($_POST['max_sets'] ?? 0);
                 $nested_field_definitions = json_decode(wp_unslash($_POST['nested_field_definitions'] ?? '[]'), true);
                 
-                // Sanitize nested field definitions
-                $sanitized_nested_fields = [];
-                foreach ($nested_field_definitions as $nf) {
-                    $sanitized_nested_fields[] = [
-                        'label' => sanitize_text_field($nf['label'] ?? ''),
-                        'name' => sanitize_title($nf['name'] ?? ''),
-                        'type' => sanitize_text_field($nf['type'] ?? ''),
-                    ];
-                }
+                // Sanitize nested field definitions recursively
+                $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_field_definitions);
 
                 $config = [
                     'max_sets' => $max_sets,
@@ -173,15 +198,8 @@ class AjaxHandler {
                 $max_sets = intval($_POST['max_sets'] ?? 0);
                 $nested_field_definitions = json_decode(wp_unslash($_POST['nested_field_definitions'] ?? '[]'), true);
                 
-                // Sanitize nested field definitions
-                $sanitized_nested_fields = [];
-                foreach ($nested_field_definitions as $nf) {
-                    $sanitized_nested_fields[] = [
-                        'label' => sanitize_text_field($nf['label'] ?? ''),
-                        'name' => sanitize_title($nf['name'] ?? ''),
-                        'type' => sanitize_text_field($nf['type'] ?? ''),
-                    ];
-                }
+                // Sanitize nested field definitions recursively
+                $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_field_definitions);
 
                 $config['max_sets'] = $max_sets;
                 $config['nested_fields'] = $sanitized_nested_fields;
