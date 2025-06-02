@@ -24,12 +24,12 @@ class AjaxHandler {
         add_action('wp_ajax_ccc_get_component_fields', [$this, 'getComponentFields']);
         add_action('wp_ajax_ccc_add_field', [$this, 'addFieldCallback']);
         add_action('wp_ajax_ccc_update_field', [$this, 'updateFieldCallback']);
-        add_action('wp_ajax_ccc_get_posts', [$this, 'getPosts']); // This is likely unused now, but kept for safety
+        add_action('wp_ajax_ccc_get_posts', [$this, 'getPosts']);
         add_action('wp_ajax_ccc_get_posts_with_components', [$this, 'getPostsWithComponents']);
         add_action('wp_ajax_ccc_save_component_assignments', [$this, 'saveComponentAssignments']);
         add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
         add_action('wp_ajax_ccc_delete_field', [$this, 'deleteField']);
-        add_action('wp_ajax_ccc_save_assignments', [$this, 'saveAssignments']); // This is likely unused now, but kept for safety
+        add_action('wp_ajax_ccc_save_assignments', [$this, 'saveAssignments']);
         add_action('wp_ajax_ccc_save_field_values', [$this, 'saveFieldValues']);
         add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
     }
@@ -58,10 +58,29 @@ class AjaxHandler {
     public function getComponents() {
         try {
             check_ajax_referer('ccc_nonce', 'nonce');
-
-            // No longer need post_id here as this is for the main component list
-            // $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
-            $components = $this->component_service->getComponentsWithFields(); // Fetch all components with their fields
+            
+            // Use the corrected ComponentService method
+            $components = $this->component_service->getComponentsWithFields();
+            
+            // Enhanced debugging
+            error_log("CCC AjaxHandler: getComponents - Fetched " . count($components) . " components");
+            foreach ($components as $index => $comp) {
+                error_log("  Component {$index}: {$comp['name']} (ID: {$comp['id']}) with " . count($comp['fields']) . " fields");
+                foreach ($comp['fields'] as $field_index => $field) {
+                    $config_info = is_array($field['config']) ? 'ARRAY' : (is_string($field['config']) ? 'STRING' : 'OTHER');
+                    error_log("    Field {$field_index}: {$field['name']} (Type: {$field['type']}, Config: {$config_info})");
+                    
+                    if ($field['type'] === 'repeater' && is_array($field['config'])) {
+                        $nested_count = isset($field['config']['nested_fields']) ? count($field['config']['nested_fields']) : 0;
+                        error_log("      Repeater has {$nested_count} nested fields");
+                        if ($nested_count > 0) {
+                            foreach ($field['config']['nested_fields'] as $nf_index => $nested_field) {
+                                error_log("        Nested field {$nf_index}: {$nested_field['name']} ({$nested_field['type']})");
+                            }
+                        }
+                    }
+                }
+            }
 
             wp_send_json_success(['components' => $components]);
 
@@ -73,9 +92,6 @@ class AjaxHandler {
 
     /**
      * Recursively sanitizes nested field definitions.
-     *
-     * @param array $nested_fields The array of nested field definitions.
-     * @return array The sanitized nested field definitions.
      */
     private function sanitizeNestedFieldDefinitions(array $nested_fields): array {
         $sanitized_fields = [];
@@ -126,6 +142,8 @@ class AjaxHandler {
                 $max_sets = intval($_POST['max_sets'] ?? 0);
                 $nested_field_definitions = json_decode(wp_unslash($_POST['nested_field_definitions'] ?? '[]'), true);
                 
+                error_log("CCC AjaxHandler: Adding repeater field with " . count($nested_field_definitions) . " nested fields");
+                
                 // Sanitize nested field definitions recursively
                 $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_field_definitions);
 
@@ -133,6 +151,8 @@ class AjaxHandler {
                     'max_sets' => $max_sets,
                     'nested_fields' => $sanitized_nested_fields
                 ];
+                
+                error_log("CCC AjaxHandler: Repeater config: " . json_encode($config));
             } elseif ($type === 'image') {
                 $return_type = sanitize_text_field($_POST['return_type'] ?? 'url');
                 $config = [
@@ -153,6 +173,7 @@ class AjaxHandler {
             ]);
 
             if ($field->save()) {
+                error_log("CCC AjaxHandler: Successfully saved field {$name} with config: " . json_encode($config));
                 wp_send_json_success(['message' => 'Field added successfully.']);
             } else {
                 wp_send_json_error(['message' => 'Failed to save field.']);
@@ -170,8 +191,8 @@ class AjaxHandler {
 
             $field_id = intval($_POST['field_id'] ?? 0);
             $label = sanitize_text_field($_POST['label'] ?? '');
-            $name = sanitize_text_field($_POST['name'] ?? ''); // Name cannot be changed, but we receive it
-            $type = sanitize_text_field($_POST['type'] ?? ''); // Type can now be changed
+            $name = sanitize_text_field($_POST['name'] ?? '');
+            $type = sanitize_text_field($_POST['type'] ?? '');
             $required = isset($_POST['required']) ? (bool) $_POST['required'] : false;
             $placeholder = sanitize_text_field($_POST['placeholder'] ?? '');
 
@@ -189,7 +210,7 @@ class AjaxHandler {
             $field->setLabel($label);
             $field->setRequired($required);
             $field->setPlaceholder($placeholder);
-            $field->setType($type); // Allow updating the field type
+            $field->setType($type);
 
             // Handle type-specific configurations for update
             $config = json_decode($field->getConfig(), true) ?: [];
@@ -198,19 +219,26 @@ class AjaxHandler {
                 $max_sets = intval($_POST['max_sets'] ?? 0);
                 $nested_field_definitions = json_decode(wp_unslash($_POST['nested_field_definitions'] ?? '[]'), true);
                 
+                error_log("CCC AjaxHandler: Updating repeater field {$field_id} with " . count($nested_field_definitions) . " nested fields");
+                
                 // Sanitize nested field definitions recursively
                 $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_field_definitions);
 
                 $config['max_sets'] = $max_sets;
                 $config['nested_fields'] = $sanitized_nested_fields;
+                
+                error_log("CCC AjaxHandler: Updated repeater config: " . json_encode($config));
             } elseif ($type === 'image') {
-                // Image return type is not currently editable in the modal, but if it were, it would be handled here.
-                // For now, we just ensure the config is preserved if no change is intended.
+                // Preserve existing image config or set default
+                if (!isset($config['return_type'])) {
+                    $config['return_type'] = 'url';
+                }
             }
             
             $field->setConfig(json_encode($config));
 
             if ($field->save()) {
+                error_log("CCC AjaxHandler: Successfully updated field {$field_id}");
                 wp_send_json_success(['message' => 'Field updated successfully.']);
             } else {
                 wp_send_json_error(['message' => 'Failed to update field.']);
@@ -294,7 +322,6 @@ class AjaxHandler {
     }
 
     public function saveAssignments() {
-        // This function is likely deprecated by saveComponentAssignments, but kept for safety.
         check_ajax_referer('ccc_nonce', 'nonce');
 
         $post_ids = isset($_POST['post_ids']) ? array_map('intval', (array)$_POST['post_ids']) : [];
@@ -348,6 +375,8 @@ class AjaxHandler {
             $post_id = intval($_POST['post_id'] ?? 0);
             $instance_id = sanitize_text_field($_POST['instance_id'] ?? '');
 
+            error_log("CCC AjaxHandler: getComponentFields - component_id: $component_id, post_id: $post_id, instance_id: $instance_id");
+
             if (!$component_id) {
                 wp_send_json_error(['message' => 'Invalid component ID.']);
                 return;
@@ -367,6 +396,19 @@ class AjaxHandler {
                         $post_id, $field->getId(), $instance_id
                     ));
                 }
+                
+                // Properly decode config
+                $config_json = $field->getConfig();
+                $decoded_config = [];
+                if (!empty($config_json)) {
+                    $decoded_config = json_decode($config_json, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        error_log("CCC AjaxHandler: JSON decode error for field {$field->getId()}: " . json_last_error_msg());
+                        $decoded_config = [];
+                    }
+                }
+                
+                error_log("CCC AjaxHandler: Field {$field->getName()} (Type: {$field->getType()}) - Config: " . print_r($decoded_config, true));
 
                 $field_data[] = [
                     'id' => $field->getId(),
@@ -374,9 +416,9 @@ class AjaxHandler {
                     'name' => $field->getName(),
                     'type' => $field->getType(),
                     'value' => $value ?: '',
-                    'config' => json_decode($field->getConfig(), true), // Pass config for repeater fields
+                    'config' => $decoded_config, // Pass decoded config
                     'required' => $field->getRequired(),
-                    'placeholder' => $field->getPlaceholder() // Pass placeholder
+                    'placeholder' => $field->getPlaceholder()
                 ];
             }
 
@@ -414,7 +456,7 @@ class AjaxHandler {
                 'id' => $post->ID,
                 'title' => $post->post_title,
                 'status' => $post->post_status,
-                'has_components' => !empty($components), // Check if ANY components are assigned
+                'has_components' => !empty($components),
                 'assigned_components' => array_unique($assigned_components)
             ];
         }, $posts);
@@ -437,8 +479,6 @@ class AjaxHandler {
         
             if (!$post_id) continue;
        
-            // $component_data_array now contains full component objects (id, name, handle_name)
-            // We need to ensure instance_ids are preserved or generated for these.
             $existing_components = get_post_meta($post_id, '_ccc_components', true);
             if (!is_array($existing_components)) {
                 $existing_components = [];
@@ -469,11 +509,6 @@ class AjaxHandler {
                     'instance_id' => $instance_id
                 ];
             }
-            
-            // Sort by order (already handled by $current_order++)
-            // usort($new_components_data, function($a, $b) {
-            //     return $a['order'] - $b['order'];
-            // });
             
             update_post_meta($post_id, '_ccc_components', $new_components_data);
         }

@@ -26,6 +26,10 @@ class ComponentService {
         return $component;
     }
 
+    /**
+     * Get all components with their fields and properly decoded configurations
+     * This is the key method that needs to properly decode field configs for the React frontend
+     */
     public function getComponentsWithFields($post_id = 0) {
         $components = Component::all();
         $result = [];
@@ -40,20 +44,66 @@ class ComponentService {
             ];
 
             foreach ($fields as $field) {
+                // CRITICAL FIX: Properly decode the config JSON here
+                $config_json = $field->getConfig();
+                $decoded_config = null;
+                
+                if (!empty($config_json)) {
+                    $decoded_config = json_decode($config_json, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        error_log("CCC ComponentService: JSON decode error for field {$field->getId()}: " . json_last_error_msg());
+                        $decoded_config = [];
+                    }
+                }
+                
                 $field_data = [
                     'id' => $field->getId(),
                     'label' => $field->getLabel(),
                     'name' => $field->getName(),
                     'type' => $field->getType(),
-                    'value' => $post_id ? $field->getValue($post_id) : ''
+                    'required' => $field->getRequired(),
+                    'placeholder' => $field->getPlaceholder(),
+                    'field_order' => $field->getFieldOrder(),
+                    'config' => $decoded_config, // Pass decoded config, not JSON string
+                    'value' => $post_id ? $this->getFieldValue($field->getId(), $post_id) : ''
                 ];
+                
+                // Debug logging for repeater fields
+                if ($field->getType() === 'repeater') {
+                    error_log("CCC ComponentService: Repeater field {$field->getName()} config: " . print_r($decoded_config, true));
+                    if (isset($decoded_config['nested_fields'])) {
+                        error_log("CCC ComponentService: Found " . count($decoded_config['nested_fields']) . " nested fields");
+                    }
+                }
+                
                 $component_data['fields'][] = $field_data;
             }
 
             $result[] = $component_data;
         }
 
+        error_log("CCC ComponentService: Returning " . count($result) . " components with fields");
         return $result;
+    }
+
+    /**
+     * Helper method to get field value for a specific post
+     */
+    private function getFieldValue($field_id, $post_id, $instance_id = '') {
+        global $wpdb;
+        $values_table = $wpdb->prefix . 'cc_field_values';
+        
+        $query = "SELECT value FROM $values_table WHERE field_id = %d AND post_id = %d";
+        $params = [$field_id, $post_id];
+        
+        if (!empty($instance_id)) {
+            $query .= " AND instance_id = %s";
+            $params[] = $instance_id;
+        }
+        
+        $query .= " ORDER BY id DESC LIMIT 1";
+        
+        return $wpdb->get_var($wpdb->prepare($query, $params)) ?: '';
     }
 
     private function createComponentTemplate(Component $component) {
