@@ -4,15 +4,22 @@ namespace CCC\Admin;
 use CCC\Models\Component;
 use CCC\Models\Field;
 use CCC\Models\FieldValue;
+use CCC\Helpers\GlobalHelpers;
 
 defined('ABSPATH') || exit;
 
 class MetaBoxManager {
+    // No longer need component_service property here, as methods use static Component::all()
+    // private $component_service; 
+
+    public function __construct() {
+        // Constructor no longer registers actions directly.
+        // All action registrations are handled in the init() method.
+    }
+
     public function init() {
-        add_action('add_meta_boxes', [$this, 'addComponentMetaBox'], 10, 2); // Ensure 2 arguments are passed
+        add_action('add_meta_boxes', [$this, 'addComponentMetaBox'], 10, 2);
         add_action('save_post', [$this, 'saveComponentData'], 10, 2);
-        
-        // Add media library support
         add_action('admin_enqueue_scripts', [$this, 'enqueueMediaLibrary']);
     }
     
@@ -279,13 +286,14 @@ class MetaBoxManager {
             }
             
             .ccc-repeater-item-header {
+                padding: 8px 10px; /* Smaller padding for nested items */
+                background: #f0f0f0; /* Slightly different background for nested headers */
+                border-bottom: 1px solid #e0e0e0;
+                cursor: move; /* Make header the drag handle */
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
                 margin-bottom: 10px;
-                padding-bottom: 5px;
-                border-bottom: 1px solid #eee;
-                cursor: move; /* Make header the drag handle */
             }
             
             .ccc-repeater-controls {
@@ -539,7 +547,9 @@ class MetaBoxManager {
                     component.fields.forEach(function(field) {
                         // Use instance-specific field naming
                         var fieldName = `ccc_field_values[${component.instance_id}][${field.id}]`;
-                        
+                        var fieldConfig = field.config || {}; // Ensure config exists
+                        var imageReturnType = fieldConfig.return_type || 'url'; // Default to 'url'
+
                         fieldsHtml += `
                             <div class="ccc-field-input" data-field-type="${field.type}">
                                 <label for="ccc_field_${component.instance_id}_${field.id}">${field.label}</label>
@@ -561,26 +571,30 @@ class MetaBoxManager {
                         } else if (field.type === 'image') {
                             var imagePreview = field.value ? `
                                 <div class="ccc-image-preview">
-                                    <img src="${field.value}" alt="Selected image" />
+                                    <img src="${imageReturnType === 'url' ? field.value : (JSON.parse(field.value || '{}').url || '')}" alt="Selected image" />
                                 </div>
                             ` : '';
                             
                             fieldsHtml += `
                                 <div class="ccc-image-field">
                                     <input type="hidden" 
+                                           class="ccc-image-field-input" 
                                            id="ccc_field_${component.instance_id}_${field.id}" 
                                            name="${fieldName}" 
-                                           value="${field.value || ''}" />
+                                           value="${field.value || ''}"
+                                           data-return-type="${imageReturnType}" />
                                     <button type="button" 
                                             class="button ccc-upload-image-btn" 
                                             data-field-id="${field.id}"
-                                            data-instance-id="${component.instance_id}">
+                                            data-instance-id="${component.instance_id}"
+                                            data-return-type="${imageReturnType}">
                                         Select Image
                                     </button>
                                     <button type="button" 
                                             class="button ccc-remove-image-btn" 
                                             data-field-id="${field.id}"
                                             data-instance-id="${component.instance_id}"
+                                            data-return-type="${imageReturnType}"
                                             style="display: ${field.value ? 'inline-block' : 'none'}">
                                         Remove Image
                                     </button>
@@ -591,8 +605,8 @@ class MetaBoxManager {
                             `;
                         } else if (field.type === 'repeater') {
                             var repeaterValue = field.value ? JSON.parse(field.value) : [];
-                            var maxSets = field.config && field.config.max_sets ? parseInt(field.config.max_sets) : 0;
-                            var nestedFieldDefinitions = field.config && field.config.nested_fields ? field.config.nested_fields : [];
+                            var maxSets = fieldConfig.max_sets ? parseInt(fieldConfig.max_sets) : 0;
+                            var nestedFieldDefinitions = fieldConfig.nested_fields ? fieldConfig.nested_fields : [];
                             
                             fieldsHtml += `
                                 <div class="ccc-repeater-container" 
@@ -623,6 +637,7 @@ class MetaBoxManager {
                                         Add Item
                                     </button>
                                     <input type="hidden" 
+                                           class="ccc-repeater-main-input"
                                            id="ccc_field_${component.instance_id}_${field.id}" 
                                            name="${fieldName}" 
                                            value="${field.value || '[]'}" />
@@ -637,12 +652,14 @@ class MetaBoxManager {
                 }
                 
                 // Render a repeater item with dynamically defined nested fields
-                function renderRepeaterItem(instanceId, fieldId, itemIndex, itemData, nestedFieldDefinitions) {
+                function renderRepeaterItem(parentInstanceId, parentFieldId, itemIndex, itemData, nestedFieldDefinitions) {
                     var fieldsHtml = '';
                     
                     nestedFieldDefinitions.forEach(function(nestedField) {
                         var nestedFieldValue = itemData[nestedField.name] || ''; // Get value by nested field name
-                        
+                        var nestedFieldConfig = nestedField.config || {}; // Ensure config exists
+                        var nestedImageReturnType = nestedFieldConfig.return_type || 'url'; // Default to 'url'
+
                         fieldsHtml += `
                             <div class="ccc-nested-field" data-nested-field-name="${nestedField.name}" data-nested-field-type="${nestedField.type}">
                                 <label class="ccc-nested-field-label">${nestedField.label}</label>
@@ -665,14 +682,17 @@ class MetaBoxManager {
                             var imageSrc = '';
                             var displayRemoveBtn = 'none';
                             if (nestedFieldValue) {
-                                try {
-                                    var imageData = JSON.parse(nestedFieldValue);
-                                    imageSrc = imageData.url || nestedFieldValue; // Handle both URL and full object
-                                    displayRemoveBtn = 'inline-block';
-                                } catch (e) {
+                                if (nestedImageReturnType === 'url') {
                                     imageSrc = nestedFieldValue;
-                                    displayRemoveBtn = 'inline-block';
+                                } else { // 'array'
+                                    try {
+                                        var imageData = JSON.parse(nestedFieldValue);
+                                        imageSrc = imageData.url || nestedFieldValue; // Handle both URL and full object
+                                    } catch (e) {
+                                        imageSrc = nestedFieldValue; // Fallback if not valid JSON
+                                    }
                                 }
+                                displayRemoveBtn = 'inline-block';
                             }
 
                             var imagePreview = imageSrc ? `
@@ -686,12 +706,59 @@ class MetaBoxManager {
                                     <input type="hidden" 
                                            class="ccc-nested-field-input" 
                                            data-nested-field-type="image"
-                                           value="${nestedFieldValue}" />
-                                    <button type="button" class="button ccc-nested-upload-image">Select Image</button>
-                                    <button type="button" class="button ccc-nested-remove-image" style="display: ${displayRemoveBtn}">Remove</button>
+                                           value="${nestedFieldValue}"
+                                           data-return-type="${nestedImageReturnType}" />
+                                    <button type="button" class="button ccc-nested-upload-image" data-return-type="${nestedImageReturnType}">Select Image</button>
+                                    <button type="button" class="button ccc-nested-remove-image" data-return-type="${nestedImageReturnType}" style="display: ${displayRemoveBtn}">Remove</button>
                                     <div class="ccc-nested-image-preview-container">
                                         ${imagePreview}
                                     </div>
+                                </div>
+                            `;
+                        } else if (nestedField.type === 'repeater') {
+                            // Recursively render nested repeater
+                            var deeplyNestedRepeaterValue = nestedFieldValue || [];
+                            var deeplyNestedMaxSets = nestedFieldConfig.max_sets ? parseInt(nestedFieldConfig.max_sets) : 0;
+                            var deeplyNestedFieldDefinitions = nestedFieldConfig.nested_fields ? nestedFieldConfig.nested_fields : [];
+
+                            fieldsHtml += `
+                                <div class="ccc-repeater-container ccc-deeply-nested-repeater" 
+                                     data-field-id="${nestedField.id || nestedField.name}" 
+                                     data-instance-id="${parentInstanceId}"
+                                     data-parent-field-id="${parentFieldId}"
+                                     data-parent-item-index="${itemIndex}"
+                                     data-nested-field-name="${nestedField.name}"
+                                     data-max-sets="${deeplyNestedMaxSets}"
+                                     data-nested-field-definitions='${JSON.stringify(deeplyNestedFieldDefinitions)}'>
+                                    <label class="ccc-nested-field-label">${nestedField.label}</label>
+                                    <div class="ccc-repeater-items">
+                            `;
+
+                            if (deeplyNestedRepeaterValue.length > 0) {
+                                deeplyNestedRepeaterValue.forEach(function(deepItem, deepItemIndex) {
+                                    fieldsHtml += renderDeeplyNestedRepeaterItem(parentInstanceId, parentFieldId, itemIndex, nestedField.name, deepItemIndex, deepItem, deeplyNestedFieldDefinitions);
+                                });
+                            } else {
+                                if (deeplyNestedMaxSets === 0 || deeplyNestedMaxSets > 0) {
+                                    fieldsHtml += renderDeeplyNestedRepeaterItem(parentInstanceId, parentFieldId, itemIndex, nestedField.name, 0, {}, deeplyNestedFieldDefinitions);
+                                }
+                            }
+
+                            fieldsHtml += `
+                                    </div>
+                                    <button type="button" 
+                                            class="ccc-repeater-add button"
+                                            data-field-id="${nestedField.id || nestedField.name}"
+                                            data-instance-id="${parentInstanceId}"
+                                            data-parent-field-id="${parentFieldId}"
+                                            data-parent-item-index="${itemIndex}"
+                                            data-nested-field-name="${nestedField.name}">
+                                        Add Deeply Nested Item
+                                    </button>
+                                    <input type="hidden" 
+                                           class="ccc-nested-field-input ccc-repeater-main-input"
+                                           data-nested-field-type="repeater"
+                                           value='${JSON.stringify(deeplyNestedRepeaterValue)}' />
                                 </div>
                             `;
                         }
@@ -714,6 +781,95 @@ class MetaBoxManager {
                         </div>
                     `;
                 }
+
+                // Render a deeply nested repeater item
+                function renderDeeplyNestedRepeaterItem(grandparentInstanceId, grandparentFieldId, parentItemIndex, nestedRepeaterName, deepItemIndex, deepItemData, deeplyNestedFieldDefinitions) {
+                    var fieldsHtml = '';
+                    
+                    deeplyNestedFieldDefinitions.forEach(function(deepNestedField) {
+                        var deepNestedFieldValue = deepItemData[deepNestedField.name] || '';
+                        var deepNestedFieldConfig = deepNestedField.config || {};
+                        var deepNestedImageReturnType = deepNestedFieldConfig.return_type || 'url';
+
+                        fieldsHtml += `
+                            <div class="ccc-nested-field" data-nested-field-name="${deepNestedField.name}" data-nested-field-type="${deepNestedField.type}">
+                                <label class="ccc-nested-field-label">${deepNestedField.label}</label>
+                        `;
+                        
+                        if (deepNestedField.type === 'text') {
+                            fieldsHtml += `
+                                <input type="text" 
+                                       class="ccc-nested-field-input" 
+                                       data-nested-field-type="text"
+                                       value="${deepNestedFieldValue}" />
+                            `;
+                        } else if (deepNestedField.type === 'textarea') {
+                            fieldsHtml += `
+                                <textarea class="ccc-nested-field-input" 
+                                          data-nested-field-type="textarea"
+                                          rows="3">${deepNestedFieldValue}</textarea>
+                            `;
+                        } else if (deepNestedField.type === 'image') {
+                            var imageSrc = '';
+                            var displayRemoveBtn = 'none';
+                            if (deepNestedFieldValue) {
+                                if (deepNestedImageReturnType === 'url') {
+                                    imageSrc = deepNestedFieldValue;
+                                } else { // 'array'
+                                    try {
+                                        var imageData = JSON.parse(deepNestedFieldValue);
+                                        imageSrc = imageData.url || deepNestedFieldValue;
+                                    } catch (e) {
+                                        imageSrc = deepNestedFieldValue;
+                                    }
+                                }
+                                displayRemoveBtn = 'inline-block';
+                            }
+
+                            var imagePreview = imageSrc ? `
+                                <div class="ccc-nested-image-preview">
+                                    <img src="${imageSrc}" alt="Selected image" />
+                                </div>
+                            ` : '';
+                            
+                            fieldsHtml += `
+                                <div class="ccc-nested-image-field">
+                                    <input type="hidden" 
+                                           class="ccc-nested-field-input" 
+                                           data-nested-field-type="image"
+                                           value="${deepNestedFieldValue}"
+                                           data-return-type="${deepNestedImageReturnType}" />
+                                    <button type="button" class="button ccc-nested-upload-image" data-return-type="${deepNestedImageReturnType}">Select Image</button>
+                                    <button type="button" class="button ccc-nested-remove-image" data-return-type="${deepNestedImageReturnType}" style="display: ${displayRemoveBtn}">Remove</button>
+                                    <div class="ccc-nested-image-preview-container">
+                                        ${imagePreview}
+                                    </div>
+                                </div>
+                            `;
+                        } else if (deepNestedField.type === 'repeater') {
+                            // This would be a triple nested repeater. For now, we'll stop here to avoid infinite recursion.
+                            // If needed, this would call another function like renderTripleNestedRepeaterItem.
+                            fieldsHtml += `<p><em>(Triple nested repeater not fully supported in UI rendering)</em></p>`;
+                        }
+                        
+                        fieldsHtml += `</div>`;
+                    });
+                    
+                    return `
+                        <div class="ccc-repeater-item ccc-deeply-nested-item" data-index="${deepItemIndex}">
+                            <div class="ccc-repeater-item-header">
+                                <span class="ccc-drag-handle dashicons dashicons-menu"></span>
+                                <strong>Deep Item #${deepItemIndex + 1}</strong>
+                                <div class="ccc-repeater-controls">
+                                    <button type="button" class="ccc-repeater-remove button">Remove</button>
+                                </div>
+                            </div>
+                            <div class="ccc-repeater-item-fields">
+                                ${fieldsHtml}
+                            </div>
+                        </div>
+                    `;
+                }
                 
                 // Initialize repeater fields (including nested field logic)
                 function initializeRepeaterFields(instanceId) {
@@ -724,15 +880,27 @@ class MetaBoxManager {
                         update: function(event, ui) {
                             var $container = $(this).closest('.ccc-repeater-container');
                             var fieldId = $container.data('field-id');
-                            updateRepeaterValue(instanceId, fieldId);
+                            var parentFieldId = $container.data('parent-field-id'); // For deeply nested
+                            var parentItemIndex = $container.data('parent-item-index'); // For deeply nested
+                            var nestedFieldName = $container.data('nested-field-name'); // For deeply nested
+
+                            if ($container.hasClass('ccc-deeply-nested-repeater')) {
+                                updateDeeplyNestedRepeaterValue(instanceId, parentFieldId, parentItemIndex, nestedFieldName);
+                            } else {
+                                updateRepeaterValue(instanceId, fieldId);
+                            }
                         }
                     });
                     
                     // Add repeater item
-                    $(document).on('click', `.ccc-repeater-add[data-instance-id="${instanceId}"]`, function() {
+                    $(document).off('click', `.ccc-repeater-add[data-instance-id="${instanceId}"]`).on('click', `.ccc-repeater-add[data-instance-id="${instanceId}"]`, function() {
                         var $button = $(this);
                         var fieldId = $button.data('field-id');
                         var instanceId = $button.data('instance-id');
+                        var parentFieldId = $button.data('parent-field-id'); // For deeply nested
+                        var parentItemIndex = $button.data('parent-item-index'); // For deeply nested
+                        var nestedFieldName = $button.data('nested-field-name'); // For deeply nested
+
                         var $container = $button.closest('.ccc-repeater-container');
                         var $items = $container.find('.ccc-repeater-items');
                         var maxSets = parseInt($container.data('max-sets')) || 0;
@@ -746,22 +914,36 @@ class MetaBoxManager {
                         }
                         
                         var newIndex = currentCount;
-                        var newItem = $(renderRepeaterItem(instanceId, fieldId, newIndex, {}, nestedFieldDefinitions));
+                        var newItem;
+
+                        if ($container.hasClass('ccc-deeply-nested-repeater')) {
+                            newItem = $(renderDeeplyNestedRepeaterItem(instanceId, parentFieldId, parentItemIndex, nestedFieldName, newIndex, {}, nestedFieldDefinitions));
+                        } else {
+                            newItem = $(renderRepeaterItem(instanceId, fieldId, newIndex, {}, nestedFieldDefinitions));
+                        }
+                        
                         $items.append(newItem);
                         
                         // Initialize media uploader for new nested image fields
                         initializeNestedMediaUploaders(newItem);
                         
                         // Update the hidden input with JSON data
-                        updateRepeaterValue(instanceId, fieldId);
+                        if ($container.hasClass('ccc-deeply-nested-repeater')) {
+                            updateDeeplyNestedRepeaterValue(instanceId, parentFieldId, parentItemIndex, nestedFieldName);
+                        } else {
+                            updateRepeaterValue(instanceId, fieldId);
+                        }
                     });
                     
                     // Remove repeater item
-                    $(document).on('click', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-repeater-remove`, function() {
+                    $(document).off('click', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-repeater-remove`).on('click', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-repeater-remove`, function() {
                         var $item = $(this).closest('.ccc-repeater-item');
                         var $container = $item.closest('.ccc-repeater-container');
                         var fieldId = $container.data('field-id');
                         var instanceId = $container.data('instance-id');
+                        var parentFieldId = $container.data('parent-field-id'); // For deeply nested
+                        var parentItemIndex = $container.data('parent-item-index'); // For deeply nested
+                        var nestedFieldName = $container.data('nested-field-name'); // For deeply nested
                         var $items = $container.find('.ccc-repeater-items');
                         
                         if (confirm('Are you sure you want to remove this item?')) {
@@ -774,19 +956,30 @@ class MetaBoxManager {
                             });
                             
                             // Update the hidden input with JSON data
-                            updateRepeaterValue(instanceId, fieldId);
+                            if ($container.hasClass('ccc-deeply-nested-repeater')) {
+                                updateDeeplyNestedRepeaterValue(instanceId, parentFieldId, parentItemIndex, nestedFieldName);
+                            } else {
+                                updateRepeaterValue(instanceId, fieldId);
+                            }
                         }
                     });
                     
                     // Update repeater value when nested fields change
-                    $(document).on('change keyup', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-nested-field-input`, function() {
+                    $(document).off('change keyup', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-nested-field-input`).on('change keyup', `.ccc-repeater-container[data-instance-id="${instanceId}"] .ccc-nested-field-input`, function() {
                         var $fieldInput = $(this);
                         var $container = $fieldInput.closest('.ccc-repeater-container');
                         var fieldId = $container.data('field-id');
                         var instanceId = $container.data('instance-id');
+                        var parentFieldId = $container.data('parent-field-id'); // For deeply nested
+                        var parentItemIndex = $container.data('parent-item-index'); // For deeply nested
+                        var nestedFieldName = $container.data('nested-field-name'); // For deeply nested
                         
                         // Update the hidden input with JSON data
-                        updateRepeaterValue(instanceId, fieldId);
+                        if ($container.hasClass('ccc-deeply-nested-repeater')) {
+                            updateDeeplyNestedRepeaterValue(instanceId, parentFieldId, parentItemIndex, nestedFieldName);
+                        } else {
+                            updateRepeaterValue(instanceId, fieldId);
+                        }
                     });
 
                     // Initialize media uploaders for all existing nested image fields within this repeater
@@ -800,9 +993,10 @@ class MetaBoxManager {
                     $(document).off('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`).on('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`, function(e) {
                         e.preventDefault();
                         var $button = $(this);
-                        var $input = $button.siblings('input[type="hidden"]');
+                        var $input = $button.siblings('.ccc-image-field-input');
                         var $previewContainer = $button.siblings('.ccc-image-preview-container');
                         var $removeButton = $button.siblings('.ccc-remove-image-btn');
+                        var returnType = $input.data('return-type') || 'url'; // Get return type from data attribute
 
                         var frame = wp.media({
                             title: 'Select Image',
@@ -812,7 +1006,17 @@ class MetaBoxManager {
 
                         frame.on('select', function() {
                             var attachment = frame.state().get('selection').first().toJSON();
-                            $input.val(attachment.url);
+                            
+                            if (returnType === 'url') {
+                                $input.val(attachment.url);
+                            } else { // 'array'
+                                $input.val(JSON.stringify({
+                                    id: attachment.id,
+                                    url: attachment.url,
+                                    alt: attachment.alt,
+                                    title: attachment.title
+                                }));
+                            }
                             $previewContainer.html('<div class="ccc-image-preview"><img src="' + attachment.url + '" alt="Selected image" /></div>');
                             $removeButton.show();
                         });
@@ -823,7 +1027,7 @@ class MetaBoxManager {
                     $(document).off('click', `.ccc-remove-image-btn[data-instance-id="${instanceId}"]`).on('click', `.ccc-remove-image-btn[data-instance-id="${instanceId}"]`, function(e) {
                         e.preventDefault();
                         var $button = $(this);
-                        var $input = $button.siblings('input[type="hidden"]');
+                        var $input = $button.siblings('.ccc-image-field-input');
                         var $previewContainer = $button.siblings('.ccc-image-preview-container');
                         
                         $input.val('');
@@ -837,9 +1041,10 @@ class MetaBoxManager {
                     $item.find('.ccc-nested-upload-image').off('click').on('click', function(e) {
                         e.preventDefault();
                         var $button = $(this);
-                        var $input = $button.siblings('input[type="hidden"]');
+                        var $input = $button.siblings('.ccc-nested-field-input');
                         var $previewContainer = $button.siblings('.ccc-nested-image-preview-container');
                         var $removeButton = $button.siblings('.ccc-nested-remove-image');
+                        var returnType = $input.data('return-type') || 'url'; // Get return type from data attribute
                         
                         var frame = wp.media({
                             title: 'Select Image',
@@ -849,14 +1054,17 @@ class MetaBoxManager {
                         
                         frame.on('select', function() {
                             var attachment = frame.state().get('selection').first().toJSON();
-                            var imageData = {
-                                id: attachment.id,
-                                url: attachment.url,
-                                alt: attachment.alt,
-                                title: attachment.title
-                            };
                             
-                            $input.val(JSON.stringify(imageData)); // Store as JSON string
+                            if (returnType === 'url') {
+                                $input.val(attachment.url);
+                            } else { // 'array'
+                                $input.val(JSON.stringify({
+                                    id: attachment.id,
+                                    url: attachment.url,
+                                    alt: attachment.alt,
+                                    title: attachment.title
+                                }));
+                            }
                             $previewContainer.html(`<div class="ccc-nested-image-preview"><img src="${attachment.url}" alt="${attachment.alt}" /></div>`);
                             $removeButton.show();
                             
@@ -870,7 +1078,7 @@ class MetaBoxManager {
                     $item.find('.ccc-nested-remove-image').off('click').on('click', function(e) {
                         e.preventDefault();
                         var $button = $(this);
-                        var $input = $button.siblings('input[type="hidden"]');
+                        var $input = $button.siblings('.ccc-nested-field-input');
                         var $previewContainer = $button.siblings('.ccc-nested-image-preview-container');
                         
                         $input.val('');
@@ -882,10 +1090,10 @@ class MetaBoxManager {
                     });
                 }
                 
-                // Update repeater value
+                // Update repeater value (for top-level repeaters)
                 function updateRepeaterValue(instanceId, fieldId) {
                     var $container = $(`.ccc-repeater-container[data-instance-id="${instanceId}"][data-field-id="${fieldId}"]`);
-                    var $input = $(`#ccc_field_${instanceId}_${fieldId}`);
+                    var $input = $container.find('.ccc-repeater-main-input');
                     var $items = $container.find('.ccc-repeater-items');
                     var repeaterData = [];
                     var nestedFieldDefinitions = JSON.parse($container.attr('data-nested-field-definitions') || '[]');
@@ -898,8 +1106,15 @@ class MetaBoxManager {
                             var $nestedInput = $item.find(`.ccc-nested-field[data-nested-field-name="${nestedField.name}"] .ccc-nested-field-input`);
                             if ($nestedInput.length) {
                                 var fieldValue = $nestedInput.val();
-                                // For image fields, the value is already JSON stringified
+                                // For image fields, the value is already JSON stringified or URL based on return-type
                                 itemData[nestedField.name] = fieldValue;
+                            } else if (nestedField.type === 'repeater') {
+                                // For nested repeaters, get the value from its main input
+                                var $deeplyNestedRepeaterContainer = $item.find(`.ccc-deeply-nested-repeater[data-nested-field-name="${nestedField.name}"]`);
+                                var $deeplyNestedRepeaterInput = $deeplyNestedRepeaterContainer.find('.ccc-repeater-main-input');
+                                if ($deeplyNestedRepeaterInput.length) {
+                                    itemData[nestedField.name] = JSON.parse($deeplyNestedRepeaterInput.val() || '[]');
+                                }
                             }
                         });
                         
@@ -908,6 +1123,37 @@ class MetaBoxManager {
                     
                     $input.val(JSON.stringify(repeaterData));
                 }
+
+                // Update deeply nested repeater value
+                function updateDeeplyNestedRepeaterValue(parentInstanceId, parentFieldId, parentItemIndex, nestedRepeaterName) {
+                    var $parentRepeaterContainer = $(`.ccc-repeater-container[data-instance-id="${parentInstanceId}"][data-field-id="${parentFieldId}"]`);
+                    var $parentRepeaterItem = $parentRepeaterContainer.find(`.ccc-repeater-item[data-index="${parentItemIndex}"]`);
+                    var $deeplyNestedRepeaterContainer = $parentRepeaterItem.find(`.ccc-deeply-nested-repeater[data-nested-field-name="${nestedRepeaterName}"]`);
+                    var $deeplyNestedRepeaterInput = $deeplyNestedRepeaterContainer.find('.ccc-repeater-main-input');
+                    var $deeplyNestedItems = $deeplyNestedRepeaterContainer.find('.ccc-repeater-items');
+                    var deeplyNestedRepeaterData = [];
+                    var deeplyNestedFieldDefinitions = JSON.parse($deeplyNestedRepeaterContainer.attr('data-nested-field-definitions') || '[]');
+
+                    $deeplyNestedItems.children('.ccc-repeater-item').each(function() {
+                        var $deepItem = $(this);
+                        var deepItemData = {};
+
+                        deeplyNestedFieldDefinitions.forEach(function(deepNestedField) {
+                            var $deepNestedInput = $deepItem.find(`.ccc-nested-field[data-nested-field-name="${deepNestedField.name}"] .ccc-nested-field-input`);
+                            if ($deepNestedInput.length) {
+                                deepItemData[deepNestedField.name] = $deepNestedInput.val();
+                            }
+                            // Add logic for even deeper nested repeaters if needed
+                        });
+                        deeplyNestedRepeaterData.push(deepItemData);
+                    });
+
+                    $deeplyNestedRepeaterInput.val(JSON.stringify(deeplyNestedRepeaterData));
+                    
+                    // Trigger change on the parent repeater's main input to ensure it gets updated
+                    $parentRepeaterContainer.find('.ccc-repeater-main-input').trigger('change');
+                }
+
 
                 // Initialize existing accordions with instance IDs
                 $('.ccc-component-accordion').each(function(index) {
@@ -995,36 +1241,50 @@ class MetaBoxManager {
                                           name="<?php echo esc_attr($field_name); ?>"
                                           rows="5"><?php echo esc_textarea($field_value); ?></textarea>
                                         
-                            <?php elseif ($field->getType() === 'image') : ?>
+                            <?php elseif ($field->getType() === 'image') : 
+                                $image_return_type = $field_config['return_type'] ?? 'url';
+                                $image_src = '';
+                                if ($field_value) {
+                                    if ($image_return_type === 'url') {
+                                        $image_src = $field_value;
+                                    } else { // 'array'
+                                        $decoded_value = json_decode($field_value, true);
+                                        $image_src = $decoded_value['url'] ?? '';
+                                    }
+                                }
+                            ?>
                                 <div class="ccc-image-field">
                                     <input type="hidden" 
+                                           class="ccc-image-field-input"
                                            id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
                                            name="<?php echo esc_attr($field_name); ?>"
-                                           value="<?php echo esc_attr($field_value); ?>" />
+                                           value="<?php echo esc_attr($field_value); ?>"
+                                           data-return-type="<?php echo esc_attr($image_return_type); ?>" />
                                     <button type="button" 
                                             class="button ccc-upload-image-btn" 
                                             data-field-id="<?php echo esc_attr($field->getId()); ?>"
-                                            data-instance-id="<?php echo esc_attr($instance_id); ?>">
+                                            data-instance-id="<?php echo esc_attr($instance_id); ?>"
+                                            data-return-type="<?php echo esc_attr($image_return_type); ?>">
                                         Select Image
                                     </button>
                                     <button type="button" 
                                             class="button ccc-remove-image-btn" 
                                             data-field-id="<?php echo esc_attr($field->getId()); ?>"
                                             data-instance-id="<?php echo esc_attr($instance_id); ?>"
+                                            data-return-type="<?php echo esc_attr($image_return_type); ?>"
                                             style="display: <?php echo $field_value ? 'inline-block' : 'none'; ?>">
                                         Remove Image
                                     </button>
                                     <div class="ccc-image-preview-container" id="ccc_image_preview_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>">
-                                        <?php if ($field_value) : ?>
+                                        <?php if ($image_src) : ?>
                                             <div class="ccc-image-preview">
-                                                <img src="<?php echo esc_url($field_value); ?>" alt="Selected image" />
+                                                <img src="<?php echo esc_url($image_src); ?>" alt="Selected image" />
                                             </div>
                                         <?php endif; ?>
                                     </div>
                                 </div>
                                 
-                            <?php elseif ($field->getType() === 'repeater') : ?>
-                                <?php 
+                            <?php elseif ($field->getType() === 'repeater') : 
                                 $repeater_value = $field_value ? json_decode($field_value, true) : [];
                                 $max_sets = isset($field_config['max_sets']) ? intval($field_config['max_sets']) : 0;
                                 $nested_field_definitions = isset($field_config['nested_fields']) ? $field_config['nested_fields'] : [];
@@ -1052,6 +1312,7 @@ class MetaBoxManager {
                                         Add Item
                                     </button>
                                     <input type="hidden" 
+                                           class="ccc-repeater-main-input"
                                            id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
                                            name="<?php echo esc_attr($field_name); ?>"
                                            value="<?php echo esc_attr($field_value ?: '[]'); ?>" />
@@ -1071,13 +1332,13 @@ class MetaBoxManager {
      * Renders a single repeater item with its nested fields.
      * Changed from private to protected to allow internal calls.
      *
-     * @param string $instance_id The unique instance ID of the parent component.
-     * @param int $field_id The ID of the repeater field.
+     * @param string $parent_instance_id The unique instance ID of the parent component.
+     * @param int $parent_field_id The ID of the parent repeater field.
      * @param int $item_index The index of the current repeater item.
      * @param array $item_data The data for the current repeater item.
      * @param array $nested_field_definitions Array of nested field definitions.
      */
-    protected function renderRepeaterItem($instance_id, $field_id, $item_index, $item_data, $nested_field_definitions) {
+    protected function renderRepeaterItem($parent_instance_id, $parent_field_id, $item_index, $item_data, $nested_field_definitions) {
         ?>
         <div class="ccc-repeater-item" data-index="<?php echo esc_attr($item_index); ?>">
             <div class="ccc-repeater-item-header">
@@ -1090,6 +1351,7 @@ class MetaBoxManager {
             <div class="ccc-repeater-item-fields">
                 <?php foreach ($nested_field_definitions as $nested_field) : 
                     $nested_field_value = $item_data[$nested_field['name']] ?? '';
+                    $nested_field_config = $nested_field['config'] ?? []; // Get nested field config
                 ?>
                     <div class="ccc-nested-field" 
                          data-nested-field-name="<?php echo esc_attr($nested_field['name']); ?>" 
@@ -1105,14 +1367,19 @@ class MetaBoxManager {
                                       data-nested-field-type="textarea"
                                       rows="3"><?php echo esc_textarea($nested_field_value); ?></textarea>
                         <?php elseif ($nested_field['type'] === 'image') : 
+                            $nested_image_return_type = $nested_field_config['return_type'] ?? 'url';
                             $image_src = '';
                             $display_remove_btn = 'none';
                             if ($nested_field_value) {
-                                $decoded_value = json_decode($nested_field_value, true);
-                                if (is_array($decoded_value) && isset($decoded_value['url'])) {
-                                    $image_src = $decoded_value['url'];
-                                } else {
-                                    $image_src = $nested_field_value; // Fallback if not JSON or just URL
+                                if ($nested_image_return_type === 'url') {
+                                    $image_src = $nested_field_value;
+                                } else { // 'array'
+                                    try {
+                                        $imageData = json_decode($nested_field_value, true);
+                                        $image_src = $imageData['url'] ?? ''; // Handle both URL and full object
+                                    } catch (\Exception $e) {
+                                        $image_src = $nested_field_value; // Fallback if not valid JSON
+                                    }
                                 }
                                 $display_remove_btn = 'inline-block';
                             }
@@ -1121,9 +1388,10 @@ class MetaBoxManager {
                                 <input type="hidden" 
                                        class="ccc-nested-field-input" 
                                        data-nested-field-type="image"
-                                       value="<?php echo esc_attr($nested_field_value); ?>" />
-                                <button type="button" class="button ccc-nested-upload-image">Select Image</button>
-                                <button type="button" class="button ccc-nested-remove-image" style="display: <?php echo $display_remove_btn; ?>">Remove</button>
+                                       value="<?php echo esc_attr($nested_field_value); ?>"
+                                       data-return-type="<?php echo esc_attr($nested_image_return_type); ?>" />
+                                <button type="button" class="button ccc-nested-upload-image" data-return-type="<?php echo esc_attr($nested_image_return_type); ?>">Select Image</button>
+                                <button type="button" class="button ccc-nested-remove-image" data-return-type="<?php echo esc_attr($nested_image_return_type); ?>" style="display: <?php echo $display_remove_btn; ?>">Remove</button>
                                 <div class="ccc-nested-image-preview-container">
                                     <?php if ($image_src) : ?>
                                         <div class="ccc-nested-image-preview">
@@ -1132,6 +1400,129 @@ class MetaBoxManager {
                                     <?php endif; ?>
                                 </div>
                             </div>
+                        <?php elseif ($nested_field['type'] === 'repeater') : 
+                            // Recursively render nested repeater
+                            $deeply_nested_repeater_value = $nested_field_value ? json_decode($nested_field_value, true) : [];
+                            $deeply_nested_max_sets = isset($nested_field_config['max_sets']) ? intval($nested_field_config['max_sets']) : 0;
+                            $deeply_nested_field_definitions = isset($nested_field_config['nested_fields']) ? $nested_field_config['nested_fields'] : [];
+                        ?>
+                            <div class="ccc-repeater-container ccc-deeply-nested-repeater" 
+                                 data-field-id="<?php echo esc_attr($nested_field['id'] ?? $nested_field['name']); ?>" 
+                                 data-instance-id="<?php echo esc_attr($parent_instance_id); ?>"
+                                 data-parent-field-id="<?php echo esc_attr($parent_field_id); ?>"
+                                 data-parent-item-index="<?php echo esc_attr($item_index); ?>"
+                                 data-nested-field-name="<?php echo esc_attr($nested_field['name']); ?>"
+                                 data-max-sets="<?php echo esc_attr($deeply_nested_max_sets); ?>"
+                                 data-nested-field-definitions='<?php echo esc_attr(json_encode($deeply_nested_field_definitions)); ?>'>
+                                <label class="ccc-nested-field-label"><?php echo esc_html($nested_field['label']); ?></label>
+                                <div class="ccc-repeater-items">
+                                    <?php if (!empty($deeply_nested_repeater_value)) : ?>
+                                        <?php foreach ($deeply_nested_repeater_value as $deep_item_index => $deep_item_data) : ?>
+                                            <?php $this->renderDeeplyNestedRepeaterItem($parent_instance_id, $parent_field_id, $item_index, $nested_field['name'], $deep_item_index, $deep_item_data, $deeply_nested_field_definitions); ?>
+                                        <?php endforeach; ?>
+                                    <?php else : ?>
+                                        <?php if ($deeply_nested_max_sets === 0 || $deeply_nested_max_sets > 0) : ?>
+                                            <?php $this->renderDeeplyNestedRepeaterItem($parent_instance_id, $parent_field_id, $item_index, $nested_field['name'], 0, [], $deeply_nested_field_definitions); ?>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </div>
+                                <button type="button" 
+                                        class="ccc-repeater-add button"
+                                        data-field-id="<?php echo esc_attr($nested_field['id'] ?? $nested_field['name']); ?>"
+                                        data-instance-id="<?php echo esc_attr($parent_instance_id); ?>"
+                                        data-parent-field-id="<?php echo esc_attr($parent_field_id); ?>"
+                                        data-parent-item-index="<?php echo esc_attr($item_index); ?>"
+                                        data-nested-field-name="<?php echo esc_attr($nested_field['name']); ?>">
+                                    Add Deeply Nested Item
+                                </button>
+                                <input type="hidden" 
+                                       class="ccc-nested-field-input ccc-repeater-main-input"
+                                       data-nested-field-type="repeater"
+                                       value='<?php echo esc_attr($nested_field_value ?: '[]'); ?>' />
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Renders a single deeply nested repeater item with its fields.
+     *
+     * @param string $grandparent_instance_id The unique instance ID of the grandparent component.
+     * @param int $grandparent_field_id The ID of the grandparent repeater field.
+     * @param int $parent_item_index The index of the parent repeater item.
+     * @param string $parent_nested_field_name The name of the parent nested repeater field.
+     * @param int $deep_item_index The index of the current deeply nested repeater item.
+     * @param array $deep_item_data The data for the current deeply nested repeater item.
+     * @param array $deeply_nested_field_definitions Array of deeply nested field definitions.
+     */
+    protected function renderDeeplyNestedRepeaterItem($grandparent_instance_id, $grandparent_field_id, $parent_item_index, $parent_nested_field_name, $deep_item_index, $deep_item_data, $deeply_nested_field_definitions) {
+        ?>
+        <div class="ccc-repeater-item ccc-deeply-nested-item" data-index="<?php echo esc_attr($deep_item_index); ?>">
+            <div class="ccc-repeater-item-header">
+                <span class="ccc-drag-handle dashicons dashicons-menu"></span>
+                <strong>Deep Item #<?php echo esc_html($deep_item_index + 1); ?></strong>
+                <div class="ccc-repeater-controls">
+                    <button type="button" class="ccc-repeater-remove button">Remove</button>
+                </div>
+            </div>
+            <div class="ccc-repeater-item-fields">
+                <?php foreach ($deeply_nested_field_definitions as $deep_nested_field) : 
+                    $deep_nested_field_value = $deep_item_data[$deep_nested_field['name']] ?? '';
+                    $deep_nested_field_config = $deep_nested_field['config'] ?? [];
+                ?>
+                    <div class="ccc-nested-field" 
+                         data-nested-field-name="<?php echo esc_attr($deep_nested_field['name']); ?>" 
+                         data-nested-field-type="<?php echo esc_attr($deep_nested_field['type']); ?>">
+                        <label class="ccc-nested-field-label"><?php echo esc_html($deep_nested_field['label']); ?></label>
+                        <?php if ($deep_nested_field['type'] === 'text') : ?>
+                            <input type="text" 
+                                   class="ccc-nested-field-input" 
+                                   data-nested-field-type="text"
+                                   value="<?php echo esc_attr($deep_nested_field_value); ?>" />
+                        <?php elseif ($deep_nested_field['type'] === 'textarea') : ?>
+                            <textarea class="ccc-nested-field-input" 
+                                      data-nested-field-type="textarea"
+                                      rows="3"><?php echo esc_textarea($deep_nested_field_value); ?></textarea>
+                        <?php elseif ($deep_nested_field['type'] === 'image') : 
+                            $deep_nested_image_return_type = $deep_nested_field_config['return_type'] ?? 'url';
+                            $image_src = '';
+                            $display_remove_btn = 'none';
+                            if ($deep_nested_field_value) {
+                                if ($deep_nested_image_return_type === 'url') {
+                                    $image_src = $deep_nested_field_value;
+                                } else { // 'array'
+                                    try {
+                                        $imageData = json_decode($deep_nested_field_value, true);
+                                        $image_src = $imageData['url'] ?? '';
+                                    } catch (\Exception $e) {
+                                        $image_src = $deep_nested_field_value;
+                                    }
+                                }
+                                $display_remove_btn = 'inline-block';
+                            }
+                        ?>
+                            <div class="ccc-nested-image-field">
+                                <input type="hidden" 
+                                       class="ccc-nested-field-input" 
+                                       data-nested-field-type="image"
+                                       value="<?php echo esc_attr($deep_nested_field_value); ?>"
+                                       data-return-type="<?php echo esc_attr($deep_nested_image_return_type); ?>" />
+                                <button type="button" class="button ccc-nested-upload-image" data-return-type="<?php echo esc_attr($deep_nested_image_return_type); ?>">Select Image</button>
+                                <button type="button" class="button ccc-nested-remove-image" data-return-type="<?php echo esc_attr($deep_nested_image_return_type); ?>" style="display: <?php echo $display_remove_btn; ?>">Remove</button>
+                                <div class="ccc-nested-image-preview-container">
+                                    <?php if ($image_src) : ?>
+                                        <div class="ccc-nested-image-preview">
+                                            <img src="<?php echo esc_url($image_src); ?>" alt="Selected image" />
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php elseif ($deep_nested_field['type'] === 'repeater') : ?>
+                            <p><em>(Even deeper nested repeater not supported in UI rendering)</em></p>
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
@@ -1193,17 +1584,35 @@ class MetaBoxManager {
             foreach ($instance_fields as $field_id => $value) {
                 $field_id = intval($field_id);
                 
-                // Handle repeater field values (which are JSON strings)
                 $field_obj = Field::find($field_id);
-                if ($field_obj && $field_obj->getType() === 'repeater') {
-                    // Value is already JSON from JS, no need to wp_kses_post directly on the whole string
-                    // We should ensure it's valid JSON and then sanitize its contents if needed,
-                    // but for now, trust the JS output and store as is.
-                    // If it's not valid JSON, json_decode will return null, and we'll store an empty array.
-                    $decoded_value = json_decode(wp_unslash($value), true);
-                    $value_to_save = json_encode($decoded_value); // Re-encode to ensure valid JSON
+                if (!$field_obj) {
+                    error_log("CCC: Field object not found for field_id: $field_id during save.");
+                    continue;
+                }
+
+                $value_to_save = wp_unslash($value); // Start with unslashed value
+
+                if ($field_obj->getType() === 'repeater') {
+                    $decoded_value = json_decode($value_to_save, true);
+                    $sanitized_decoded_value = $this->sanitizeRepeaterData($decoded_value, $field_obj->getConfig());
+                    $value_to_save = json_encode($sanitized_decoded_value);
+                } elseif ($field_obj->getType() === 'image') {
+                    $field_config = json_decode($field_obj->getConfig(), true);
+                    $return_type = $field_config['return_type'] ?? 'url';
+
+                    if ($return_type === 'url') {
+                        $decoded_value = json_decode($value_to_save, true);
+                        if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                            $value_to_save = esc_url_raw($decoded_value['url']);
+                        } else {
+                            $value_to_save = esc_url_raw($value_to_save);
+                        }
+                    } else { // 'array'
+                        $decoded_value = json_decode($value_to_save, true);
+                        $value_to_save = json_encode($decoded_value);
+                    }
                 } else {
-                    $value_to_save = wp_kses_post(wp_unslash($value));
+                    $value_to_save = wp_kses_post($value_to_save);
                 }
                 
                 if ($value_to_save !== '' && $value_to_save !== '[]') { // Don't save empty strings or empty JSON arrays
@@ -1227,6 +1636,54 @@ class MetaBoxManager {
                 }
             }
         }
+    }
+
+    /**
+     * Recursively sanitizes repeater field data.
+     *
+     * @param array $data The repeater data array.
+     * @param string $config_json The JSON config string for the repeater field.
+     * @return array Sanitized data.
+     */
+    private function sanitizeRepeaterData($data, $config_json) {
+        $sanitized_data = [];
+        $config = json_decode($config_json, true);
+        $nested_field_definitions = $config['nested_fields'] ?? [];
+
+        foreach ($data as $item) {
+            $sanitized_item = [];
+            foreach ($nested_field_definitions as $nested_field_def) {
+                $field_name = $nested_field_def['name'];
+                $field_type = $nested_field_def['type'];
+                $nested_field_config = $nested_field_def['config'] ?? [];
+
+                if (isset($item[$field_name])) {
+                    $value = $item[$field_name];
+                    if ($field_type === 'image') {
+                        $return_type = $nested_field_config['return_type'] ?? 'url';
+                        if ($return_type === 'url') {
+                            $decoded_value = json_decode($value, true);
+                            if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                            } else {
+                                $sanitized_item[$field_name] = esc_url_raw($value);
+                            }
+                        } else { // 'array'
+                            $decoded_value = json_decode($value, true);
+                            $sanitized_item[$field_name] = json_encode($decoded_value);
+                        }
+                    } elseif ($field_type === 'repeater') {
+                        // Recursively sanitize nested repeater data
+                        $decoded_value = json_decode($value, true);
+                        $sanitized_item[$field_name] = $this->sanitizeRepeaterData($decoded_value, json_encode($nested_field_config));
+                    } else {
+                        $sanitized_item[$field_name] = wp_kses_post($value);
+                    }
+                }
+            }
+            $sanitized_data[] = $sanitized_item;
+        }
+        return $sanitized_data;
     }
 
     private function getFieldValues($components, $post_id) {
