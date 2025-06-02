@@ -8,7 +8,7 @@ class Database {
     /**
      * Current database version
      */
-    const DB_VERSION = '1.3.1.3'; 
+    const DB_VERSION = '1.3.4'; // Incremented to trigger auto-update
     
     /**
      * Plugin activation hook
@@ -46,17 +46,58 @@ class Database {
     
     /**
      * Check and update database schema if needed
+     * This now runs on every admin page load to catch new columns automatically
      */
     public static function checkAndUpdateSchema() {
-        $current_version = get_option('ccc_db_version', '1.3.1.3');
+        // Only run in admin to avoid performance issues on frontend
+        if (!is_admin()) {
+            return;
+        }
         
-        if (version_compare($current_version, self::DB_VERSION, '<')) {
+        $current_version = get_option('ccc_db_version', '0.0.0');
+        
+        // Always check for schema updates, not just version changes
+        if (version_compare($current_version, self::DB_VERSION, '<') || self::needsSchemaUpdate()) {
             self::createTables(); // This will run dbDelta and update existing tables
             self::migrateData($current_version); // Run specific migrations
             update_option('ccc_db_version', self::DB_VERSION);
             
             error_log("CCC: Database updated from version {$current_version} to " . self::DB_VERSION);
         }
+    }
+
+    /**
+     * Check if database schema needs updating by examining table structure
+     */
+    private static function needsSchemaUpdate() {
+        global $wpdb;
+        
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $field_values_table = $wpdb->prefix . 'cc_field_values';
+        
+        // Check if required columns exist
+        $required_columns = [
+            $fields_table => ['placeholder'],
+            $field_values_table => ['instance_id']
+        ];
+        
+        foreach ($required_columns as $table => $columns) {
+            foreach ($columns as $column) {
+                $column_exists = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SHOW COLUMNS FROM {$table} LIKE %s",
+                        $column
+                    )
+                );
+                
+                if (empty($column_exists)) {
+                    error_log("CCC: Missing column {$column} in table {$table}");
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
     
     /**
