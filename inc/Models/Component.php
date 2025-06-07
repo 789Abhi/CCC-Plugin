@@ -30,30 +30,15 @@ class Component {
             'name' => $this->name,
             'handle_name' => $this->handle_name,
             'instruction' => $this->instruction,
-            'hidden' => $this->hidden ? 1 : 0, // Ensure boolean is saved as integer
+            'hidden' => $this->hidden,
             'component_order' => $this->component_order
         ];
 
-        $format = [
-            '%s', // name
-            '%s', // handle_name
-            '%s', // instruction
-            '%d', // hidden
-            '%d'  // component_order
-        ];
-
         if ($this->id) {
-            $result = $wpdb->update(
-                $table,
-                $data,
-                ['id' => $this->id],
-                $format,
-                ['%d']
-            );
+            $result = $wpdb->update($table, $data, ['id' => $this->id]);
         } else {
             $data['created_at'] = current_time('mysql');
-            $format[] = '%s'; // created_at
-            $result = $wpdb->insert($table, $data, $format);
+            $result = $wpdb->insert($table, $data);
             if ($result !== false) {
                 $this->id = $wpdb->insert_id;
             }
@@ -107,20 +92,13 @@ class Component {
         }, $results);
     }
 
-    public static function handleExists($handle, $exclude_id = 0) {
+    public static function handleExists($handle) {
         global $wpdb;
         $table = $wpdb->prefix . 'cc_components';
         
-        $query = "SELECT id FROM $table WHERE handle_name = %s";
-        $params = [$handle];
-        
-        if ($exclude_id) {
-            $query .= " AND id != %d";
-            $params[] = $exclude_id;
-        }
-
-        $result = $wpdb->get_var($wpdb->prepare($query, $params));
-        return $result !== null;
+        return $wpdb->get_var(
+            $wpdb->prepare("SELECT id FROM $table WHERE handle_name = %s", $handle)
+        ) !== null;
     }
 
     // Getters
@@ -128,7 +106,7 @@ class Component {
     public function getName() { return $this->name; }
     public function getHandleName() { return $this->handle_name; }
     public function getInstruction() { return $this->instruction; }
-    public function isHidden() { return (bool) $this->hidden; }
+    public function isHidden() { return $this->hidden; }
     public function getComponentOrder() { return $this->component_order; }
     public function getCreatedAt() { return $this->created_at; }
 
@@ -136,6 +114,6 @@ class Component {
     public function setName($name) { $this->name = $name; }
     public function setHandleName($handle) { $this->handle_name = $handle; }
     public function setInstruction($instruction) { $this->instruction = $instruction; }
-    public function setHidden($hidden) { $this->hidden = (bool) $hidden; }
-    public function setComponentOrder($order) { $this->component_order = (int) $order; }
+    public function setHidden($hidden) { $this->hidden = $hidden; }
+    public function setComponentOrder($order) { $this->component_order = $order; }
 }

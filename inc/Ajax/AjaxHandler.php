@@ -32,7 +32,7 @@ class AjaxHandler {
         add_action('wp_ajax_ccc_save_assignments', [$this, 'saveAssignments']);
         add_action('wp_ajax_ccc_save_field_values', [$this, 'saveFieldValues']);
         add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
-        add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']);
+        add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']); // New action
     }
 
     public function handleCreateComponent() {
@@ -152,21 +152,6 @@ class AjaxHandler {
                 return;
             }
 
-            // Validate name uniqueness within the component
-            global $wpdb;
-            $table = $wpdb->prefix . 'cc_fields';
-            $exists = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT id FROM $table WHERE name = %s AND component_id = %d",
-                    $name,
-                    $component_id
-                )
-            );
-            if ($exists) {
-                wp_send_json_error(['message' => 'Field name already exists within this component.']);
-                return;
-            }
-
             $config = [];
             
             if ($type === 'repeater') {
@@ -225,7 +210,7 @@ class AjaxHandler {
             $required = isset($_POST['required']) ? (bool) $_POST['required'] : false;
             $placeholder = sanitize_text_field($_POST['placeholder'] ?? '');
 
-            if (empty($field_id) || empty($label) || empty($name)) {
+            if (empty($field_id) || empty($label)) {
                 wp_send_json_error(['message' => 'Missing required fields.']);
                 return;
             }
@@ -236,24 +221,7 @@ class AjaxHandler {
                 return;
             }
 
-            // Validate name uniqueness within the component (excluding this field)
-            global $wpdb;
-            $table = $wpdb->prefix . 'cc_fields';
-            $exists = $wpdb->get_var(
-                $wpdb->prepare(
-                    "SELECT id FROM $table WHERE name = %s AND component_id = %d AND id != %d",
-                    $name,
-                    $field->getComponentId(),
-                    $field_id
-                )
-            );
-            if ($exists) {
-                wp_send_json_error(['message' => 'Field name already exists within this component.']);
-                return;
-            }
-
             $field->setLabel($label);
-            $field->setName($name);
             $field->setRequired($required);
             $field->setPlaceholder($placeholder);
             $field->setType($type);
@@ -472,54 +440,87 @@ class AjaxHandler {
     }
 
     public function getPostsWithComponents() {
-        try {
-            check_ajax_referer('ccc_nonce', 'nonce');
+        check_ajax_referer('ccc_nonce', 'nonce');
 
-            $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
-            $posts = get_posts([
-                'post_type' => $post_type,
-                'post_status' => 'publish',
-                'numberposts' => -1,
-                'orderby' => 'title',
-                'order' => 'ASC'
-            ]);
+        $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
+        $posts = get_posts([
+            'post_type' => $post_type,
+            'post_status' => 'publish',
+            'numberposts' => -1,
+            'orderby' => 'title',
+            'order' => 'ASC'
+        ]);
 
-            $post_list = array_map(function ($post) {
-                $components = get_post_meta($post->ID, '_ccc_components', true);
-                return [
-                    'id' => $post->ID,
-                    'title' => $post->post_title,
-                    'components' => $components ?: [],
-                    'has_components' => !empty($components)
-                ];
-            }, $posts);
+        $post_list = array_map(function ($post) {
+            $components = get_post_meta($post->ID, '_ccc_components', true);
+            $assigned_components = [];
+            
+            if (is_array($components)) {
+                $assigned_components = array_map(function($comp) {
+                    return intval($comp['id']);
+                }, $components);
+            }
+            
+            return [
+                'id' => $post->ID,
+                'title' => $post->post_title,
+                'status' => $post->post_status,
+                'has_components' => !empty($components),
+                'assigned_components' => array_unique($assigned_components)
+            ];
+        }, $posts);
 
-            wp_send_json_success(['posts' => $post_list]);
-
-        } catch (\Exception $e) {
-            error_log("Exception in getPostsWithComponents: " . $e->getMessage());
-            wp_send_json_error(['message' => $e->getMessage()]);
-        }
+        wp_send_json_success(['posts' => $post_list]);
     }
 
     public function saveComponentAssignments() {
-        try {
-            check_ajax_referer('ccc_nonce', 'nonce');
+        check_ajax_referer('ccc_nonce', 'nonce');
 
-            $post_id = intval($_POST['post_id'] ?? 0);
-            $components = json_decode(wp_unslash($_POST['components'] ?? '[]'), true);
+        $assignments = json_decode(wp_unslash($_POST['assignments'] ?? '{}'), true);
+        
+        if (!is_array($assignments)) {
+            wp_send_json_error(['message' => 'Invalid assignments data']);
+            return;
+        }
 
-            if (!$post_id) {
-                wp_send_json_error(['message' => 'Invalid post ID.']);
-                return;
+        foreach ($assignments as $post_id => $component_data_array) {
+            $post_id = intval($post_id);
+        
+            if (!$post_id) continue;
+       
+            $existing_components = get_post_meta($post_id, '_ccc_components', true);
+            if (!is_array($existing_components)) {
+                $existing_components = [];
             }
 
-            update_post_meta($post_id, '_ccc_components', $components);
-            wp_send_json_success(['message' => 'Component assignments saved successfully.']);
+            $new_components_data = [];
+            $current_order = 0;
 
-        } catch (\Exception $e) {
-            error_log("Exception in saveComponentAssignments: " . $e->getMessage());
-            wp_send_json_error(['message' => $e->getMessage()]);
+            foreach ($component_data_array as $incoming_comp) {
+                $component_id = intval($incoming_comp['id']);
+                
+                $existing_instance = null;
+                foreach ($existing_components as $ec) {
+                    if ($ec['id'] === $component_id) {
+                        $existing_instance = $ec;
+                        break;
+                    }
+                }
+
+                $instance_id = $existing_instance['instance_id'] ?? (time() . '_' . $component_id . '_' . uniqid());
+
+                $new_components_data[] = [
+                    'id' => $component_id,
+                    'name' => sanitize_text_field($incoming_comp['name']),
+                    'handle_name' => sanitize_text_field($incoming_comp['handle_name']),
+                    'order' => $current_order++,
+                    'instance_id' => $instance_id
+                ];
+            }
+            
+            update_post_meta($post_id, '_ccc_components', $new_components_data);
         }
+
+        wp_send_json_success(['message' => 'Component assignments saved successfully']);
     }
 }
