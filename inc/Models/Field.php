@@ -49,6 +49,22 @@ class Field {
             return new self($data);
         }, $results);
     }
+    
+    public static function findByNameAndComponent($name, $component_id) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'cc_fields';
+        $result = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM {$table_name} WHERE name = %s AND component_id = %d",
+                $name,
+                $component_id
+            ),
+            ARRAY_A
+        );
+        
+        return $result ? new self($result) : null;
+    }
 
     public function save() {
         global $wpdb;

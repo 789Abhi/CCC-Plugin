@@ -32,7 +32,7 @@ class AjaxHandler {
         add_action('wp_ajax_ccc_save_assignments', [$this, 'saveAssignments']);
         add_action('wp_ajax_ccc_save_field_values', [$this, 'saveFieldValues']);
         add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
-        add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']); // New action
+        add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']);
     }
 
     public function handleCreateComponent() {
@@ -120,15 +120,26 @@ class AjaxHandler {
                 'type' => sanitize_text_field($nf['type'] ?? ''),
             ];
 
-            if ($sanitized_nf['type'] === 'repeater' && isset($nf['config'])) {
+            if (isset($nf['config'])) {
                 $config = $nf['config'];
-                $sanitized_config = [
-                    'max_sets' => intval($config['max_sets'] ?? 0),
-                    'nested_fields' => $this->sanitizeNestedFieldDefinitions($config['nested_fields'] ?? [])
-                ];
+                $sanitized_config = [];
+                
+                // Handle different field type configurations
+                if ($sanitized_nf['type'] === 'repeater') {
+                    $sanitized_config = [
+                        'max_sets' => intval($config['max_sets'] ?? 0),
+                        'nested_fields' => $this->sanitizeNestedFieldDefinitions($config['nested_fields'] ?? [])
+                    ];
+                } elseif (in_array($sanitized_nf['type'], ['checkbox', 'select', 'radio', 'button_group'])) {
+                    $sanitized_config['options'] = $config['options'] ?? [];
+                    $sanitized_config['multiple'] = (bool)($config['multiple'] ?? false);
+                } elseif ($sanitized_nf['type'] === 'image') {
+                    $sanitized_config['return_type'] = sanitize_text_field($config['return_type'] ?? 'url');
+                } elseif ($sanitized_nf['type'] === 'taxonomy_term') {
+                    $sanitized_config['taxonomy'] = sanitize_text_field($config['taxonomy'] ?? 'category');
+                }
+                
                 $sanitized_nf['config'] = $sanitized_config;
-            } elseif ($sanitized_nf['type'] === 'image' && isset($nf['config']['return_type'])) {
-                $sanitized_nf['config'] = ['return_type' => sanitize_text_field($nf['config']['return_type'])];
             }
             
             $sanitized_fields[] = $sanitized_nf;
@@ -168,10 +179,21 @@ class AjaxHandler {
                 ];
                 
                 error_log("CCC AjaxHandler: Repeater config: " . json_encode($config));
+            } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
+                $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+                $config = [
+                    'options' => $field_config['options'] ?? [],
+                    'multiple' => (bool)($field_config['multiple'] ?? false)
+                ];
             } elseif ($type === 'image') {
                 $return_type = sanitize_text_field($_POST['return_type'] ?? 'url');
                 $config = [
                     'return_type' => $return_type
+                ];
+            } elseif ($type === 'taxonomy_term') {
+                $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+                $config = [
+                    'taxonomy' => sanitize_text_field($field_config['taxonomy'] ?? 'category')
                 ];
             }
 
@@ -240,10 +262,19 @@ class AjaxHandler {
                 $config['nested_fields'] = $sanitized_nested_fields;
                 
                 error_log("CCC AjaxHandler: Updated repeater config: " . json_encode($config));
+            } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
+                $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+                $config = [
+                    'options' => $field_config['options'] ?? [],
+                    'multiple' => (bool)($field_config['multiple'] ?? false)
+                ];
             } elseif ($type === 'image') {
                 if (!isset($config['return_type'])) {
                     $config['return_type'] = 'url';
                 }
+            } elseif ($type === 'taxonomy_term') {
+                $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+                $config['taxonomy'] = sanitize_text_field($field_config['taxonomy'] ?? 'category');
             }
             
             $field->setConfig(json_encode($config));

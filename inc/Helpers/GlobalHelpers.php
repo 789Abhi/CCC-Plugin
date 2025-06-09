@@ -77,6 +77,21 @@ if (!function_exists('get_ccc_field')) {
                 return $decoded_value['url'];
             }
             return $value ?: ''; // Fallback to raw URL if not an array or URL type
+        } elseif ($field_type === 'checkbox') {
+            // Return array for checkbox fields
+            return $value ? explode(',', $value) : [];
+        } elseif ($field_type === 'toggle') {
+            // Return boolean for toggle fields
+            return $value === '1';
+        } elseif ($field_type === 'wysiwyg') {
+            // Return processed HTML content
+            return wp_kses_post($value);
+        } elseif ($field_type === 'page_link') {
+            // Return page object or ID
+            return $value ? intval($value) : 0;
+        } elseif ($field_type === 'taxonomy_term') {
+            // Return term object or ID
+            return $value ? intval($value) : 0;
         }
         
         error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
@@ -128,6 +143,16 @@ if (!function_exists('get_ccc_component_fields')) {
                 return $decoded_value['url'];
             }
             return $value ?: '';
+        } elseif ($field_type === 'checkbox') {
+            return $value ? explode(',', $value) : [];
+        } elseif ($field_type === 'toggle') {
+            return $value === '1';
+        } elseif ($field_type === 'wysiwyg') {
+            return wp_kses_post($value);
+        } elseif ($field_type === 'page_link') {
+            return $value ? intval($value) : 0;
+        } elseif ($field_type === 'taxonomy_term') {
+            return $value ? intval($value) : 0;
         }
         return $value ?: '';
     }
@@ -202,6 +227,73 @@ if (!function_exists('get_ccc_post_components')) {
         });
         
         return $components;
+    }
+}
+
+// Helper functions for new field types
+if (!function_exists('get_ccc_wysiwyg_field')) {
+    function get_ccc_wysiwyg_field($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        return wp_kses_post($value);
+    }
+}
+
+if (!function_exists('get_ccc_checkbox_field')) {
+    function get_ccc_checkbox_field($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        return is_array($value) ? $value : ($value ? explode(',', $value) : []);
+    }
+}
+
+if (!function_exists('get_ccc_toggle_field')) {
+    function get_ccc_toggle_field($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        return $value === '1' || $value === true;
+    }
+}
+
+if (!function_exists('get_ccc_page_link_field')) {
+    function get_ccc_page_link_field($field_name, $post_id = null, $instance_id = null, $return_object = false) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        $page_id = intval($value);
+        
+        if (!$page_id) {
+            return $return_object ? null : 0;
+        }
+        
+        return $return_object ? get_post($page_id) : $page_id;
+    }
+}
+
+if (!function_exists('get_ccc_taxonomy_term_field')) {
+    function get_ccc_taxonomy_term_field($field_name, $post_id = null, $instance_id = null, $return_object = false) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        $term_id = intval($value);
+        
+        if (!$term_id) {
+            return $return_object ? null : 0;
+        }
+        
+        return $return_object ? get_term($term_id) : $term_id;
+    }
+}
+
+if (!function_exists('get_ccc_video_embed')) {
+    function get_ccc_video_embed($field_name, $post_id = null, $instance_id = null, $width = null, $height = null) {
+        $url = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (!$url) {
+            return '';
+        }
+        
+        $embed = wp_oembed_get($url, compact('width', 'height'));
+        return $embed ?: '';
+    }
+}
+
+if (!function_exists('get_ccc_oembed')) {
+    function get_ccc_oembed($field_name, $post_id = null, $instance_id = null, $width = null, $height = null) {
+        return get_ccc_video_embed($field_name, $post_id, $instance_id, $width, $height);
     }
 }
 

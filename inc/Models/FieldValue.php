@@ -4,78 +4,124 @@ namespace CCC\Models;
 defined('ABSPATH') || exit;
 
 class FieldValue {
-    private $id;
-    private $post_id;
-    private $field_id;
-    private $value;
-    private $created_at;
+    // This class primarily provides static methods for database interaction
+    // No instance properties or constructor are needed if only static methods are used.
 
-    public function __construct($data = []) {
-        $this->id = $data['id'] ?? null;
-        $this->post_id = $data['post_id'] ?? null;
-        $this->field_id = $data['field_id'] ?? null;
-        $this->value = $data['value'] ?? '';
-        $this->created_at = $data['created_at'] ?? null;
+    /**
+     * Retrieves a single field value from the database.
+     *
+     * @param int $field_id The ID of the field.
+     * @param int $post_id The ID of the post.
+     * @param string $instance_id The unique instance ID of the component.
+     * @return string The field value, or an empty string if not found.
+     */
+    public static function getValue($field_id, $post_id, $instance_id) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'cc_field_values';
+        
+        $value = $wpdb->get_var($wpdb->prepare(
+            "SELECT value FROM {$table_name} WHERE field_id = %d AND post_id = %d AND instance_id = %s ORDER BY id DESC LIMIT 1",
+            $field_id,
+            $post_id,
+            $instance_id
+        ));
+        
+        return $value ?: '';
     }
 
-    public function save() {
+    /**
+     * Saves a single field value to the database.
+     * If a value for the given field, post, and instance already exists, it will be updated.
+     * Otherwise, a new record will be inserted.
+     *
+     * @param int $field_id The ID of the field.
+     * @param int $post_id The ID of the post.
+     * @param string $instance_id The unique instance ID of the component.
+     * @param mixed $value The value to save. Can be a string or an array (which will be JSON encoded).
+     * @return bool True on success, false on failure.
+     */
+    public static function saveValue($field_id, $post_id, $instance_id, $value) {
         global $wpdb;
-        $table = $wpdb->prefix . 'cc_field_values';
+        $table_name = $wpdb->prefix . 'cc_field_values';
 
-        $data = [
-            'post_id' => $this->post_id,
-            'field_id' => $this->field_id,
-            'value' => $this->value
-        ];
-
-        if ($this->id) {
-            $result = $wpdb->update($table, $data, ['id' => $this->id]);
+        // Handle array values (e.g., from checkboxes, repeaters) by JSON encoding them
+        if (is_array($value)) {
+            $value = json_encode($value);
         } else {
-            $data['created_at'] = current_time('mysql');
-            $result = $wpdb->insert($table, $data);
-            if ($result !== false) {
-                $this->id = $wpdb->insert_id;
-            }
+            // Sanitize scalar values
+            $value = sanitize_text_field($value);
+        }
+
+        // Check if a value already exists for this field, post, and instance
+        $existing_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table_name} WHERE field_id = %d AND post_id = %d AND instance_id = %s",
+            $field_id,
+            $post_id,
+            $instance_id
+        ));
+
+        if ($existing_id) {
+            // Update existing value
+            $result = $wpdb->update(
+                $table_name,
+                ['value' => $value, 'updated_at' => current_time('mysql')],
+                ['id' => $existing_id],
+                ['%s', '%s'],
+                ['%d']
+            );
+        } else {
+            // Insert new value
+            $result = $wpdb->insert(
+                $table_name,
+                [
+                    'field_id' => $field_id,
+                    'post_id' => $post_id,
+                    'instance_id' => $instance_id,
+                    'value' => $value,
+                    'created_at' => current_time('mysql'),
+                    'updated_at' => current_time('mysql')
+                ],
+                ['%d', '%d', '%s', '%s', '%s', '%s']
+            );
         }
 
         return $result !== false;
     }
 
-    public static function deleteByPost($post_id) {
-        global $wpdb;
-        return $wpdb->delete(
-            $wpdb->prefix . 'cc_field_values',
-            ['post_id' => $post_id],
-            ['%d']
-        );
-    }
-
+    /**
+     * Saves multiple field values for a given post.
+     * This is typically used when saving all fields from a meta box submission.
+     *
+     * @param int $post_id The ID of the post.
+     * @param array $field_values An associative array of field values, typically from $_POST['ccc_field_values'].
+     *                            Expected format: [component_id => [instance_id => [field_name => value]]]
+     * @return bool True on success, false on failure.
+     */
     public static function saveMultiple($post_id, $field_values) {
-        // Delete existing values
-        self::deleteByPost($post_id);
+        global $wpdb;
+        // Ensure the Field model is loaded to use Field::findByNameAndComponent
+        if (!class_exists('CCC\Models\Field')) {
+            require_once plugin_dir_path(__FILE__) . 'Field.php'; // Adjust path if necessary
+        }
 
-        // Save new values
-        foreach ($field_values as $field_id => $value) {
-            if ($value !== '') {
-                $field_value = new self([
-                    'post_id' => $post_id,
-                    'field_id' => intval($field_id),
-                    'value' => wp_kses_post($value)
-                ]);
-                $field_value->save();
+        $success = true;
+        foreach ($field_values as $component_id => $instances) {
+            foreach ($instances as $instance_id => $fields_data) {
+                foreach ($fields_data as $field_name => $value) {
+                    // Find the field ID by name and component ID
+                    $field_obj = Field::findByNameAndComponent($field_name, $component_id);
+                    if ($field_obj) {
+                        if (!self::saveValue($field_obj->getId(), $post_id, $instance_id, $value)) {
+                            $success = false;
+                            error_log("CCC FieldValue: Failed to save value for field '{$field_name}' (ID: {$field_obj->getId()}) on post {$post_id} instance {$instance_id}");
+                        }
+                    } else {
+                        error_log("CCC FieldValue: Field '{$field_name}' not found for component {$component_id}.");
+                        $success = false;
+                    }
+                }
             }
         }
+        return $success;
     }
-
-    // Getters
-    public function getId() { return $this->id; }
-    public function getPostId() { return $this->post_id; }
-    public function getFieldId() { return $this->field_id; }
-    public function getValue() { return $this->value; }
-    public function getCreatedAt() { return $this->created_at; }
-
-    // Setters
-    public function setPostId($id) { $this->post_id = $id; }
-    public function setFieldId($id) { $this->field_id = $id; }
-    public function setValue($value) { $this->value = $value; }
 }
