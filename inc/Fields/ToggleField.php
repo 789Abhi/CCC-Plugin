@@ -68,7 +68,7 @@ class ToggleField extends BaseField {
     }
     
     public function save() {
-        // Implementation for saving the field
+        // Implementation for saving the fields
         return true;
     }
 }
