@@ -1,0 +1,48 @@
+name: Build and Release Plugin
+
+on:
+  workflow_run:
+    workflows: ["Sync Version from Manifest"]
+    types:
+      - completed
+
+jobs:
+  release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Read Version
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Delete existing tag and release (if exists)
+        run: |
+          gh release delete "v${VERSION}" --yes || true
+          git tag -d "v${VERSION}" || true
+          git push origin :refs/tags/v${VERSION} || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Plugin Zip
+        run: |
+          mkdir -p dist
+          zip -r dist/custom-craft-component.zip . \
+            -x '.git*' \
+            -x '.github/*' \
+            -x 'dist/*' \
+            -x '*.md' \
+            -x 'LICENSE'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          files: dist/custom-craft-component.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
