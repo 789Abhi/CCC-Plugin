@@ -1960,7 +1960,3 @@ class MetaBoxManager {
         return $field_values;
     }
 }
-
-
-
-
