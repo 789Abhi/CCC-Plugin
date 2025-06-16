@@ -535,7 +535,7 @@ class MetaBoxManager {
                                        name="${fieldName}" 
                                        value="${field.value || ''}" />
                             `;
-                        } else if (field.type === 'text-area') {
+                        } else if (field.type === 'textarea') {
                             fieldsHtml += `
                                 <textarea id="ccc_field_${component.instance_id}_${field.id}" 
                                           name="${fieldName}" 
@@ -1409,7 +1409,7 @@ class MetaBoxManager {
                                        name="<?php echo esc_attr($field_name); ?>"
                                        value="<?php echo esc_attr($field_value); ?>" />
                                        
-                            <?php elseif ($field->getType() === 'text-area') : ?>
+                            <?php elseif ($field->getType() === 'textarea') : ?>
                                 <textarea id="ccc_field_<?php echo esc_attr($instance_id . '_' . $field->getId()); ?>"
                                           name="<?php echo esc_attr($field_name); ?>"
                                           rows="5"><?php echo esc_textarea($field_value); ?></textarea>
