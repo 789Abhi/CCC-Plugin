@@ -8,6 +8,9 @@ use CCC\Fields\TextAreaField;
 use CCC\Fields\ImageField;
 use CCC\Fields\RepeaterField;
 use CCC\Fields\ColorField; // NEW: Import ColorField
+use CCC\Fields\SelectField;
+use CCC\Fields\CheckboxField;
+use CCC\Fields\RadioField;
 
 defined('ABSPATH') || exit;
 
@@ -34,6 +37,15 @@ class FieldService {
               break;
           case 'color': // NEW: Add ColorField
               $field = new ColorField($label, $name, $component_id);
+              break;
+          case 'select':
+              $field = new SelectField($label, $name, $component_id, false, '', $config);
+              break;
+          case 'checkbox':
+              $field = new CheckboxField($label, $name, $component_id, false, '', $config);
+              break;
+          case 'radio':
+              $field = new RadioField($label, $name, $component_id, false, '', $config);
               break;
           default:
               throw new \Exception('Invalid field type.');

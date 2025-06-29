@@ -1210,13 +1210,13 @@ class MetaBoxManager {
                   $(`.ccc-repeater-container .ccc-nested-field-input.ccc-color-picker`).each(function() {
                       $(this).wpColorPicker({
                           change: function(event, ui) {
-                              $(event.target).trigger('change'); // Trigger change event for repeater update
+                              $(event.target).trigger('change'); 
                           }
                       });
                   });
               }
 
-              // Initialize media uploader for image fields (top level)
+              
               function initializeMediaUploaders(instanceId) {
                   $(document).off('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`).on('click', `.ccc-upload-image-btn[data-instance-id="${instanceId}"]`, function(e) {
                       e.preventDefault();
