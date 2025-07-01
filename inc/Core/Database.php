@@ -8,7 +8,7 @@ class Database {
     /**
      * Current database version
      */
-    const DB_VERSION = '1.3.1.7'; // Incremented to trigger auto-update
+    const DB_VERSION = '1.3.2.0'; // Incremented to trigger auto-update
     
     /**
      * Plugin activation hook
