@@ -24,7 +24,7 @@ jobs:
         run: |
           VERSION=$(jq -r .version manifest.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          PLUGIN_FILE="custom-craft-component.php"
+          PLUGIN_FILE=$(find . -maxdepth 1 -name "*.php" | head -n 1)
 
           if grep -q "^ \* Version: " "$PLUGIN_FILE"; then
             sed -i -E "s/^( \* Version: ).*/\1$VERSION/" "$PLUGIN_FILE"
