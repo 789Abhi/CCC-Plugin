@@ -110,6 +110,7 @@ class ImageFieldRenderer extends BaseFieldRenderer {
                     }
                     // Update UI
                     $field.find('.ccc-image-upload-area').removeClass('no-image').addClass('has-image');
+                    frame.close();
                 });
                 frame.open();
             });
@@ -151,6 +152,7 @@ class ImageFieldRenderer extends BaseFieldRenderer {
                         };
                         $input.val(JSON.stringify(imageData));
                     }
+                    frame.close();
                 });
                 frame.open();
             });
