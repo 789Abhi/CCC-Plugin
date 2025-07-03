@@ -59,11 +59,7 @@ class MetaBoxManager {
             return;
         }
 
-        $current_components = get_post_meta($post->ID, '_ccc_components', true);
-        if (empty($current_components) || !is_array($current_components)) {
-            return;
-        }
-
+        // Always render the meta box, even if there are no components assigned
         add_meta_box(
             'ccc_component_selector',
             'Custom Components',
@@ -132,18 +128,10 @@ class MetaBoxManager {
         <?php
     }
 
-    protected function renderComponentAccordion($comp, $index, $field_values) {
+    public function renderComponentAccordion($comp, $index, $field_values) {
         $fields = Field::findByComponent($comp['id']);
         $instance_id = $comp['instance_id'] ?? ('legacy_' . $index);
-        
-        $current_components = get_post_meta(get_the_ID(), '_ccc_components', true);
-        if (!is_array($current_components)) {
-            $current_components = [];
-        }
-        $instance_count = count(array_filter($current_components, function($c) use ($comp) {
-            return $c['id'] === $comp['id'];
-        }));
-        
+        $instance_count = 1;
         ?>
         <div class="ccc-component-accordion" data-instance-id="<?php echo esc_attr($instance_id); ?>">
             <div class="ccc-component-header">
@@ -161,7 +149,7 @@ class MetaBoxManager {
             <div class="ccc-component-content">
                 <?php if ($fields): ?>
                     <?php foreach ($fields as $field): ?>
-                        <?php echo $this->renderField($field, $instance_id, $field_values, get_the_ID()); ?>
+                        <?php echo $this->renderField($field, $instance_id, $field_values, null); ?>
                     <?php endforeach; ?>
                 <?php else: ?>
                     <p>No fields defined for this component.</p>
@@ -557,6 +545,18 @@ class MetaBoxManager {
                 var postId = $('#ccc-component-manager').data('post-id');
                 var componentsData = JSON.parse($('#ccc-components-data').val() || '[]');
 
+                // --- Persist expand/collapse state using localStorage ---
+                function getAccordionState() {
+                    var key = 'ccc_accordion_state_' + postId;
+                    try {
+                        return JSON.parse(localStorage.getItem(key) || '{}');
+                    } catch (e) { return {}; }
+                }
+                function setAccordionState(state) {
+                    var key = 'ccc_accordion_state_' + postId;
+                    localStorage.setItem(key, JSON.stringify(state));
+                }
+
                 // Initialize sortable for main components
                 $('#ccc-components-list').sortable({
                     handle: '.ccc-component-header',
@@ -566,20 +566,17 @@ class MetaBoxManager {
                     }
                 });
 
-                // Add component functionality
+                // Add component functionality (no restriction on duplicates)
                 $('#ccc-add-component-btn').on('click', function() {
                     var $dropdown = $('#ccc-component-dropdown');
                     var componentId = $dropdown.val();
                     var componentName = $dropdown.find(':selected').data('name');
                     var componentHandle = $dropdown.find(':selected').data('handle');
-                    
                     if (!componentId) {
                         alert('Please select a component to add.');
                         return;
                     }
-                    
                     var instanceId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                    
                     var newComponent = {
                         id: parseInt(componentId),
                         name: componentName,
@@ -587,14 +584,11 @@ class MetaBoxManager {
                         order: componentsData.length,
                         instance_id: instanceId
                     };
-                    
                     componentsData.push(newComponent);
-                    
-                    fetchComponentFields(newComponent, function(component) {
-                        renderComponentAccordion(component);
+                    fetchComponentFields(newComponent, function(component, html) {
+                        renderComponentAccordion(component, html);
                         updateComponentOrder();
                     });
-                    
                     $dropdown.val('');
                 });
 
@@ -602,32 +596,80 @@ class MetaBoxManager {
                 $(document).on('click', '.ccc-remove-btn', function() {
                     var instanceId = $(this).data('instance-id');
                     var $accordion = $(this).closest('.ccc-component-accordion');
-                    
                     if (confirm('Are you sure you want to remove this component instance?')) {
                         componentsData = componentsData.filter(function(comp) {
                             return comp.instance_id !== instanceId;
                         });
                         $accordion.remove();
                         updateComponentOrder();
+                        // Remove state from localStorage
+                        var state = getAccordionState();
+                        delete state[instanceId];
+                        setAccordionState(state);
                     }
                 });
 
-                // Toggle accordion
-                $(document).on('click', '.ccc-toggle-btn', function() {
-                    var $content = $(this).closest('.ccc-component-accordion').find('.ccc-component-content');
+                // --- Expand/collapse logic ---
+                // Toggle on .ccc-toggle-btn only (stop propagation)
+                $(document).on('click', '.ccc-toggle-btn', function(e) {
+                    e.stopPropagation(); // Prevent event from bubbling to header
+                    var $header = $(this).closest('.ccc-component-header');
+                    var $accordion = $header.closest('.ccc-component-accordion');
+                    var $content = $accordion.find('.ccc-component-content');
+                    var instanceId = $accordion.data('instance-id');
+                    var state = getAccordionState();
                     $content.toggleClass('active');
-                    $(this).text($content.hasClass('active') ? 'Collapse' : 'Expand');
+                    $header.find('.ccc-toggle-btn').text($content.hasClass('active') ? 'Collapse' : 'Expand');
+                    state[instanceId] = $content.hasClass('active');
+                    setAccordionState(state);
+                });
+                // Toggle on .ccc-component-header (but not if clicking the button)
+                $(document).on('click', '.ccc-component-header', function(e) {
+                    if ($(e.target).hasClass('ccc-toggle-btn')) return;
+                    var $header = $(this);
+                    var $accordion = $header.closest('.ccc-component-accordion');
+                    var $content = $accordion.find('.ccc-component-content');
+                    var instanceId = $accordion.data('instance-id');
+                    var state = getAccordionState();
+                    $content.toggleClass('active');
+                    $header.find('.ccc-toggle-btn').text($content.hasClass('active') ? 'Collapse' : 'Expand');
+                    state[instanceId] = $content.hasClass('active');
+                    setAccordionState(state);
+                });
+
+                // On page load, restore expand/collapse state
+                var state = getAccordionState();
+                $('.ccc-component-accordion').each(function() {
+                    var $accordion = $(this);
+                    var $content = $accordion.find('.ccc-component-content');
+                    var $header = $accordion.find('.ccc-component-header');
+                    var instanceId = $accordion.data('instance-id');
+                    if (state[instanceId]) {
+                        $content.addClass('active');
+                        $header.find('.ccc-toggle-btn').text('Collapse');
+                    } else {
+                        $content.removeClass('active');
+                        $header.find('.ccc-toggle-btn').text('Expand');
+                    }
+                });
+
+                // Save expand/collapse state on form submit (so it persists after save)
+                $('form').on('submit', function() {
+                    var state = {};
+                    $('.ccc-component-accordion').each(function() {
+                        var $accordion = $(this);
+                        var $content = $accordion.find('.ccc-component-content');
+                        var instanceId = $accordion.data('instance-id');
+                        state[instanceId] = $content.hasClass('active');
+                    });
+                    setAccordionState(state);
                 });
 
                 // Initialize color pickers
                 function initializeColorPickers() {
                     $('.ccc-color-picker').wpColorPicker();
                 }
-
-                // Initialize existing color pickers
                 initializeColorPickers();
-
-                // Re-initialize color pickers when new components are added
                 $(document).on('DOMNodeInserted', function(e) {
                     if ($(e.target).find('.ccc-color-picker').length) {
                         $(e.target).find('.ccc-color-picker').wpColorPicker();
@@ -640,15 +682,12 @@ class MetaBoxManager {
                         var componentIndex = componentsData.findIndex(function(comp) {
                             return comp.instance_id === instanceId;
                         });
-                        
                         if (componentIndex !== -1) {
                             componentsData[componentIndex].order = index;
                         }
-                        
                         $(this).find('.ccc-component-order').text('Order: ' + (index + 1));
                         $(this).find('.ccc-remove-btn').data('instance-id', instanceId);
                     });
-                    
                     $('#ccc-components-data').val(JSON.stringify(componentsData));
                 }
 
@@ -666,7 +705,7 @@ class MetaBoxManager {
                         success: function(response) {
                             if (response.success) {
                                 component.fields = response.data.fields || [];
-                                callback(component);
+                                callback(component, response.data.html || '');
                             }
                         },
                         error: function() {
@@ -675,10 +714,29 @@ class MetaBoxManager {
                     });
                 }
 
-                function renderComponentAccordion(component) {
-                    // This would be implemented to render new component accordions
-                    // For now, we'll just refresh the page to show the new component
-                    location.reload();
+                function renderComponentAccordion(component, html) {
+                    // If HTML is provided (from AJAX), use it; otherwise, build a minimal accordion
+                    var accordionHtml = html;
+                    if (!accordionHtml) {
+                        accordionHtml = `
+                        <div class="ccc-component-accordion" data-instance-id="${component.instance_id}">
+                            <div class="ccc-component-header">
+                                <div class="ccc-component-title">
+                                    <span class="ccc-drag-handle dashicons dashicons-menu"></span>
+                                    ${component.name}
+                                    <span class="ccc-component-order">Order: ${component.order + 1}</span>
+                                    <span class="ccc-component-instance">Instance #</span>
+                                </div>
+                                <div class="ccc-component-actions">
+                                    <button type="button" class="ccc-toggle-btn">Expand</button>
+                                    <button type="button" class="ccc-remove-btn" data-instance-id="${component.instance_id}">Remove</button>
+                                </div>
+                            </div>
+                            <div class="ccc-component-content"></div>
+                        </div>`;
+                    }
+                    $('#ccc-components-list').append(accordionHtml);
+                    updateComponentOrder();
                 }
 
                 // Initialize existing accordions

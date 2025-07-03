@@ -8,7 +8,7 @@ class Database {
     /**
      * Current database version
      */
-    const DB_VERSION = '1.3.2.0'; // Incremented to trigger auto-update
+    const DB_VERSION = '1.3.3.0'; // Incremented to trigger auto-update for handle column
     
     /**
      * Plugin activation hook
@@ -147,6 +147,19 @@ class Database {
                 error_log('CCC: Added placeholder column to fields table');
             }
         }
+
+        // Migration for handle column in fields table
+        $column_exists = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM {$fields_table} LIKE %s",
+                'handle'
+            )
+        );
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE {$fields_table} ADD COLUMN handle VARCHAR(255) NOT NULL AFTER name");
+            $wpdb->query("ALTER TABLE {$fields_table} ADD KEY handle_idx (handle)");
+            error_log('CCC: Added handle column to fields table');
+        }
     }
 
     /**
@@ -194,6 +207,7 @@ class Database {
                 component_id BIGINT UNSIGNED NOT NULL,
                 label VARCHAR(255) NOT NULL,
                 name VARCHAR(255) NOT NULL,
+                handle VARCHAR(255) NOT NULL,
                 type VARCHAR(50) NOT NULL DEFAULT 'text',
                 config JSON,
                 field_order INT DEFAULT 0,
@@ -205,6 +219,7 @@ class Database {
                 PRIMARY KEY (id),
                 KEY component_id_idx (component_id),
                 KEY name_idx (name),
+                KEY handle_idx (handle),
                 KEY type_idx (type),
                 KEY field_order_idx (field_order),
                 KEY required_idx (required),

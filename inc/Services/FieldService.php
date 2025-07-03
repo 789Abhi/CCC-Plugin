@@ -78,6 +78,10 @@ class FieldService {
         if (isset($data['label'])) {
             $field->setLabel($data['label']);
         }
+        if (isset($data['name'])) {
+            $field->setName($data['name']);
+            $field->setHandle(sanitize_title($data['name'])); // Always sync handle to name
+        }
         if (isset($data['type'])) {
             $field->setType($data['type']);
         }

@@ -8,6 +8,7 @@ class Field {
     private $component_id;
     private $label;
     private $name;
+    private $handle;
     private $type;
     private $required;
     private $placeholder;
@@ -20,6 +21,7 @@ class Field {
         $this->component_id = $data['component_id'] ?? null;
         $this->label = $data['label'] ?? '';
         $this->name = $data['name'] ?? '';
+        $this->handle = $data['handle'] ?? sanitize_title($this->name);
         $this->type = $data['type'] ?? '';
         $this->required = $data['required'] ?? false;
         $this->placeholder = $data['placeholder'] ?? '';
@@ -74,6 +76,7 @@ class Field {
             'component_id' => $this->component_id,
             'label' => $this->label,
             'name' => $this->name,
+            'handle' => $this->handle,
             'type' => $this->type,
             'required' => $this->required ? 1 : 0,
             'placeholder' => $this->placeholder,
@@ -85,6 +88,7 @@ class Field {
             '%d', // component_id
             '%s', // label
             '%s', // name
+            '%s', // handle
             '%s', // type
             '%d', // required
             '%s', // placeholder
@@ -128,6 +132,7 @@ class Field {
     public function getComponentId() { return $this->component_id; }
     public function getLabel() { return $this->label; }
     public function getName() { return $this->name; }
+    public function getHandle() { return $this->handle; }
     public function getType() { return $this->type; }
     public function getRequired() { return (bool) $this->required; }
     public function getPlaceholder() { return $this->placeholder; }
@@ -139,6 +144,7 @@ class Field {
     public function setComponentId($id) { $this->component_id = $id; }
     public function setLabel($label) { $this->label = $label; }
     public function setName($name) { $this->name = $name; }
+    public function setHandle($handle) { $this->handle = $handle; }
     public function setType($type) { $this->type = $type; }
     public function setRequired($required) { $this->required = (bool) $required; }
     public function setPlaceholder($placeholder) { $this->placeholder = $placeholder; }

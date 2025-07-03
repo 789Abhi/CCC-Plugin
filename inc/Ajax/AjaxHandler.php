@@ -281,14 +281,18 @@ class AjaxHandler {
               $config = [];
           }
           
-          $field->setConfig(json_encode($config));
+          $data = [
+              'label' => $label,
+              'name' => $name,
+              'type' => $type,
+              'required' => $required,
+              'placeholder' => $placeholder,
+              'config' => json_encode($config)
+          ];
 
-          if ($field->save()) {
-              error_log("CCC AjaxHandler: Successfully updated field {$field_id}");
-              wp_send_json_success(['message' => 'Field updated successfully.']);
-          } else {
-              wp_send_json_error(['message' => 'Failed to update field.']);
-          }
+          $this->field_service->updateField($field_id, $data);
+
+          wp_send_json_success(['message' => 'Field updated successfully.']);
 
       } catch (\Exception $e) {
           error_log("Exception in updateFieldCallback: " . $e->getMessage());
@@ -441,7 +445,6 @@ class AjaxHandler {
                       $post_id, $field->getId(), $instance_id
                   ));
               }
-              
               $config_json = $field->getConfig();
               $decoded_config = [];
               if (!empty($config_json)) {
@@ -451,9 +454,6 @@ class AjaxHandler {
                       $decoded_config = [];
                   }
               }
-              
-              error_log("CCC AjaxHandler: Field {$field->getName()} (Type: {$field->getType()}) - Config: " . print_r($decoded_config, true));
-
               $field_data[] = [
                   'id' => $field->getId(),
                   'label' => $field->getLabel(),
@@ -466,7 +466,28 @@ class AjaxHandler {
               ];
           }
 
-          wp_send_json_success(['fields' => $field_data]);
+          // Render the accordion HTML for this component instance
+          ob_start();
+          $component = Component::find($component_id);
+          if ($component) {
+              // Use the same render logic as renderComponentAccordion
+              $manager = new \CCC\Admin\MetaBoxManager();
+              $comp = [
+                  'id' => $component->getId(),
+                  'name' => $component->getName(),
+                  'handle_name' => $component->getHandleName(),
+                  'order' => 0, // Will be set by JS
+                  'instance_id' => $instance_id
+              ];
+              $field_values = [];
+              foreach ($fields as $field) {
+                  $field_values[$field->getId()] = '';
+              }
+              $manager->renderComponentAccordion($comp, 0, [$instance_id => $field_values]);
+          }
+          $accordion_html = ob_get_clean();
+
+          wp_send_json_success(['fields' => $field_data, 'html' => $accordion_html]);
 
       } catch (\Exception $e) {
           error_log("Exception in getComponentFields: " . $e->getMessage());
