@@ -670,11 +670,17 @@ class MetaBoxManager {
                     $('.ccc-color-picker').wpColorPicker();
                 }
                 initializeColorPickers();
-                $(document).on('DOMNodeInserted', function(e) {
-                    if ($(e.target).find('.ccc-color-picker').length) {
-                        $(e.target).find('.ccc-color-picker').wpColorPicker();
+                // Use MutationObserver instead of DOMNodeInserted
+                const observer = new MutationObserver(function(mutationsList) {
+                    for (const mutation of mutationsList) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.nodeType === 1 && $(node).find('.ccc-color-picker').length) {
+                                $(node).find('.ccc-color-picker').wpColorPicker();
+                            }
+                        });
                     }
                 });
+                observer.observe(document.body, { childList: true, subtree: true });
 
                 function updateComponentOrder() {
                     $('#ccc-components-list .ccc-component-accordion').each(function(index) {

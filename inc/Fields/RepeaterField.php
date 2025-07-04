@@ -151,6 +151,7 @@ class RepeaterField extends BaseField {
                         }
                     });
                 });
+                serializeRepeater();
             }
             
             function initializeNewItemFields($item) {
@@ -161,10 +162,42 @@ class RepeaterField extends BaseField {
                 // Add more initialization as needed for different field types
             }
             
-            // Initialize existing items
-            $container.children('.ccc-repeater-item').each(function() {
-                initializeNewItemFields($(this));
+            // Serialize all repeater data into the hidden input
+            function serializeRepeater() {
+                var repeaterData = [];
+                $container.children('.ccc-repeater-item').each(function() {
+                    var $item = $(this);
+                    var itemData = {};
+                    $item.find('.ccc-nested-field').each(function() {
+                        var $field = $(this);
+                        var fieldName = $field.data('nested-field-name');
+                        var fieldType = $field.data('nested-field-type');
+                        var $input = $field.find('input, select, textarea').first();
+                        var value;
+                        if ($input.is(':checkbox')) {
+                            value = [];
+                            $field.find('input[type="checkbox"]:checked').each(function() {
+                                value.push($(this).val());
+                            });
+                        } else if ($input.is(':radio')) {
+                            value = $field.find('input[type="radio"]:checked').val() || '';
+                        } else {
+                            value = $input.val();
+                        }
+                        itemData[fieldName] = value;
+                    });
+                    repeaterData.push(itemData);
+                });
+                $repeater.find('.ccc-repeater-main-input').val(JSON.stringify(repeaterData));
+            }
+            
+            // Serialize on change
+            $repeater.on('change', '.ccc-nested-field-input', function() {
+                serializeRepeater();
             });
+            
+            // Serialize on page load
+            serializeRepeater();
         });
         </script>
         <?php

@@ -40,18 +40,16 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             </div>
             
             <div class="ccc-repeater-items">
-                <?php if (!empty($repeater_value)): ?>
-                    <?php foreach ($repeater_value as $item_index => $item_data): ?>
-                        <?php $this->renderRepeaterItem($item_index, $item_data, $nested_field_definitions); ?>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <div class="ccc-repeater-empty">
-                        <div class="ccc-empty-icon">
-                            <span class="dashicons dashicons-list-view"></span>
-                        </div>
-                        <p>No items added yet. Click "Add Item" to get started.</p>
-                    </div>
-                <?php endif; ?>
+                <?php 
+                if (empty($repeater_value)) {
+                    // Always show one empty item if none exist
+                    $this->renderRepeaterItem(0, [], $nested_field_definitions);
+                } else {
+                    foreach ($repeater_value as $item_index => $item_data) {
+                        $this->renderRepeaterItem($item_index, $item_data, $nested_field_definitions);
+                    }
+                }
+                ?>
             </div>
             
             <input type="hidden" 
@@ -60,6 +58,102 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                    name="<?php echo esc_attr($this->getFieldName()); ?>"
                    value="<?php echo esc_attr($this->field_value ?: '[]'); ?>" />
         </div>
+        <script>
+        jQuery(document).ready(function($) {
+            // Use a single shared media frame for all image fields (including nested)
+            var cccMediaFrame = null;
+
+            function openCCCFrame($field, $input, returnType, $btn) {
+                if (!cccMediaFrame) {
+                    cccMediaFrame = wp.media({
+                        title: 'Select or Upload an Image',
+                        button: { text: 'Use this image' },
+                        multiple: false,
+                        library: { type: 'image' }
+                    });
+                }
+                // Remove all previous handlers before binding new ones
+                cccMediaFrame.off('select');
+                cccMediaFrame.off('open');
+
+                cccMediaFrame.on('select', function() {
+                    var attachment = cccMediaFrame.state().get('selection').first().toJSON();
+                    var imageUrl = attachment.sizes && attachment.sizes.medium ? attachment.sizes.medium.url : attachment.url;
+                    if ($btn && $btn.hasClass('ccc-upload-image-btn')) {
+                        var previewHtml = '<div class="ccc-image-preview">' +
+                            '<img src="' + imageUrl + '" alt="Selected image" style="max-width: 150px; height: auto; display: block; margin: 0 auto;" />' +
+                            '<div class="ccc-image-overlay">' +
+                                '<button type="button" class="ccc-change-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-edit"></span>Change Image</button>' +
+                                '<button type="button" class="ccc-remove-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-trash"></span>Remove</button>' +
+                            '</div>' +
+                        '</div>';
+                        $field.find('.ccc-image-upload-area').html(previewHtml).removeClass('no-image').addClass('has-image');
+                    } else {
+                        $field.find('img').attr('src', imageUrl);
+                    }
+                    if (returnType === 'url') {
+                        $input.val(imageUrl);
+                    } else {
+                        var imageData = {
+                            id: attachment.id,
+                            url: imageUrl,
+                            alt: attachment.alt,
+                            title: attachment.title,
+                            caption: attachment.caption,
+                            description: attachment.description
+                        };
+                        $input.val(JSON.stringify(imageData));
+                    }
+                    $field.find('.ccc-image-upload-area').removeClass('no-image').addClass('has-image');
+                    cccMediaFrame.close();
+                });
+
+                // Always clear previous selection on open
+                cccMediaFrame.on('open', function() {
+                    var selection = cccMediaFrame.state().get('selection');
+                    selection.reset();
+                });
+
+                cccMediaFrame.open();
+            }
+
+            // Change Image
+            $(document).on('click', '.ccc-change-image-btn', function(e) {
+                e.preventDefault();
+                var $btn = $(this);
+                var $field = $btn.closest('.ccc-image-field');
+                var $input = $field.find('.ccc-image-field-input');
+                var returnType = $btn.data('return-type');
+                openCCCFrame($field, $input, returnType, $btn);
+            });
+
+            // First time image selection
+            $(document).on('click', '.ccc-upload-image-btn', function(e) {
+                e.preventDefault();
+                var $btn = $(this);
+                var $field = $btn.closest('.ccc-image-field');
+                var $input = $field.find('.ccc-image-field-input');
+                var returnType = $btn.data('return-type');
+                openCCCFrame($field, $input, returnType, $btn);
+            });
+
+            $(document).on('click', '.ccc-remove-image-btn', function(e) {
+                e.preventDefault();
+                var $btn = $(this);
+                var $field = $btn.closest('.ccc-image-field');
+                var $input = $field.find('.ccc-image-field-input');
+                $input.val('');
+                // Restore the placeholder HTML
+                var placeholderHtml = '<div class="ccc-image-placeholder">' +
+                    '<div class="ccc-upload-icon"><span class="dashicons dashicons-cloud-upload"></span></div>' +
+                    '<h4>Upload an Image</h4>' +
+                    '<p>Click to select an image from your media library</p>' +
+                    '<button type="button" class="ccc-upload-image-btn button button-primary" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + $btn.data('return-type') + '">Select Image</button>' +
+                '</div>';
+                $field.find('.ccc-image-upload-area').html(placeholderHtml).removeClass('has-image').addClass('no-image');
+            });
+        });
+        </script>
         <?php
         $content = ob_get_clean();
 
@@ -87,7 +181,11 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 <div class="ccc-repeater-item-fields">
                     <?php foreach ($nested_field_definitions as $nested_field): 
                         $nested_field_value = $item_data[$nested_field['name']] ?? '';
-                        $nested_field_config = $nested_field['config'] ?? [];
+                        // Ensure config is always set
+                        if (!isset($nested_field['config']) || !is_array($nested_field['config'])) {
+                            $nested_field['config'] = [];
+                        }
+                        $nested_field_config = $nested_field['config'];
                     ?>
                         <div class="ccc-nested-field" 
                              data-nested-field-name="<?php echo esc_attr($nested_field['name']); ?>" 
@@ -104,7 +202,6 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
     
     protected function renderNestedField($field_config, $value) {
         $type = $field_config['type'];
-        
         switch ($type) {
             case 'text':
                 echo '<input type="text" class="ccc-nested-field-input" data-nested-field-type="text" value="' . esc_attr($value) . '" />';
@@ -126,6 +223,51 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 break;
             case 'wysiwyg':
                 echo '<textarea class="ccc-nested-field-input ccc-nested-wysiwyg" data-nested-field-type="wysiwyg" rows="5">' . esc_textarea($value) . '</textarea>';
+                break;
+            case 'image':
+                $return_type = isset($field_config['config']['return_type']) ? $field_config['config']['return_type'] : 'url';
+                $image_src = '';
+                $image_id = '';
+                if (!empty($value)) {
+                    if ($return_type === 'url') {
+                        $image_src = $value;
+                        $image_id = attachment_url_to_postid($image_src);
+                    } else if ($return_type === 'array' && is_string($value)) {
+                        $image_data = json_decode($value, true);
+                        $image_src = isset($image_data['url']) ? $image_data['url'] : '';
+                        $image_id = isset($image_data['id']) ? $image_data['id'] : '';
+                    }
+                }
+                // If we have an image ID, get the medium size URL
+                if ($image_id) {
+                    $medium = wp_get_attachment_image_src($image_id, 'medium');
+                    if ($medium && isset($medium[0])) {
+                        $image_src = $medium[0];
+                    }
+                }
+                $field_id = $field_config['name'];
+                $instance_id = uniqid('nestedimg_');
+                echo '<div class="ccc-image-field ccc-nested-image-field">';
+                echo '<input type="hidden" class="ccc-image-field-input ccc-nested-field-input" id="' . esc_attr($instance_id) . '" data-nested-field-type="image" data-return-type="' . esc_attr($return_type) . '" value="' . esc_attr($value) . '" />';
+                echo '<div class="ccc-image-upload-area ' . ($image_src ? 'has-image' : 'no-image') . '">';
+                if ($image_src) {
+                    echo '<div class="ccc-image-preview">';
+                    echo '<img src="' . esc_url($image_src) . '" alt="Selected image" style="max-width: 150px; height: auto; display: block; margin: 0 auto;" />';
+                    echo '<div class="ccc-image-overlay">';
+                    echo '<button type="button" class="ccc-change-image-btn" data-field-id="' . esc_attr($field_id) . '" data-instance-id="' . esc_attr($instance_id) . '" data-return-type="' . esc_attr($return_type) . '"><span class="dashicons dashicons-edit"></span>Change Image</button>';
+                    echo '<button type="button" class="ccc-remove-image-btn" data-field-id="' . esc_attr($field_id) . '" data-instance-id="' . esc_attr($instance_id) . '" data-return-type="' . esc_attr($return_type) . '"><span class="dashicons dashicons-trash"></span>Remove</button>';
+                    echo '</div>';
+                    echo '</div>';
+                } else {
+                    echo '<div class="ccc-image-placeholder">';
+                    echo '<div class="ccc-upload-icon"><span class="dashicons dashicons-cloud-upload"></span></div>';
+                    echo '<h4>Upload an Image</h4>';
+                    echo '<p>Click to select an image from your media library</p>';
+                    echo '<button type="button" class="ccc-upload-image-btn button button-primary" data-field-id="' . esc_attr($field_id) . '" data-instance-id="' . esc_attr($instance_id) . '" data-return-type="' . esc_attr($return_type) . '">Select Image</button>';
+                    echo '</div>';
+                }
+                echo '</div>';
+                echo '</div>';
                 break;
             default:
                 echo '<input type="text" class="ccc-nested-field-input" data-nested-field-type="text" value="' . esc_attr($value) . '" />';

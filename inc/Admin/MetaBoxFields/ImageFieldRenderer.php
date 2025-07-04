@@ -78,84 +78,83 @@ class ImageFieldRenderer extends BaseFieldRenderer {
         ?>
         <script>
         jQuery(document).ready(function($) {
-            // Use event delegation for dynamically loaded fields
+            // Use a single shared media frame for all image fields
+            var cccMediaFrame = null;
+
+            function openCCCFrame($field, $input, returnType, $btn) {
+                if (!cccMediaFrame) {
+                    cccMediaFrame = wp.media({
+                        title: 'Select or Upload an Image',
+                        button: { text: 'Use this image' },
+                        multiple: false,
+                        library: { type: 'image' }
+                    });
+                }
+                // Remove all previous handlers before binding new ones
+                cccMediaFrame.off('select');
+                cccMediaFrame.off('open');
+
+                cccMediaFrame.on('select', function() {
+                    var attachment = cccMediaFrame.state().get('selection').first().toJSON();
+                    var imageUrl = attachment.sizes && attachment.sizes.medium ? attachment.sizes.medium.url : attachment.url;
+                    if ($btn && $btn.hasClass('ccc-upload-image-btn')) {
+                        var previewHtml = '<div class="ccc-image-preview">' +
+                            '<img src="' + imageUrl + '" alt="Selected image" style="max-width: 300px; height: auto; display: block; margin: 0 auto;" />' +
+                            '<div class="ccc-image-overlay">' +
+                                '<button type="button" class="ccc-change-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-edit"></span>Change Image</button>' +
+                                '<button type="button" class="ccc-remove-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-trash"></span>Remove</button>' +
+                            '</div>' +
+                        '</div>';
+                        $field.find('.ccc-image-upload-area').html(previewHtml).removeClass('no-image').addClass('has-image');
+                    } else {
+                        $field.find('img').attr('src', imageUrl);
+                    }
+                    if (returnType === 'url') {
+                        $input.val(imageUrl);
+                    } else {
+                        var imageData = {
+                            id: attachment.id,
+                            url: imageUrl,
+                            alt: attachment.alt,
+                            title: attachment.title,
+                            caption: attachment.caption,
+                            description: attachment.description
+                        };
+                        $input.val(JSON.stringify(imageData));
+                    }
+                    $field.find('.ccc-image-upload-area').removeClass('no-image').addClass('has-image');
+                    cccMediaFrame.close();
+                });
+
+                // Always clear previous selection on open
+                cccMediaFrame.on('open', function() {
+                    var selection = cccMediaFrame.state().get('selection');
+                    selection.reset();
+                });
+
+                cccMediaFrame.open();
+            }
+
+            // Change Image
             $(document).on('click', '.ccc-change-image-btn', function(e) {
                 e.preventDefault();
                 var $btn = $(this);
                 var $field = $btn.closest('.ccc-image-field');
                 var $input = $field.find('.ccc-image-field-input');
                 var returnType = $btn.data('return-type');
-                var frame = wp.media({
-                    title: 'Select or Upload an Image',
-                    button: { text: 'Use this image' },
-                    multiple: false,
-                    library: { type: 'image' }
-                });
-                frame.on('select', function() {
-                    var attachment = frame.state().get('selection').first().toJSON();
-                    var imageUrl = attachment.sizes && attachment.sizes.medium ? attachment.sizes.medium.url : attachment.url;
-                    $field.find('img').attr('src', imageUrl);
-                    if (returnType === 'url') {
-                        $input.val(imageUrl);
-                    } else {
-                        var imageData = {
-                            id: attachment.id,
-                            url: imageUrl,
-                            alt: attachment.alt,
-                            title: attachment.title,
-                            caption: attachment.caption,
-                            description: attachment.description
-                        };
-                        $input.val(JSON.stringify(imageData));
-                    }
-                    // Update UI
-                    $field.find('.ccc-image-upload-area').removeClass('no-image').addClass('has-image');
-                    frame.close();
-                });
-                frame.open();
+                openCCCFrame($field, $input, returnType, $btn);
             });
-            // Handle first time image selection
+
+            // First time image selection
             $(document).on('click', '.ccc-upload-image-btn', function(e) {
                 e.preventDefault();
                 var $btn = $(this);
                 var $field = $btn.closest('.ccc-image-field');
                 var $input = $field.find('.ccc-image-field-input');
                 var returnType = $btn.data('return-type');
-                var frame = wp.media({
-                    title: 'Select or Upload an Image',
-                    button: { text: 'Use this image' },
-                    multiple: false,
-                    library: { type: 'image' }
-                });
-                frame.on('select', function() {
-                    var attachment = frame.state().get('selection').first().toJSON();
-                    var imageUrl = attachment.sizes && attachment.sizes.medium ? attachment.sizes.medium.url : attachment.url;
-                    // If there is no preview img yet, create it
-                    var previewHtml = '<div class="ccc-image-preview">' +
-                        '<img src="' + imageUrl + '" alt="Selected image" style="max-width: 300px; height: auto; display: block; margin: 0 auto;" />' +
-                        '<div class="ccc-image-overlay">' +
-                            '<button type="button" class="ccc-change-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-edit"></span>Change Image</button>' +
-                            '<button type="button" class="ccc-remove-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-trash"></span>Remove</button>' +
-                        '</div>' +
-                    '</div>';
-                    $field.find('.ccc-image-upload-area').html(previewHtml).removeClass('no-image').addClass('has-image');
-                    if (returnType === 'url') {
-                        $input.val(imageUrl);
-                    } else {
-                        var imageData = {
-                            id: attachment.id,
-                            url: imageUrl,
-                            alt: attachment.alt,
-                            title: attachment.title,
-                            caption: attachment.caption,
-                            description: attachment.description
-                        };
-                        $input.val(JSON.stringify(imageData));
-                    }
-                    frame.close();
-                });
-                frame.open();
+                openCCCFrame($field, $input, returnType, $btn);
             });
+
             $(document).on('click', '.ccc-remove-image-btn', function(e) {
                 e.preventDefault();
                 var $btn = $(this);
