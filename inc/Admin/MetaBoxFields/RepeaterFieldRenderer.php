@@ -218,7 +218,73 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 }.bind(this), 100);
             });
 
-            // Add new repeater item
+            // Initial serialization on page load
+            $('.ccc-repeater-container').each(function() {
+                serializeRepeater($(this));
+            });
+
+            // Initialize drag and drop functionality
+            function initializeSortable($container) {
+                $container.find('.ccc-repeater-items').sortable({
+                    handle: '.ccc-repeater-item-header',
+                    axis: 'y',
+                    opacity: 0.95,
+                    tolerance: 'pointer',
+                    distance: 3,
+                    delay: 150,
+                    cursor: 'move',
+                    cursorAt: { top: 10, left: 10 },
+                    placeholder: '<div class="ccc-repeater-item ccc-repeater-placeholder" style="height: 60px; background: #f0f6fc; border: 2px dashed #0073aa; margin: 8px 0; display: flex; align-items: center; justify-content: center; color: #0073aa; font-style: italic;">Drop here to reorder</div>',
+                    helper: function(e, item) {
+                        // Create a helper element that shows what's being dragged
+                        var $helper = item.clone();
+                        $helper.css({
+                            'width': item.width(),
+                            'background': '#fff',
+                            'box-shadow': '0 8px 25px rgba(0,0,0,0.2)',
+                            'border': '2px solid #0073aa',
+                            'border-radius': '8px',
+                            'opacity': '0.95',
+                            'transform': 'rotate(1deg)',
+                            'z-index': '9999'
+                        });
+                        return $helper;
+                    },
+                    start: function(e, ui) {
+                        ui.item.addClass('ccc-dragging');
+                        ui.placeholder.height(ui.item.height());
+                        
+                        // Add dragging class to body for global cursor
+                        $('body').addClass('ccc-dragging-active');
+                    },
+                    stop: function(e, ui) {
+                        ui.item.removeClass('ccc-dragging');
+                        $('body').removeClass('ccc-dragging-active');
+                        
+                        // Reindex items after drag
+                        var $container = ui.item.closest('.ccc-repeater-container');
+                        $container.find('.ccc-repeater-item').each(function(index) {
+                            $(this).attr('data-index', index);
+                            $(this).find('.ccc-repeater-item-title strong').text('Item #' + (index + 1));
+                        });
+                        
+                        // Update item count
+                        updateItemCount($container);
+                        
+                        // Serialize data after reordering
+                        setTimeout(function() {
+                            serializeRepeater($container);
+                        }, 100);
+                    }
+                });
+            }
+
+            // Initialize sortable for existing containers
+            $('.ccc-repeater-container').each(function() {
+                initializeSortable($(this));
+            });
+
+            // Re-initialize sortable after adding new items
             $(document).on('click', '.ccc-repeater-add', function(e) {
                 e.preventDefault();
                 var $container = $(this).closest('.ccc-repeater-container');
@@ -242,6 +308,9 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 // Create new item HTML
                 var newItemHtml = createRepeaterItemHtml(currentCount, nestedFieldDefinitions);
                 $items.append(newItemHtml);
+                
+                // Re-initialize sortable for the new item
+                initializeSortable($container);
                 
                 // Update item count
                 updateItemCount($container);
@@ -283,9 +352,25 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             // Toggle repeater item (expand/collapse)
             $(document).on('click', '.ccc-repeater-toggle', function(e) {
                 e.preventDefault();
-                var $item = $(this).closest('.ccc-repeater-item');
+                e.stopPropagation();
+                toggleRepeaterItem($(this).closest('.ccc-repeater-item'));
+            });
+
+            // Toggle when clicking on header (but not on controls)
+            $(document).on('click', '.ccc-repeater-item-header', function(e) {
+                // Don't toggle if clicking on controls (remove button, toggle button, or drag handle)
+                if ($(e.target).closest('.ccc-repeater-item-controls, .ccc-drag-handle').length > 0) {
+                    return;
+                }
+                
+                e.preventDefault();
+                toggleRepeaterItem($(this).closest('.ccc-repeater-item'));
+            });
+
+            // Function to toggle repeater item
+            function toggleRepeaterItem($item) {
                 var $content = $item.find('.ccc-repeater-item-content');
-                var $icon = $(this).find('.dashicons');
+                var $icon = $item.find('.ccc-repeater-toggle .dashicons');
                 
                 if ($content.is(':visible')) {
                     $content.slideUp(200);
@@ -294,7 +379,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     $content.slideDown(200);
                     $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
                 }
-            });
+            }
 
             // Function to create repeater item HTML
             function createRepeaterItemHtml(itemIndex, nestedFieldDefinitions) {
@@ -438,11 +523,6 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 var currentCount = $container.find('.ccc-repeater-item').length;
                 $container.find('.ccc-repeater-count').text(currentCount + ' item(s)');
             }
-
-            // Initial serialization on page load
-            $('.ccc-repeater-container').each(function() {
-                serializeRepeater($(this));
-            });
         });
         </script>
         <?php
@@ -589,7 +669,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         $options = $field_config['config']['options'] ?? [];
         $multiple = isset($field_config['config']['multiple']) && $field_config['config']['multiple'];
         
-        echo '<select class="ccc-nested-field-input" data-nested-field-type="select"' . ($multiple ? ' multiple' : '') . '>';
+        echo '<select class="ccc-nested-field-input" data-nested-field-type="select"' + (multiple ? ' multiple' : '') + '>';
         if (!$multiple) {
             echo '<option value="">— Select —</option>';
         }
@@ -597,7 +677,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             $selected = ($multiple && is_array($value)) ? 
                 (in_array($option_value, $value) ? 'selected' : '') : 
                 selected($value, $option_value, false);
-            echo '<option value="' . esc_attr($option_value) . '" ' . $selected . '>' . esc_html($option_label) . '</option>';
+            echo '<option value="' . esc_attr($option_value) . '" ' + selected + '>' . esc_html($option_label) . '</option>';
         }
         echo '</select>';
     }
@@ -609,7 +689,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         echo '<div class="ccc-nested-checkbox-options">';
         foreach ($options as $option_value => $option_label) {
             $checked = in_array($option_value, $selected_values) ? 'checked' : '';
-            echo '<label><input type="checkbox" class="ccc-nested-field-input" data-nested-field-type="checkbox" value="' . esc_attr($option_value) . '" ' . $checked . '> ' . esc_html($option_label) . '</label>';
+            echo '<label><input type="checkbox" class="ccc-nested-field-input" data-nested-field-type="checkbox" value="' + esc_attr($option_value) + '" ' + checked + '> ' + esc_html($option_label) + '</label>';
         }
         echo '</div>';
     }
@@ -620,7 +700,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         echo '<div class="ccc-nested-radio-options">';
         foreach ($options as $option_value => $option_label) {
             $checked = checked($value, $option_value, false);
-            echo '<label><input type="radio" class="ccc-nested-field-input" data-nested-field-type="radio" value="' . esc_attr($option_value) . '" ' . $checked . '> ' . esc_html($option_label) . '</label>';
+            echo '<label><input type="radio" class="ccc-nested-field-input" data-nested-field-type="radio" value="' + esc_attr($option_value) + '" ' + checked + '> ' + esc_html($option_label) + '</label>';
         }
         echo '</div>';
     }
@@ -725,7 +805,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 padding: 12px 20px;
                 background: #f6f7f7;
                 border-bottom: 1px solid #e1e5e9;
-                cursor: move;
+                cursor: pointer;
             }
             
             .ccc-field-repeater .ccc-repeater-item-title {
@@ -738,13 +818,105 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             }
             
             .ccc-field-repeater .ccc-drag-handle {
-                color: #c3c4c7;
                 cursor: grab;
-                transition: color 0.2s ease;
+                transition: all 0.2s ease;
+                padding: 4px;
+                border-radius: 3px;
             }
             
             .ccc-field-repeater .ccc-drag-handle:hover {
+                background: #e1e5e9;
                 color: #0073aa;
+            }
+            
+            .ccc-field-repeater .ccc-drag-handle:active {
+                cursor: grabbing;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-item-header {
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-item-header:hover {
+                background: #f0f6fc;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-item-header:active {
+                background: #e1e5e9;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-item.ccc-dragging {
+                opacity: 0.95;
+                transform: rotate(1deg);
+                box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+                z-index: 1000;
+                transition: none;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-placeholder {
+                background: #f0f6fc !important;
+                border: 2px dashed #0073aa !important;
+                border-radius: 8px;
+                margin: 8px 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #0073aa;
+                font-style: italic;
+                font-size: 14px;
+                min-height: 60px;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-items.ui-sortable-helper {
+                box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+                border: 2px solid #0073aa;
+                background: #fff;
+                opacity: 0.95;
+                border-radius: 8px;
+                transform: rotate(1deg);
+            }
+            
+            .ccc-field-repeater .ccc-repeater-items.ui-sortable-placeholder {
+                background: #f0f6fc;
+                border: 2px dashed #0073aa;
+                border-radius: 8px;
+                margin: 8px 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #0073aa;
+                font-style: italic;
+                font-size: 14px;
+                min-height: 60px;
+            }
+            
+            /* Global cursor styles for dragging */
+            body.ccc-dragging-active {
+                cursor: grabbing !important;
+            }
+            
+            body.ccc-dragging-active * {
+                cursor: grabbing !important;
+            }
+            
+            /* Prevent text selection during drag */
+            .ccc-field-repeater .ccc-repeater-item-header {
+                user-select: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+            }
+            
+            /* Smooth transitions for content */
+            .ccc-field-repeater .ccc-repeater-item-content {
+                transition: all 0.2s ease;
+                padding: 20px;
+            }
+            
+            .ccc-field-repeater .ccc-repeater-item-fields {
+                display: grid;
+                gap: 16px;
             }
             
             .ccc-field-repeater .ccc-repeater-item-controls {
@@ -787,15 +959,6 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 width: 16px;
                 height: 16px;
                 font-size: 16px;
-            }
-            
-            .ccc-field-repeater .ccc-repeater-item-content {
-                padding: 20px;
-            }
-            
-            .ccc-field-repeater .ccc-repeater-item-fields {
-                display: grid;
-                gap: 16px;
             }
             
             .ccc-field-repeater .ccc-nested-field {
