@@ -70,7 +70,7 @@ if (!function_exists('get_ccc_field')) {
             $decoded_value = json_decode($value, true) ?: [];
             // Check if this is the new format with data and state
             if (is_array($decoded_value) && isset($decoded_value['data']) && isset($decoded_value['state'])) {
-                return $decoded_value; // Return the complete structure with data and state
+                return $decoded_value['data']; // Return only the data part for backward compatibility
             } else {
                 // Legacy format - return as is
                 return $decoded_value;
@@ -142,6 +142,76 @@ if (!function_exists('get_ccc_color_field')) {
     }
 }
 
+// New function to get repeater field with state information
+if (!function_exists('get_ccc_repeater_field_with_state')) {
+    function get_ccc_repeater_field_with_state($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+        global $wpdb, $ccc_current_post_id, $ccc_current_instance_id;
+        
+        if (!$post_id) {
+            $post_id = $ccc_current_post_id ?: get_the_ID();
+        }
+        
+        if (!$instance_id && isset($ccc_current_instance_id)) {
+            $instance_id = $ccc_current_instance_id;
+        }
+        
+        if (!$post_id || !$component_id) {
+            error_log("CCC: Invalid parameters for get_ccc_repeater_field_with_state($field_name, $post_id, $component_id, '$instance_id')");
+            return [];
+        }
+        
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $values_table = $wpdb->prefix . 'cc_field_values';
+        
+        $field_db_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $fields_table WHERE name = %s AND component_id = %d",
+            $field_name,
+            $component_id
+        ));
+        
+        if (!$field_db_id) {
+            error_log("CCC: Field '$field_name' not found for component $component_id");
+            return [];
+        }
+        
+        $field_config = $wpdb->get_var($wpdb->prepare(
+            "SELECT config FROM $fields_table WHERE id = %d",
+            $field_db_id
+        ));
+        
+        $field_config = json_decode($field_config, true) ?: [];
+        
+        // Base query to get the field value
+        $query = "
+            SELECT fv.value 
+            FROM $values_table fv
+            WHERE fv.post_id = %d 
+            AND fv.field_id = %d
+        ";
+        
+        $params = [$post_id, $field_db_id];
+        
+        // If instance_id is specified, add it to the query
+        if ($instance_id) {
+            $query .= " AND fv.instance_id = %s";
+            $params[] = $instance_id;
+        }
+        
+        $query .= " ORDER BY fv.id DESC LIMIT 1"; // Get the latest value
+        $value = $wpdb->get_var($wpdb->prepare($query, $params));
+        
+        // Process repeater value
+        $decoded_value = json_decode($value, true) ?: [];
+        // Check if this is the new format with data and state
+        if (is_array($decoded_value) && isset($decoded_value['data']) && isset($decoded_value['state'])) {
+            return $decoded_value; // Return the complete structure with data and state
+        } else {
+            // Legacy format - return as is
+            return $decoded_value;
+        }
+    }
+}
+
 // Existing helper functions (keeping them for backward compatibility)
 
 if (!function_exists('get_ccc_component_fields')) {
@@ -175,11 +245,8 @@ if (!function_exists('get_ccc_component_fields')) {
                     $processed_items[] = $processed_item;
                 }
                 
-                // Return the complete structure with processed data and state
-                return [
-                    'data' => $processed_items,
-                    'state' => $repeater_state
-                ];
+                // Return only the processed data for backward compatibility
+                return $processed_items;
             } else {
                 // Legacy format - process as before
                 $processed_items = [];

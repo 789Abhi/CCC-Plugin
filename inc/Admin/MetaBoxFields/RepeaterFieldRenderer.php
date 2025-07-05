@@ -59,7 +59,16 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     $this->renderRepeaterItem(0, [], $nested_field_definitions, false);
                 } else {
                     foreach ($repeater_data as $item_index => $item_data) {
-                        $is_expanded = isset($repeater_state[$item_index]) ? $repeater_state[$item_index] : false;
+                        $is_expanded = false;
+                        if (isset($repeater_state[$item_index])) {
+                            $state_value = $repeater_state[$item_index];
+                            // Handle both boolean and string values
+                            if (is_string($state_value)) {
+                                $is_expanded = $state_value === 'true' || $state_value === '1';
+                            } else {
+                                $is_expanded = (bool) $state_value;
+                            }
+                        }
                         $this->renderRepeaterItem($item_index, $item_data, $nested_field_definitions, $is_expanded);
                     }
                 }
@@ -218,6 +227,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     state: repeaterState
                 };
                 
+                console.log('CCC Repeater: Serializing data for container', $container.data('field-id'), 'State:', repeaterState);
                 $input.val(JSON.stringify(finalData));
             }
 
@@ -243,12 +253,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 }.bind(this), 100);
             });
 
-            // Initial serialization on page load
-            $('.ccc-repeater-container').each(function() {
-                serializeRepeater($(this));
-            });
-
-            // Restore expand/collapse state on page load
+            // Restore expand/collapse state on page load FIRST
             $('.ccc-repeater-container').each(function() {
                 var $container = $(this);
                 var $input = $container.find('.ccc-repeater-main-input');
@@ -257,13 +262,22 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 try {
                     var parsedValue = JSON.parse(currentValue);
                     if (parsedValue && parsedValue.state) {
+                        console.log('CCC Repeater: Restoring state for container', $container.data('field-id'), 'State:', parsedValue.state);
                         // Restore state for each item
                         $container.find('.ccc-repeater-item').each(function(index) {
                             var $item = $(this);
                             var $content = $item.find('.ccc-repeater-item-content');
                             var $icon = $item.find('.ccc-repeater-toggle .dashicons');
                             
-                            if (parsedValue.state[index] === true) {
+                            // Handle both boolean and string values for state
+                            var isExpanded = parsedValue.state[index];
+                            if (typeof isExpanded === 'string') {
+                                isExpanded = isExpanded === 'true' || isExpanded === '1';
+                            } else {
+                                isExpanded = Boolean(isExpanded);
+                            }
+                            
+                            if (isExpanded) {
                                 // Item should be expanded
                                 $content.show();
                                 $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
@@ -295,6 +309,11 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                         $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
                     });
                 }
+            });
+
+            // Initial serialization on page load AFTER state restoration
+            $('.ccc-repeater-container').each(function() {
+                serializeRepeater($(this));
             });
 
             // Initialize drag and drop functionality
