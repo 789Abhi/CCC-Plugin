@@ -81,7 +81,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     var imageUrl = attachment.sizes && attachment.sizes.medium ? attachment.sizes.medium.url : attachment.url;
                     if ($btn && $btn.hasClass('ccc-upload-image-btn')) {
                         var previewHtml = '<div class="ccc-image-preview">' +
-                            '<img src="' + imageUrl + '" alt="Selected image" style="max-width: 150px; height: auto; display: block; margin: 0 auto;" />' +
+                            '<img src="' + imageUrl + '" alt="Selected image" style="max-width: 300px; height: auto; display: block; margin: 0 auto;" />' +
                             '<div class="ccc-image-overlay">' +
                                 '<button type="button" class="ccc-change-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-edit"></span>Change Image</button>' +
                                 '<button type="button" class="ccc-remove-image-btn" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + returnType + '"><span class="dashicons dashicons-trash"></span>Remove</button>' +
@@ -106,6 +106,9 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     }
                     $field.find('.ccc-image-upload-area').removeClass('no-image').addClass('has-image');
                     cccMediaFrame.close();
+                    
+                    // Serialize repeater data after image selection
+                    serializeRepeater($field.closest('.ccc-repeater-container'));
                 });
 
                 // Always clear previous selection on open
@@ -151,6 +154,73 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     '<button type="button" class="ccc-upload-image-btn button button-primary" data-field-id="' + $btn.data('field-id') + '" data-instance-id="' + $btn.data('instance-id') + '" data-return-type="' + $btn.data('return-type') + '">Select Image</button>' +
                 '</div>';
                 $field.find('.ccc-image-upload-area').html(placeholderHtml).removeClass('has-image').addClass('no-image');
+                
+                // Serialize repeater data after image removal
+                serializeRepeater($field.closest('.ccc-repeater-container'));
+            });
+
+            // Serialize repeater data function
+            function serializeRepeater($container) {
+                var $items = $container.find('.ccc-repeater-items');
+                var $input = $container.find('.ccc-repeater-main-input');
+                var repeaterData = [];
+                
+                $items.children('.ccc-repeater-item').each(function() {
+                    var $item = $(this);
+                    var itemData = {};
+                    
+                    $item.find('.ccc-nested-field').each(function() {
+                        var $field = $(this);
+                        var fieldName = $field.data('nested-field-name');
+                        var fieldType = $field.data('nested-field-type');
+                        var $inputField = $field.find('input, select, textarea').first();
+                        var value;
+                        
+                        if ($inputField.is(':checkbox')) {
+                            value = [];
+                            $field.find('input[type="checkbox"]:checked').each(function() {
+                                value.push($(this).val());
+                            });
+                        } else if ($inputField.is(':radio')) {
+                            value = $field.find('input[type="radio"]:checked').val() || '';
+                        } else {
+                            value = $inputField.val();
+                        }
+                        
+                        itemData[fieldName] = value;
+                    });
+                    
+                    repeaterData.push(itemData);
+                });
+                
+                $input.val(JSON.stringify(repeaterData));
+            }
+
+            // Serialize on nested field changes
+            $(document).on('change', '.ccc-nested-field-input', function() {
+                serializeRepeater($(this).closest('.ccc-repeater-container'));
+            });
+
+            // Serialize on textarea input
+            $(document).on('input', '.ccc-nested-field-input', function() {
+                serializeRepeater($(this).closest('.ccc-repeater-container'));
+            });
+
+            // Serialize on checkbox/radio changes
+            $(document).on('change', '.ccc-nested-field input[type="checkbox"], .ccc-nested-field input[type="radio"]', function() {
+                serializeRepeater($(this).closest('.ccc-repeater-container'));
+            });
+
+            // Serialize on add/remove repeater items
+            $(document).on('click', '.ccc-repeater-add, .ccc-repeater-remove', function() {
+                setTimeout(function() {
+                    serializeRepeater($(this).closest('.ccc-repeater-container'));
+                }.bind(this), 100);
+            });
+
+            // Initial serialization on page load
+            $('.ccc-repeater-container').each(function() {
+                serializeRepeater($(this));
             });
         });
         </script>
@@ -226,6 +296,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 break;
             case 'image':
                 $return_type = isset($field_config['config']['return_type']) ? $field_config['config']['return_type'] : 'url';
+                $required = !empty($field_config['required']) ? 'required' : '';
                 $image_src = '';
                 $image_id = '';
                 if (!empty($value)) {
@@ -247,27 +318,45 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 }
                 $field_id = $field_config['name'];
                 $instance_id = uniqid('nestedimg_');
-                echo '<div class="ccc-image-field ccc-nested-image-field">';
-                echo '<input type="hidden" class="ccc-image-field-input ccc-nested-field-input" id="' . esc_attr($instance_id) . '" data-nested-field-type="image" data-return-type="' . esc_attr($return_type) . '" value="' . esc_attr($value) . '" />';
-                echo '<div class="ccc-image-upload-area ' . ($image_src ? 'has-image' : 'no-image') . '">';
-                if ($image_src) {
-                    echo '<div class="ccc-image-preview">';
-                    echo '<img src="' . esc_url($image_src) . '" alt="Selected image" style="max-width: 150px; height: auto; display: block; margin: 0 auto;" />';
-                    echo '<div class="ccc-image-overlay">';
-                    echo '<button type="button" class="ccc-change-image-btn" data-field-id="' . esc_attr($field_id) . '" data-instance-id="' . esc_attr($instance_id) . '" data-return-type="' . esc_attr($return_type) . '"><span class="dashicons dashicons-edit"></span>Change Image</button>';
-                    echo '<button type="button" class="ccc-remove-image-btn" data-field-id="' . esc_attr($field_id) . '" data-instance-id="' . esc_attr($instance_id) . '" data-return-type="' . esc_attr($return_type) . '"><span class="dashicons dashicons-trash"></span>Remove</button>';
-                    echo '</div>';
-                    echo '</div>';
-                } else {
-                    echo '<div class="ccc-image-placeholder">';
-                    echo '<div class="ccc-upload-icon"><span class="dashicons dashicons-cloud-upload"></span></div>';
-                    echo '<h4>Upload an Image</h4>';
-                    echo '<p>Click to select an image from your media library</p>';
-                    echo '<button type="button" class="ccc-upload-image-btn button button-primary" data-field-id="' . esc_attr($field_id) . '" data-instance-id="' . esc_attr($instance_id) . '" data-return-type="' . esc_attr($return_type) . '">Select Image</button>';
-                    echo '</div>';
-                }
-                echo '</div>';
-                echo '</div>';
+                ?>
+                <div class="ccc-image-field ccc-nested-image-field">
+                    <input type="hidden"
+                           class="ccc-image-field-input ccc-nested-field-input"
+                           id="<?php echo esc_attr($instance_id); ?>"
+                           data-nested-field-type="image"
+                           data-return-type="<?php echo esc_attr($return_type); ?>"
+                           value="<?php echo esc_attr($value); ?>"
+                           <?php echo $required; ?> />
+                    <div class="ccc-image-upload-area <?php echo $image_src ? 'has-image' : 'no-image'; ?>">
+                        <?php if ($image_src): ?>
+                            <div class="ccc-image-preview">
+                                <img src="<?php echo esc_url($image_src); ?>" alt="Selected image" style="max-width:300px; height: auto; display: block; margin: 0 auto;" />
+                                <div class="ccc-image-overlay">
+                                    <button type="button" class="ccc-change-image-btn" data-field-id="<?php echo esc_attr($field_id); ?>" data-instance-id="<?php echo esc_attr($instance_id); ?>" data-return-type="<?php echo esc_attr($return_type); ?>">
+                                        <span class="dashicons dashicons-edit"></span>
+                                        Change Image
+                                    </button>
+                                    <button type="button" class="ccc-remove-image-btn" data-field-id="<?php echo esc_attr($field_id); ?>" data-instance-id="<?php echo esc_attr($instance_id); ?>" data-return-type="<?php echo esc_attr($return_type); ?>">
+                                        <span class="dashicons dashicons-trash"></span>
+                                        Remove
+                                    </button>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <div class="ccc-image-placeholder">
+                                <div class="ccc-upload-icon">
+                                    <span class="dashicons dashicons-cloud-upload"></span>
+                                </div>
+                                <h4>Upload an Image</h4>
+                                <p>Click to select an image from your media library</p>
+                                <button type="button" class="ccc-upload-image-btn button button-primary" data-field-id="<?php echo esc_attr($field_id); ?>" data-instance-id="<?php echo esc_attr($instance_id); ?>" data-return-type="<?php echo esc_attr($return_type); ?>">
+                                    Select Image
+                                </button>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php
                 break;
             default:
                 echo '<input type="text" class="ccc-nested-field-input" data-nested-field-type="text" value="' . esc_attr($value) . '" />';
@@ -525,6 +614,136 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             .ccc-field-repeater .ccc-required {
                 color: #d63638;
                 margin-left: 3px;
+            }
+            
+            /* Nested Image Field Styles - Same as main image field */
+            .ccc-field-repeater .ccc-nested-image-field {
+                position: relative;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-upload-area {
+                border: 2px dashed #e1e5e9;
+                border-radius: 8px;
+                transition: all 0.3s ease;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-upload-area.no-image {
+                padding: 40px 20px;
+                text-align: center;
+                background: #fafafa;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-upload-area.no-image:hover {
+                border-color: #0073aa;
+                background: #f0f6fc;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-upload-area.has-image {
+                border: 2px solid #e1e5e9;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-placeholder {
+                color: #646970;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-upload-icon {
+                font-size: 48px;
+                color: #c3c4c7;
+                margin-bottom: 16px;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-upload-icon .dashicons {
+                width: 48px;
+                height: 48px;
+                font-size: 48px;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-placeholder h4 {
+                margin: 0 0 8px 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: #1d2327;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-placeholder p {
+                margin: 0 0 20px 0;
+                font-size: 14px;
+                color: #646970;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-preview {
+                position: relative;
+                display: inline-block;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-preview img {
+                width: 100%;
+                height: auto;
+                max-height: 300px;
+                object-fit: cover;
+                display: block;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-overlay {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-image-preview:hover .ccc-image-overlay {
+                opacity: 1;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-change-image-btn,
+            .ccc-field-repeater .ccc-nested-image-field .ccc-remove-image-btn {
+                padding: 8px 16px;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-change-image-btn {
+                background: #0073aa;
+                color: white;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-change-image-btn:hover {
+                background: #005a87;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-remove-image-btn {
+                background: #d63638;
+                color: white;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-remove-image-btn:hover {
+                background: #b32d2e;
+            }
+            
+            .ccc-field-repeater .ccc-nested-image-field .ccc-change-image-btn .dashicons,
+            .ccc-field-repeater .ccc-nested-image-field .ccc-remove-image-btn .dashicons {
+                width: 16px;
+                height: 16px;
+                font-size: 16px;
             }
         </style>';
     }
