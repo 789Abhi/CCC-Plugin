@@ -218,6 +218,227 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 }.bind(this), 100);
             });
 
+            // Add new repeater item
+            $(document).on('click', '.ccc-repeater-add', function(e) {
+                e.preventDefault();
+                var $container = $(this).closest('.ccc-repeater-container');
+                var $items = $container.find('.ccc-repeater-items');
+                var maxSets = parseInt($container.data('max-sets')) || 0;
+                var currentCount = $items.children('.ccc-repeater-item').length;
+                
+                // Check if we've reached the maximum limit
+                if (maxSets > 0 && currentCount >= maxSets) {
+                    alert('Maximum limit of ' + maxSets + ' items reached. You cannot add more items.');
+                    return;
+                }
+                
+                // Get nested field definitions
+                var nestedFieldDefinitions = $container.data('nested-field-definitions');
+                if (!nestedFieldDefinitions) {
+                    console.error('Nested field definitions not found');
+                    return;
+                }
+                
+                // Create new item HTML
+                var newItemHtml = createRepeaterItemHtml(currentCount, nestedFieldDefinitions);
+                $items.append(newItemHtml);
+                
+                // Update item count
+                updateItemCount($container);
+                
+                // Serialize data
+                setTimeout(function() {
+                    serializeRepeater($container);
+                }, 100);
+            });
+
+            // Remove repeater item
+            $(document).on('click', '.ccc-repeater-remove', function(e) {
+                e.preventDefault();
+                var $item = $(this).closest('.ccc-repeater-item');
+                var $container = $item.closest('.ccc-repeater-container');
+                
+                // Confirm deletion
+                if (!confirm('Are you sure you want to remove this item?')) {
+                    return;
+                }
+                
+                $item.remove();
+                
+                // Reindex remaining items
+                $container.find('.ccc-repeater-item').each(function(index) {
+                    $(this).attr('data-index', index);
+                    $(this).find('.ccc-repeater-item-title strong').text('Item #' + (index + 1));
+                });
+                
+                // Update item count
+                updateItemCount($container);
+                
+                // Serialize data
+                setTimeout(function() {
+                    serializeRepeater($container);
+                }, 100);
+            });
+
+            // Toggle repeater item (expand/collapse)
+            $(document).on('click', '.ccc-repeater-toggle', function(e) {
+                e.preventDefault();
+                var $item = $(this).closest('.ccc-repeater-item');
+                var $content = $item.find('.ccc-repeater-item-content');
+                var $icon = $(this).find('.dashicons');
+                
+                if ($content.is(':visible')) {
+                    $content.slideUp(200);
+                    $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
+                } else {
+                    $content.slideDown(200);
+                    $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
+                }
+            });
+
+            // Function to create repeater item HTML
+            function createRepeaterItemHtml(itemIndex, nestedFieldDefinitions) {
+                var html = '<div class="ccc-repeater-item" data-index="' + itemIndex + '">';
+                html += '<div class="ccc-repeater-item-header">';
+                html += '<div class="ccc-repeater-item-title">';
+                html += '<span class="ccc-drag-handle dashicons dashicons-menu"></span>';
+                html += '<strong>Item #' + (itemIndex + 1) + '</strong>';
+                html += '</div>';
+                html += '<div class="ccc-repeater-item-controls">';
+                html += '<button type="button" class="ccc-repeater-toggle" title="Toggle">';
+                html += '<span class="dashicons dashicons-arrow-up-alt2"></span>';
+                html += '</button>';
+                html += '<button type="button" class="ccc-repeater-remove" title="Remove">';
+                html += '<span class="dashicons dashicons-trash"></span>';
+                html += '</button>';
+                html += '</div>';
+                html += '</div>';
+                html += '<div class="ccc-repeater-item-content">';
+                html += '<div class="ccc-repeater-item-fields">';
+                
+                // Add nested fields
+                nestedFieldDefinitions.forEach(function(fieldDef) {
+                    html += '<div class="ccc-nested-field" data-nested-field-name="' + fieldDef.name + '" data-nested-field-type="' + fieldDef.type + '">';
+                    html += '<label class="ccc-nested-field-label">' + fieldDef.label + '</label>';
+                    html += createNestedFieldHtml(fieldDef, '');
+                    html += '</div>';
+                });
+                
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+                
+                return html;
+            }
+
+            // Function to create nested field HTML
+            function createNestedFieldHtml(fieldDef, value) {
+                var html = '';
+                var fieldType = fieldDef.type;
+                var fieldConfig = fieldDef.config || {};
+                
+                switch (fieldType) {
+                    case 'text':
+                        html = '<input type="text" class="ccc-nested-field-input" data-nested-field-type="text" value="' + (value || '') + '" />';
+                        break;
+                    case 'textarea':
+                        html = '<textarea class="ccc-nested-field-input" data-nested-field-type="textarea" rows="3">' + (value || '') + '</textarea>';
+                        break;
+                    case 'color':
+                        html = '<input type="text" class="ccc-nested-field-input ccc-color-picker" data-nested-field-type="color" value="' + (value || '') + '" />';
+                        break;
+                    case 'select':
+                        html = createSelectFieldHtml(fieldConfig, value);
+                        break;
+                    case 'checkbox':
+                        html = createCheckboxFieldHtml(fieldConfig, value);
+                        break;
+                    case 'radio':
+                        html = createRadioFieldHtml(fieldConfig, value);
+                        break;
+                    case 'wysiwyg':
+                        html = '<textarea class="ccc-nested-field-input ccc-nested-wysiwyg" data-nested-field-type="wysiwyg" rows="5">' + (value || '') + '</textarea>';
+                        break;
+                    case 'image':
+                        html = createImageFieldHtml(fieldConfig, value);
+                        break;
+                    default:
+                        html = '<input type="text" class="ccc-nested-field-input" data-nested-field-type="text" value="' + (value || '') + '" />';
+                        break;
+                }
+                
+                return html;
+            }
+
+            // Helper functions for creating specific field types
+            function createSelectFieldHtml(fieldConfig, value) {
+                var options = fieldConfig.options || {};
+                var multiple = fieldConfig.multiple || false;
+                var html = '<select class="ccc-nested-field-input" data-nested-field-type="select"' + (multiple ? ' multiple' : '') + '>';
+                
+                if (!multiple) {
+                    html += '<option value="">— Select —</option>';
+                }
+                
+                for (var optionValue in options) {
+                    var selected = (value == optionValue) ? 'selected' : '';
+                    html += '<option value="' + optionValue + '" ' + selected + '>' + options[optionValue] + '</option>';
+                }
+                
+                html += '</select>';
+                return html;
+            }
+
+            function createCheckboxFieldHtml(fieldConfig, value) {
+                var options = fieldConfig.options || {};
+                var selectedValues = Array.isArray(value) ? value : (value ? value.split(',') : []);
+                var html = '<div class="ccc-nested-checkbox-options">';
+                
+                for (var optionValue in options) {
+                    var checked = selectedValues.includes(optionValue) ? 'checked' : '';
+                    html += '<label><input type="checkbox" class="ccc-nested-field-input" data-nested-field-type="checkbox" value="' + optionValue + '" ' + checked + '> ' + options[optionValue] + '</label>';
+                }
+                
+                html += '</div>';
+                return html;
+            }
+
+            function createRadioFieldHtml(fieldConfig, value) {
+                var options = fieldConfig.options || {};
+                var html = '<div class="ccc-nested-radio-options">';
+                
+                for (var optionValue in options) {
+                    var checked = (value == optionValue) ? 'checked' : '';
+                    html += '<label><input type="radio" class="ccc-nested-field-input" data-nested-field-type="radio" value="' + optionValue + '" ' + checked + '> ' + options[optionValue] + '</label>';
+                }
+                
+                html += '</div>';
+                return html;
+            }
+
+            function createImageFieldHtml(fieldConfig, value) {
+                var returnType = fieldConfig.return_type || 'url';
+                var fieldId = 'nestedimg_' + Math.random().toString(36).substr(2, 9);
+                var html = '<div class="ccc-image-field ccc-nested-image-field">';
+                html += '<input type="hidden" class="ccc-image-field-input ccc-nested-field-input" id="' + fieldId + '" data-nested-field-type="image" data-return-type="' + returnType + '" value="' + (value || '') + '" />';
+                html += '<div class="ccc-image-upload-area no-image">';
+                html += '<div class="ccc-image-placeholder">';
+                html += '<div class="ccc-upload-icon"><span class="dashicons dashicons-cloud-upload"></span></div>';
+                html += '<h4>Upload an Image</h4>';
+                html += '<p>Click to select an image from your media library</p>';
+                html += '<button type="button" class="ccc-upload-image-btn button button-primary" data-field-id="' + fieldId + '" data-instance-id="' + fieldId + '" data-return-type="' + returnType + '">Select Image</button>';
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+                return html;
+            }
+
+            // Function to update item count display
+            function updateItemCount($container) {
+                var currentCount = $container.find('.ccc-repeater-item').length;
+                $container.find('.ccc-repeater-count').text(currentCount + ' item(s)');
+            }
+
             // Initial serialization on page load
             $('.ccc-repeater-container').each(function() {
                 serializeRepeater($(this));
