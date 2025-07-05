@@ -15,6 +15,19 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             $repeater_value = [];
         }
         
+        // Extract data and state from repeater value
+        $repeater_data = [];
+        $repeater_state = [];
+        
+        if (isset($repeater_value['data']) && isset($repeater_value['state'])) {
+            $repeater_data = $repeater_value['data'];
+            $repeater_state = $repeater_value['state'];
+        } else {
+            // Legacy format - treat as data only
+            $repeater_data = $repeater_value;
+            $repeater_state = [];
+        }
+        
         ob_start();
         ?>
         <div class="ccc-repeater-container" 
@@ -25,7 +38,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             
             <div class="ccc-repeater-header">
                 <div class="ccc-repeater-info">
-                    <span class="ccc-repeater-count"><?php echo count($repeater_value); ?> item(s)</span>
+                    <span class="ccc-repeater-count"><?php echo count($repeater_data); ?> item(s)</span>
                     <?php if ($max_sets > 0): ?>
                         <span class="ccc-repeater-limit">Max: <?php echo $max_sets; ?></span>
                     <?php endif; ?>
@@ -41,12 +54,13 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             
             <div class="ccc-repeater-items">
                 <?php 
-                if (empty($repeater_value)) {
+                if (empty($repeater_data)) {
                     // Always show one empty item if none exist
-                    $this->renderRepeaterItem(0, [], $nested_field_definitions);
+                    $this->renderRepeaterItem(0, [], $nested_field_definitions, false);
                 } else {
-                    foreach ($repeater_value as $item_index => $item_data) {
-                        $this->renderRepeaterItem($item_index, $item_data, $nested_field_definitions);
+                    foreach ($repeater_data as $item_index => $item_data) {
+                        $is_expanded = isset($repeater_state[$item_index]) ? $repeater_state[$item_index] : false;
+                        $this->renderRepeaterItem($item_index, $item_data, $nested_field_definitions, $is_expanded);
                     }
                 }
                 ?>
@@ -56,7 +70,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                    class="ccc-repeater-main-input"
                    id="<?php echo esc_attr($this->getFieldId()); ?>"
                    name="<?php echo esc_attr($this->getFieldName()); ?>"
-                   value="<?php echo esc_attr($this->field_value ?: '[]'); ?>" />
+                   value="<?php echo esc_attr($this->field_value ?: '{"data":[],"state":{}}'); ?>" />
         </div>
         <script>
         jQuery(document).ready(function($) {
@@ -159,15 +173,20 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 serializeRepeater($field.closest('.ccc-repeater-container'));
             });
 
-            // Serialize repeater data function
+            // Serialize repeater data function with state persistence
             function serializeRepeater($container) {
                 var $items = $container.find('.ccc-repeater-items');
                 var $input = $container.find('.ccc-repeater-main-input');
                 var repeaterData = [];
+                var repeaterState = {};
                 
-                $items.children('.ccc-repeater-item').each(function() {
+                $items.children('.ccc-repeater-item').each(function(index) {
                     var $item = $(this);
+                    var $content = $item.find('.ccc-repeater-item-content');
                     var itemData = {};
+                    
+                    // Store the expand/collapse state
+                    repeaterState[index] = $content.is(':visible');
                     
                     $item.find('.ccc-nested-field').each(function() {
                         var $field = $(this);
@@ -193,7 +212,13 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     repeaterData.push(itemData);
                 });
                 
-                $input.val(JSON.stringify(repeaterData));
+                // Create the new format with data and state
+                var finalData = {
+                    data: repeaterData,
+                    state: repeaterState
+                };
+                
+                $input.val(JSON.stringify(finalData));
             }
 
             // Serialize on nested field changes
@@ -221,6 +246,55 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             // Initial serialization on page load
             $('.ccc-repeater-container').each(function() {
                 serializeRepeater($(this));
+            });
+
+            // Restore expand/collapse state on page load
+            $('.ccc-repeater-container').each(function() {
+                var $container = $(this);
+                var $input = $container.find('.ccc-repeater-main-input');
+                var currentValue = $input.val();
+                
+                try {
+                    var parsedValue = JSON.parse(currentValue);
+                    if (parsedValue && parsedValue.state) {
+                        // Restore state for each item
+                        $container.find('.ccc-repeater-item').each(function(index) {
+                            var $item = $(this);
+                            var $content = $item.find('.ccc-repeater-item-content');
+                            var $icon = $item.find('.ccc-repeater-toggle .dashicons');
+                            
+                            if (parsedValue.state[index] === true) {
+                                // Item should be expanded
+                                $content.show();
+                                $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
+                            } else {
+                                // Item should be collapsed
+                                $content.hide();
+                                $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
+                            }
+                        });
+                    } else {
+                        // No state found - assume legacy format, all items collapsed
+                        $container.find('.ccc-repeater-item').each(function() {
+                            var $item = $(this);
+                            var $content = $item.find('.ccc-repeater-item-content');
+                            var $icon = $item.find('.ccc-repeater-toggle .dashicons');
+                            $content.hide();
+                            $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
+                        });
+                    }
+                } catch (e) {
+                    // If parsing fails, assume legacy format - all items collapsed by default
+                    console.log('Legacy repeater format detected, using default collapsed state');
+                    // Ensure all items are collapsed for legacy data
+                    $container.find('.ccc-repeater-item').each(function() {
+                        var $item = $(this);
+                        var $content = $item.find('.ccc-repeater-item-content');
+                        var $icon = $item.find('.ccc-repeater-toggle .dashicons');
+                        $content.hide();
+                        $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
+                    });
+                }
             });
 
             // Initialize drag and drop functionality
@@ -315,7 +389,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 // Update item count
                 updateItemCount($container);
                 
-                // Serialize data
+                // Serialize data (new items start collapsed by default)
                 setTimeout(function() {
                     serializeRepeater($container);
                 }, 100);
@@ -349,7 +423,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 }, 100);
             });
 
-            // Toggle repeater item (expand/collapse)
+            // Toggle repeater item (expand/collapse) with state persistence
             $(document).on('click', '.ccc-repeater-toggle', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -367,7 +441,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 toggleRepeaterItem($(this).closest('.ccc-repeater-item'));
             });
 
-            // Function to toggle repeater item
+            // Function to toggle repeater item with state persistence
             function toggleRepeaterItem($item) {
                 var $content = $item.find('.ccc-repeater-item-content');
                 var $icon = $item.find('.ccc-repeater-toggle .dashicons');
@@ -379,6 +453,11 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                     $content.slideDown(200);
                     $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
                 }
+                
+                // Serialize to save the state change
+                setTimeout(function() {
+                    serializeRepeater($item.closest('.ccc-repeater-container'));
+                }, 250); // Wait for animation to complete
             }
 
             // Function to create repeater item HTML
@@ -391,14 +470,14 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 html += '</div>';
                 html += '<div class="ccc-repeater-item-controls">';
                 html += '<button type="button" class="ccc-repeater-toggle" title="Toggle">';
-                html += '<span class="dashicons dashicons-arrow-up-alt2"></span>';
+                html += '<span class="dashicons dashicons-arrow-down-alt2"></span>';
                 html += '</button>';
                 html += '<button type="button" class="ccc-repeater-remove" title="Remove">';
                 html += '<span class="dashicons dashicons-trash"></span>';
                 html += '</button>';
                 html += '</div>';
                 html += '</div>';
-                html += '<div class="ccc-repeater-item-content">';
+                html += '<div class="ccc-repeater-item-content" style="display: none;">';
                 html += '<div class="ccc-repeater-item-fields">';
                 
                 // Add nested fields
@@ -531,7 +610,9 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         return $this->renderFieldWrapper($content) . $this->renderFieldStyles();
     }
     
-    protected function renderRepeaterItem($item_index, $item_data, $nested_field_definitions) {
+    protected function renderRepeaterItem($item_index, $item_data, $nested_field_definitions, $is_expanded) {
+        $content_style = $is_expanded ? '' : 'style="display: none;"';
+        $icon_class = $is_expanded ? 'dashicons-arrow-up-alt2' : 'dashicons-arrow-down-alt2';
         ?>
         <div class="ccc-repeater-item" data-index="<?php echo esc_attr($item_index); ?>">
             <div class="ccc-repeater-item-header">
@@ -541,14 +622,14 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 </div>
                 <div class="ccc-repeater-item-controls">
                     <button type="button" class="ccc-repeater-toggle" title="Toggle">
-                        <span class="dashicons dashicons-arrow-up-alt2"></span>
+                        <span class="dashicons <?php echo esc_attr($icon_class); ?>"></span>
                     </button>
                     <button type="button" class="ccc-repeater-remove" title="Remove">
                         <span class="dashicons dashicons-trash"></span>
                     </button>
                 </div>
             </div>
-            <div class="ccc-repeater-item-content">
+            <div class="ccc-repeater-item-content" <?php echo $content_style; ?>>
                 <div class="ccc-repeater-item-fields">
                     <?php foreach ($nested_field_definitions as $nested_field): 
                         $nested_field_value = $item_data[$nested_field['name']] ?? '';
@@ -669,7 +750,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         $options = $field_config['config']['options'] ?? [];
         $multiple = isset($field_config['config']['multiple']) && $field_config['config']['multiple'];
         
-        echo '<select class="ccc-nested-field-input" data-nested-field-type="select"' + (multiple ? ' multiple' : '') + '>';
+        echo '<select class="ccc-nested-field-input" data-nested-field-type="select"' . ($multiple ? ' multiple' : '') . '>';
         if (!$multiple) {
             echo '<option value="">— Select —</option>';
         }
@@ -677,7 +758,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             $selected = ($multiple && is_array($value)) ? 
                 (in_array($option_value, $value) ? 'selected' : '') : 
                 selected($value, $option_value, false);
-            echo '<option value="' . esc_attr($option_value) . '" ' + selected + '>' . esc_html($option_label) . '</option>';
+            echo '<option value="' . esc_attr($option_value) . '" ' . $selected . '>' . esc_html($option_label) . '</option>';
         }
         echo '</select>';
     }
@@ -689,7 +770,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         echo '<div class="ccc-nested-checkbox-options">';
         foreach ($options as $option_value => $option_label) {
             $checked = in_array($option_value, $selected_values) ? 'checked' : '';
-            echo '<label><input type="checkbox" class="ccc-nested-field-input" data-nested-field-type="checkbox" value="' + esc_attr($option_value) + '" ' + checked + '> ' + esc_html($option_label) + '</label>';
+            echo '<label><input type="checkbox" class="ccc-nested-field-input" data-nested-field-type="checkbox" value="' . esc_attr($option_value) . '" ' . $checked . '> ' . esc_html($option_label) . '</label>';
         }
         echo '</div>';
     }
@@ -700,7 +781,7 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         echo '<div class="ccc-nested-radio-options">';
         foreach ($options as $option_value => $option_label) {
             $checked = checked($value, $option_value, false);
-            echo '<label><input type="radio" class="ccc-nested-field-input" data-nested-field-type="radio" value="' + esc_attr($option_value) + '" ' + checked + '> ' + esc_html($option_label) + '</label>';
+            echo '<label><input type="radio" class="ccc-nested-field-input" data-nested-field-type="radio" value="' . esc_attr($option_value) . '" ' . $checked . '> ' . esc_html($option_label) . '</label>';
         }
         echo '</div>';
     }

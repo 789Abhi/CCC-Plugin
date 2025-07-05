@@ -67,7 +67,14 @@ if (!function_exists('get_ccc_field')) {
         
         // Process value based on field type
         if ($field_type === 'repeater') {
-            return json_decode($value, true) ?: [];
+            $decoded_value = json_decode($value, true) ?: [];
+            // Check if this is the new format with data and state
+            if (is_array($decoded_value) && isset($decoded_value['data']) && isset($decoded_value['state'])) {
+                return $decoded_value; // Return the complete structure with data and state
+            } else {
+                // Legacy format - return as is
+                return $decoded_value;
+            }
         } elseif ($field_type === 'image') {
             $return_type = $field_config['return_type'] ?? 'url';
             $decoded_value = json_decode($value, true);
@@ -141,27 +148,62 @@ if (!function_exists('get_ccc_component_fields')) {
     function _ccc_process_field_value_recursive($value, $field_type, $field_config) {
         if ($field_type === 'repeater') {
             $decoded_value = json_decode($value, true) ?: [];
-            $processed_items = [];
-            $nested_field_definitions = $field_config['nested_fields'] ?? [];
+            
+            // Check if this is the new format with data and state
+            if (is_array($decoded_value) && isset($decoded_value['data']) && isset($decoded_value['state'])) {
+                $repeater_data = $decoded_value['data'];
+                $repeater_state = $decoded_value['state'];
+                
+                $processed_items = [];
+                $nested_field_definitions = $field_config['nested_fields'] ?? [];
 
-            foreach ($decoded_value as $item) {
-                $processed_item = [];
-                foreach ($nested_field_definitions as $nested_field_def) {
-                    $nested_field_name = $nested_field_def['name'];
-                    $nested_field_type = $nested_field_def['type'];
-                    $nested_field_config = $nested_field_def['config'] ?? [];
+                foreach ($repeater_data as $item) {
+                    $processed_item = [];
+                    foreach ($nested_field_definitions as $nested_field_def) {
+                        $nested_field_name = $nested_field_def['name'];
+                        $nested_field_type = $nested_field_def['type'];
+                        $nested_field_config = $nested_field_def['config'] ?? [];
 
-                    if (isset($item[$nested_field_name])) {
-                        $processed_item[$nested_field_name] = _ccc_process_field_value_recursive(
-                            $item[$nested_field_name],
-                            $nested_field_type,
-                            $nested_field_config
-                        );
+                        if (isset($item[$nested_field_name])) {
+                            $processed_item[$nested_field_name] = _ccc_process_field_value_recursive(
+                                $item[$nested_field_name],
+                                $nested_field_type,
+                                $nested_field_config
+                            );
+                        }
                     }
+                    $processed_items[] = $processed_item;
                 }
-                $processed_items[] = $processed_item;
+                
+                // Return the complete structure with processed data and state
+                return [
+                    'data' => $processed_items,
+                    'state' => $repeater_state
+                ];
+            } else {
+                // Legacy format - process as before
+                $processed_items = [];
+                $nested_field_definitions = $field_config['nested_fields'] ?? [];
+
+                foreach ($decoded_value as $item) {
+                    $processed_item = [];
+                    foreach ($nested_field_definitions as $nested_field_def) {
+                        $nested_field_name = $nested_field_def['name'];
+                        $nested_field_type = $nested_field_def['type'];
+                        $nested_field_config = $nested_field_def['config'] ?? [];
+
+                        if (isset($item[$nested_field_name])) {
+                            $processed_item[$nested_field_name] = _ccc_process_field_value_recursive(
+                                $item[$nested_field_name],
+                                $nested_field_type,
+                                $nested_field_config
+                            );
+                        }
+                    }
+                    $processed_items[] = $processed_item;
+                }
+                return $processed_items;
             }
-            return $processed_items;
         } elseif ($field_type === 'image') {
             $return_type = $field_config['return_type'] ?? 'url';
             $decoded_value = json_decode($value, true);

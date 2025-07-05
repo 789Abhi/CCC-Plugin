@@ -301,68 +301,149 @@ class MetaBoxManager {
     }
 
     private function sanitizeRepeaterData($data, $config_json) {
-        $sanitized_data = [];
-        $config = json_decode($config_json, true);
-        $nested_field_definitions = $config['nested_fields'] ?? [];
+        // Check if this is the new format with data and state
+        if (is_array($data) && isset($data['data']) && isset($data['state'])) {
+            $repeater_data = $data['data'];
+            $repeater_state = $data['state'];
+            
+            // Sanitize the data part
+            $sanitized_data = [];
+            $config = json_decode($config_json, true);
+            $nested_field_definitions = $config['nested_fields'] ?? [];
 
-        foreach ($data as $item) {
-            $sanitized_item = [];
-            foreach ($nested_field_definitions as $nested_field_def) {
-                $field_name = $nested_field_def['name'];
-                $field_type = $nested_field_def['type'];
-                $nested_field_config = $nested_field_def['config'] ?? [];
+            foreach ($repeater_data as $item) {
+                $sanitized_item = [];
+                foreach ($nested_field_definitions as $nested_field_def) {
+                    $field_name = $nested_field_def['name'];
+                    $field_type = $nested_field_def['type'];
+                    $nested_field_config = $nested_field_def['config'] ?? [];
 
-                if (isset($item[$field_name])) {
-                    $value = $item[$field_name];
-                    
-                    switch ($field_type) {
-                        case 'image':
-                            $return_type = $nested_field_config['return_type'] ?? 'url';
-                            if ($return_type === 'url') {
-                                $decoded_value = json_decode($value, true);
-                                if (is_array($decoded_value) && isset($decoded_value['url'])) {
-                                    $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                    if (isset($item[$field_name])) {
+                        $value = $item[$field_name];
+                        
+                        switch ($field_type) {
+                            case 'image':
+                                $return_type = $nested_field_config['return_type'] ?? 'url';
+                                if ($return_type === 'url') {
+                                    $decoded_value = json_decode($value, true);
+                                    if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                        $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                                    } else {
+                                        $sanitized_item[$field_name] = esc_url_raw($value);
+                                    }
                                 } else {
-                                    $sanitized_item[$field_name] = esc_url_raw($value);
+                                    $decoded_value = json_decode($value, true);
+                                    $sanitized_item[$field_name] = json_encode($decoded_value);
                                 }
-                            } else {
-                                $decoded_value = json_decode($value, true);
-                                $sanitized_item[$field_name] = json_encode($decoded_value);
-                            }
-                            break;
-                            
-                        case 'repeater':
-                            $decoded_value = is_array($value) ? $value : json_decode($value, true);
-                            $sanitized_item[$field_name] = $this->sanitizeRepeaterData($decoded_value, json_encode($nested_field_config));
-                            break;
-                            
-                        case 'color':
-                            $sanitized_item[$field_name] = sanitize_hex_color($value) ?: sanitize_text_field($value);
-                            break;
-                            
-                        case 'checkbox':
-                        case 'select':
-                            if (is_array($value)) {
-                                $sanitized_item[$field_name] = implode(',', array_map('sanitize_text_field', $value));
-                            } else {
-                                $sanitized_item[$field_name] = sanitize_text_field($value);
-                            }
-                            break;
-                            
-                        case 'wysiwyg':
-                            $sanitized_item[$field_name] = wp_kses_post($value);
-                            break;
-                            
-                        default:
-                            $sanitized_item[$field_name] = wp_kses_post($value);
-                            break;
+                                break;
+                                
+                            case 'repeater':
+                                $decoded_value = is_array($value) ? $value : json_decode($value, true);
+                                $sanitized_item[$field_name] = $this->sanitizeRepeaterData($decoded_value, json_encode($nested_field_config));
+                                break;
+                                
+                            case 'color':
+                                $sanitized_item[$field_name] = sanitize_hex_color($value) ?: sanitize_text_field($value);
+                                break;
+                                
+                            case 'checkbox':
+                            case 'select':
+                                if (is_array($value)) {
+                                    $sanitized_item[$field_name] = implode(',', array_map('sanitize_text_field', $value));
+                                } else {
+                                    $sanitized_item[$field_name] = sanitize_text_field($value);
+                                }
+                                break;
+                                
+                            case 'wysiwyg':
+                                $sanitized_item[$field_name] = wp_kses_post($value);
+                                break;
+                                
+                            default:
+                                $sanitized_item[$field_name] = wp_kses_post($value);
+                                break;
+                        }
                     }
                 }
+                $sanitized_data[] = $sanitized_item;
             }
-            $sanitized_data[] = $sanitized_item;
-        }
 
-        return $sanitized_data;
+            // Sanitize the state part (ensure it's an array of booleans)
+            $sanitized_state = [];
+            foreach ($repeater_state as $index => $is_expanded) {
+                $sanitized_state[$index] = (bool) $is_expanded;
+            }
+
+            // Return the new format with both data and state
+            return [
+                'data' => $sanitized_data,
+                'state' => $sanitized_state
+            ];
+        } else {
+            // Legacy format - just sanitize the data array
+            $sanitized_data = [];
+            $config = json_decode($config_json, true);
+            $nested_field_definitions = $config['nested_fields'] ?? [];
+
+            foreach ($data as $item) {
+                $sanitized_item = [];
+                foreach ($nested_field_definitions as $nested_field_def) {
+                    $field_name = $nested_field_def['name'];
+                    $field_type = $nested_field_def['type'];
+                    $nested_field_config = $nested_field_def['config'] ?? [];
+
+                    if (isset($item[$field_name])) {
+                        $value = $item[$field_name];
+                        
+                        switch ($field_type) {
+                            case 'image':
+                                $return_type = $nested_field_config['return_type'] ?? 'url';
+                                if ($return_type === 'url') {
+                                    $decoded_value = json_decode($value, true);
+                                    if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                        $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                                    } else {
+                                        $sanitized_item[$field_name] = esc_url_raw($value);
+                                    }
+                                } else {
+                                    $decoded_value = json_decode($value, true);
+                                    $sanitized_item[$field_name] = json_encode($decoded_value);
+                                }
+                                break;
+                                
+                            case 'repeater':
+                                $decoded_value = is_array($value) ? $value : json_decode($value, true);
+                                $sanitized_item[$field_name] = $this->sanitizeRepeaterData($decoded_value, json_encode($nested_field_config));
+                                break;
+                                
+                            case 'color':
+                                $sanitized_item[$field_name] = sanitize_hex_color($value) ?: sanitize_text_field($value);
+                                break;
+                                
+                            case 'checkbox':
+                            case 'select':
+                                if (is_array($value)) {
+                                    $sanitized_item[$field_name] = implode(',', array_map('sanitize_text_field', $value));
+                                } else {
+                                    $sanitized_item[$field_name] = sanitize_text_field($value);
+                                }
+                                break;
+                                
+                            case 'wysiwyg':
+                                $sanitized_item[$field_name] = wp_kses_post($value);
+                                break;
+                                
+                            default:
+                                $sanitized_item[$field_name] = wp_kses_post($value);
+                                break;
+                        }
+                    }
+                }
+                $sanitized_data[] = $sanitized_item;
+            }
+
+            return $sanitized_data;
+        }
     }
 
     private function getFieldValues($components, $post_id) {
