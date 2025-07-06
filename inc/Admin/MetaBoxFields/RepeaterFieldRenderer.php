@@ -253,6 +253,179 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
                 }.bind(this), 100);
             });
 
+            // Nested repeater functionality
+            $(document).on('click', '.ccc-nested-repeater-add', function(e) {
+                e.preventDefault();
+                var $container = $(this).closest('.ccc-nested-repeater-container');
+                var $items = $container.find('.ccc-nested-repeater-items');
+                var maxSets = parseInt($container.data('max-sets')) || 0;
+                var currentCount = $items.children('.ccc-nested-repeater-item').length;
+                
+                // Check if we've reached the maximum limit
+                if (maxSets > 0 && currentCount >= maxSets) {
+                    alert('Maximum limit of ' + maxSets + ' items reached. You cannot add more items.');
+                    return;
+                }
+                
+                // Get nested field definitions
+                var nestedFieldDefinitions = $container.data('nested-field-definitions');
+                if (!nestedFieldDefinitions) {
+                    console.error('Nested field definitions not found');
+                    return;
+                }
+                
+                // Create new nested item HTML
+                var newItemHtml = createNestedRepeaterItemHtml(currentCount, nestedFieldDefinitions);
+                $items.append(newItemHtml);
+                
+                // Serialize nested repeater data
+                setTimeout(function() {
+                    serializeNestedRepeater($container);
+                }, 100);
+            });
+
+            $(document).on('click', '.ccc-nested-repeater-remove', function(e) {
+                e.preventDefault();
+                var $item = $(this).closest('.ccc-nested-repeater-item');
+                var $container = $item.closest('.ccc-nested-repeater-container');
+                
+                if (confirm('Are you sure you want to remove this item?')) {
+                    $item.remove();
+                    // Re-index remaining items
+                    $container.find('.ccc-nested-repeater-item').each(function(index) {
+                        $(this).attr('data-index', index);
+                        $(this).find('.ccc-nested-repeater-item-title strong').text('Nested Item #' + (index + 1));
+                    });
+                    
+                    setTimeout(function() {
+                        serializeNestedRepeater($container);
+                    }, 100);
+                }
+            });
+
+            $(document).on('click', '.ccc-nested-repeater-toggle', function(e) {
+                e.preventDefault();
+                var $item = $(this).closest('.ccc-nested-repeater-item');
+                var $content = $item.find('.ccc-nested-repeater-item-content');
+                var $icon = $(this).find('.dashicons');
+                
+                if ($content.is(':visible')) {
+                    $content.slideUp(200);
+                    $icon.removeClass('dashicons-arrow-up-alt2').addClass('dashicons-arrow-down-alt2');
+                } else {
+                    $content.slideDown(200);
+                    $icon.removeClass('dashicons-arrow-down-alt2').addClass('dashicons-arrow-up-alt2');
+                }
+                
+                // Serialize to save state
+                setTimeout(function() {
+                    serializeNestedRepeater($item.closest('.ccc-nested-repeater-container'));
+                }, 100);
+            });
+
+            // Serialize nested repeater data function
+            function serializeNestedRepeater($container) {
+                var $items = $container.find('.ccc-nested-repeater-items');
+                var $input = $container.find('.ccc-nested-repeater-main-input');
+                var nestedRepeaterData = [];
+                var nestedRepeaterState = {};
+                
+                $items.children('.ccc-nested-repeater-item').each(function(index) {
+                    var $item = $(this);
+                    var $content = $item.find('.ccc-nested-repeater-item-content');
+                    var itemData = {};
+                    
+                    // Store the expand/collapse state
+                    nestedRepeaterState[index] = $content.is(':visible');
+                    
+                    $item.find('.ccc-nested-field').each(function() {
+                        var $field = $(this);
+                        var fieldName = $field.data('nested-field-name');
+                        var fieldType = $field.data('nested-field-type');
+                        var $inputField = $field.find('input, select, textarea').first();
+                        var value;
+                        
+                        if ($inputField.is(':checkbox')) {
+                            value = [];
+                            $field.find('input[type="checkbox"]:checked').each(function() {
+                                value.push($(this).val());
+                            });
+                        } else if ($inputField.is(':radio')) {
+                            value = $field.find('input[type="radio"]:checked').val() || '';
+                        } else {
+                            value = $inputField.val();
+                        }
+                        
+                        itemData[fieldName] = value;
+                    });
+                    
+                    nestedRepeaterData.push(itemData);
+                });
+                
+                // Create the new format with data and state
+                var finalData = {
+                    data: nestedRepeaterData,
+                    state: nestedRepeaterState
+                };
+                
+                console.log('CCC Nested Repeater: Serializing data for container', $container.data('field-id'), 'State:', nestedRepeaterState);
+                $input.val(JSON.stringify(finalData));
+                
+                // Also trigger parent repeater serialization
+                var $parentContainer = $container.closest('.ccc-repeater-container');
+                if ($parentContainer.length) {
+                    serializeRepeater($parentContainer);
+                }
+            }
+
+            // Function to create nested repeater item HTML
+            function createNestedRepeaterItemHtml(itemIndex, nestedFieldDefinitions) {
+                var html = '<div class="ccc-nested-repeater-item" data-index="' + itemIndex + '">';
+                html += '<div class="ccc-nested-repeater-item-header">';
+                html += '<div class="ccc-nested-repeater-item-title">';
+                html += '<span class="ccc-drag-handle dashicons dashicons-menu"></span>';
+                html += '<strong>Nested Item #' + (itemIndex + 1) + '</strong>';
+                html += '</div>';
+                html += '<div class="ccc-nested-repeater-item-controls">';
+                html += '<button type="button" class="ccc-nested-repeater-toggle" title="Toggle">';
+                html += '<span class="dashicons dashicons-arrow-down-alt2"></span>';
+                html += '</button>';
+                html += '<button type="button" class="ccc-nested-repeater-remove" title="Remove">';
+                html += '<span class="dashicons dashicons-trash"></span>';
+                html += '</button>';
+                html += '</div>';
+                html += '</div>';
+                html += '<div class="ccc-nested-repeater-item-content" style="display: none;">';
+                html += '<div class="ccc-nested-repeater-item-fields">';
+                
+                // Add nested fields
+                nestedFieldDefinitions.forEach(function(fieldDef) {
+                    html += '<div class="ccc-nested-field" data-nested-field-name="' + fieldDef.name + '" data-nested-field-type="' + fieldDef.type + '">';
+                    html += '<label class="ccc-nested-field-label">' + fieldDef.label + '</label>';
+                    html += createNestedFieldHtml(fieldDef, '');
+                    html += '</div>';
+                });
+                
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+                
+                return html;
+            }
+
+            // Serialize nested repeater on field changes
+            $(document).on('change', '.ccc-nested-repeater-container .ccc-nested-field-input', function() {
+                serializeNestedRepeater($(this).closest('.ccc-nested-repeater-container'));
+            });
+
+            $(document).on('input', '.ccc-nested-repeater-container .ccc-nested-field-input', function() {
+                serializeNestedRepeater($(this).closest('.ccc-nested-repeater-container'));
+            });
+
+            $(document).on('change', '.ccc-nested-repeater-container .ccc-nested-field input[type="checkbox"], .ccc-nested-repeater-container .ccc-nested-field input[type="radio"]', function() {
+                serializeNestedRepeater($(this).closest('.ccc-nested-repeater-container'));
+            });
+
             // Restore expand/collapse state on page load FIRST
             $('.ccc-repeater-container').each(function() {
                 var $container = $(this);
@@ -695,6 +868,90 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             case 'wysiwyg':
                 echo '<textarea class="ccc-nested-field-input ccc-nested-wysiwyg" data-nested-field-type="wysiwyg" rows="5">' . esc_textarea($value) . '</textarea>';
                 break;
+            case 'repeater':
+                // Handle nested repeater fields
+                $nested_config = $field_config['config'] ?? [];
+                $nested_field_definitions = $nested_config['nested_fields'] ?? [];
+                $max_sets = isset($nested_config['max_sets']) ? intval($nested_config['max_sets']) : 0;
+                
+                // Parse nested repeater value
+                $nested_repeater_value = [];
+                if (!empty($value)) {
+                    if (is_string($value)) {
+                        $nested_repeater_value = json_decode($value, true);
+                    } elseif (is_array($value)) {
+                        $nested_repeater_value = $value;
+                    }
+                }
+                
+                if (!is_array($nested_repeater_value)) {
+                    $nested_repeater_value = [];
+                }
+                
+                // Extract data and state from nested repeater value
+                $nested_repeater_data = [];
+                $nested_repeater_state = [];
+                
+                if (isset($nested_repeater_value['data']) && isset($nested_repeater_value['state'])) {
+                    $nested_repeater_data = $nested_repeater_value['data'];
+                    $nested_repeater_state = $nested_repeater_value['state'];
+                } else {
+                    // Legacy format - treat as data only
+                    $nested_repeater_data = $nested_repeater_value;
+                    $nested_repeater_state = [];
+                }
+                
+                $nested_instance_id = uniqid('nested_repeater_');
+                ?>
+                <div class="ccc-nested-repeater-container" 
+                     data-field-id="<?php echo esc_attr($field_config['name']); ?>"
+                     data-instance-id="<?php echo esc_attr($nested_instance_id); ?>"
+                     data-max-sets="<?php echo esc_attr($max_sets); ?>"
+                     data-nested-field-definitions='<?php echo esc_attr(json_encode($nested_field_definitions)); ?>'>
+                    
+                    <div class="ccc-nested-repeater-header">
+                        <div class="ccc-nested-repeater-info">
+                            <span class="ccc-nested-repeater-count"><?php echo count($nested_repeater_data); ?> items</span>
+                            <?php if ($max_sets > 0): ?>
+                                <span class="ccc-nested-repeater-limit">Max: <?php echo $max_sets; ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <button type="button" class="ccc-nested-repeater-add button button-secondary">
+                            <span class="dashicons dashicons-plus-alt2"></span>
+                            Add Item
+                        </button>
+                    </div>
+                    
+                    <div class="ccc-nested-repeater-items">
+                        <?php 
+                        if (empty($nested_repeater_data)) {
+                            // Always show one empty item if none exist
+                            $this->renderNestedRepeaterItem(0, [], $nested_field_definitions, false, $nested_instance_id);
+                        } else {
+                            foreach ($nested_repeater_data as $nested_item_index => $nested_item_data) {
+                                $is_nested_expanded = false;
+                                if (isset($nested_repeater_state[$nested_item_index])) {
+                                    $nested_state_value = $nested_repeater_state[$nested_item_index];
+                                    // Handle both boolean and string values
+                                    if (is_string($nested_state_value)) {
+                                        $is_nested_expanded = $nested_state_value === 'true' || $nested_state_value === '1';
+                                    } else {
+                                        $is_nested_expanded = (bool) $nested_state_value;
+                                    }
+                                }
+                                $this->renderNestedRepeaterItem($nested_item_index, $nested_item_data, $nested_field_definitions, $is_nested_expanded, $nested_instance_id);
+                            }
+                        }
+                        ?>
+                    </div>
+                    
+                    <input type="hidden" 
+                           class="ccc-nested-repeater-main-input ccc-nested-field-input"
+                           data-nested-field-type="repeater"
+                           value="<?php echo esc_attr($value ?: '{"data":[],"state":{}}'); ?>" />
+                </div>
+                <?php
+                break;
             case 'image':
                 $return_type = isset($field_config['config']['return_type']) ? $field_config['config']['return_type'] : 'url';
                 $required = !empty($field_config['required']) ? 'required' : '';
@@ -804,6 +1061,48 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
         }
         echo '</div>';
     }
+    
+    protected function renderNestedRepeaterItem($item_index, $item_data, $nested_field_definitions, $is_expanded, $instance_id) {
+        $content_style = $is_expanded ? '' : 'style="display: none;"';
+        $toggle_icon = $is_expanded ? 'dashicons-arrow-up-alt2' : 'dashicons-arrow-down-alt2';
+        ?>
+        <div class="ccc-nested-repeater-item" data-index="<?php echo esc_attr($item_index); ?>">
+            <div class="ccc-nested-repeater-item-header">
+                <div class="ccc-nested-repeater-item-title">
+                    <span class="ccc-drag-handle dashicons dashicons-menu"></span>
+                    <strong>Nested Item #<?php echo ($item_index + 1); ?></strong>
+                </div>
+                <div class="ccc-nested-repeater-item-controls">
+                    <button type="button" class="ccc-nested-repeater-toggle" title="Toggle">
+                        <span class="dashicons <?php echo $toggle_icon; ?>"></span>
+                    </button>
+                    <button type="button" class="ccc-nested-repeater-remove" title="Remove">
+                        <span class="dashicons dashicons-trash"></span>
+                    </button>
+                </div>
+            </div>
+            <div class="ccc-nested-repeater-item-content" <?php echo $content_style; ?>>
+                <div class="ccc-nested-repeater-item-fields">
+                    <?php foreach ($nested_field_definitions as $nested_field): 
+                        $nested_field_value = $item_data[$nested_field['name']] ?? '';
+                        // Ensure config is always set
+                        if (!isset($nested_field['config']) || !is_array($nested_field['config'])) {
+                            $nested_field['config'] = [];
+                        }
+                        $nested_field_config = $nested_field['config'];
+                    ?>
+                        <div class="ccc-nested-field" 
+                             data-nested-field-name="<?php echo esc_attr($nested_field['name']); ?>" 
+                             data-nested-field-type="<?php echo esc_attr($nested_field['type']); ?>">
+                            <label class="ccc-nested-field-label"><?php echo esc_html($nested_field['label']); ?></label>
+                            <?php $this->renderNestedField($nested_field, $nested_field_value); ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
 
     protected function renderFieldStyles() {
         return '
@@ -896,6 +1195,142 @@ class RepeaterFieldRenderer extends BaseFieldRenderer {
             
             .ccc-field-repeater .ccc-repeater-item:hover {
                 background: #f9f9f9;
+            }
+            
+            /* Nested Repeater Styles */
+            .ccc-nested-repeater-container {
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                background: #f9fafb;
+                margin: 10px 0;
+                overflow: hidden;
+            }
+            
+            .ccc-nested-repeater-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 12px 16px;
+                background: #f3f4f6;
+                border-bottom: 1px solid #d1d5db;
+            }
+            
+            .ccc-nested-repeater-info {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 13px;
+                color: #6b7280;
+            }
+            
+            .ccc-nested-repeater-count {
+                font-weight: 600;
+                color: #374151;
+            }
+            
+            .ccc-nested-repeater-limit {
+                background: #dbeafe;
+                color: #1e40af;
+                padding: 2px 6px;
+                border-radius: 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            
+            .ccc-nested-repeater-add {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                padding: 6px 12px;
+                font-size: 12px;
+                border-radius: 4px;
+            }
+            
+            .ccc-nested-repeater-add .dashicons {
+                width: 14px;
+                height: 14px;
+                font-size: 14px;
+            }
+            
+            .ccc-nested-repeater-items {
+                min-height: 40px;
+            }
+            
+            .ccc-nested-repeater-item {
+                border-bottom: 1px solid #e5e7eb;
+                background: #fff;
+                transition: all 0.2s ease;
+            }
+            
+            .ccc-nested-repeater-item:last-child {
+                border-bottom: none;
+            }
+            
+            .ccc-nested-repeater-item:hover {
+                background: #f9fafb;
+            }
+            
+            .ccc-nested-repeater-item-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 16px;
+                background: #fff;
+                border-bottom: 1px solid #f3f4f6;
+                cursor: pointer;
+            }
+            
+            .ccc-nested-repeater-item-title {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 13px;
+                color: #374151;
+            }
+            
+            .ccc-nested-repeater-item-title .ccc-drag-handle {
+                color: #9ca3af;
+                cursor: move;
+            }
+            
+            .ccc-nested-repeater-item-controls {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+            
+            .ccc-nested-repeater-toggle,
+            .ccc-nested-repeater-remove {
+                background: none;
+                border: none;
+                padding: 4px;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+            
+            .ccc-nested-repeater-toggle:hover {
+                background: #f3f4f6;
+                color: #374151;
+            }
+            
+            .ccc-nested-repeater-remove:hover {
+                background: #fef2f2;
+                color: #dc2626;
+            }
+            
+            .ccc-nested-repeater-item-content {
+                padding: 16px;
+                background: #fff;
+            }
+            
+            .ccc-nested-repeater-item-fields {
+                display: grid;
+                gap: 16px;
+            }
+            
+            .ccc-nested-repeater-item-fields .ccc-nested-field {
+                margin-bottom: 0;
             }
             
             .ccc-field-repeater .ccc-repeater-item-header {

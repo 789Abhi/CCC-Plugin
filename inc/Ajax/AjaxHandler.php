@@ -33,6 +33,7 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_save_field_values', [$this, 'saveFieldValues']);
       add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
       add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']);
+      add_action('wp_ajax_ccc_update_field_order', [$this, 'updateFieldOrder']);
   }
 
   public function handleCreateComponent() {
@@ -112,8 +113,11 @@ class AjaxHandler {
   }
 
   private function sanitizeNestedFieldDefinitions(array $nested_fields): array {
+      error_log("CCC AjaxHandler: sanitizeNestedFieldDefinitions called with " . count($nested_fields) . " fields");
       $sanitized_fields = [];
       foreach ($nested_fields as $nf) {
+          error_log("CCC AjaxHandler: Processing nested field: " . ($nf['label'] ?? 'unknown') . " (type: " . ($nf['type'] ?? 'unknown') . ")");
+          
           $sanitized_nf = [
               'label' => sanitize_text_field($nf['label'] ?? ''),
               'name' => sanitize_title($nf['name'] ?? ''),
@@ -126,10 +130,15 @@ class AjaxHandler {
               
               // Handle different field type configurations
               if ($sanitized_nf['type'] === 'repeater') {
+                  $nested_nested_fields = $config['nested_fields'] ?? [];
+                  error_log("CCC AjaxHandler: Found nested repeater with " . count($nested_nested_fields) . " nested fields");
+                  
                   $sanitized_config = [
                       'max_sets' => intval($config['max_sets'] ?? 0),
-                      'nested_fields' => $this->sanitizeNestedFieldDefinitions($config['nested_fields'] ?? [])
+                      'nested_fields' => $this->sanitizeNestedFieldDefinitions($nested_nested_fields)
                   ];
+                  
+                  error_log("CCC AjaxHandler: Processed nested repeater config: " . json_encode($sanitized_config));
               } elseif (in_array($sanitized_nf['type'], ['checkbox', 'select', 'radio', 'button_group'])) {
                   $sanitized_config['options'] = $config['options'] ?? [];
                   $sanitized_config['multiple'] = (bool)($config['multiple'] ?? false);
@@ -144,6 +153,8 @@ class AjaxHandler {
           
           $sanitized_fields[] = $sanitized_nf;
       }
+      
+      error_log("CCC AjaxHandler: sanitizeNestedFieldDefinitions returning " . count($sanitized_fields) . " sanitized fields");
       return $sanitized_fields;
   }
 
@@ -578,5 +589,39 @@ class AjaxHandler {
       }
 
       wp_send_json_success(['message' => 'Component assignments saved successfully']);
+  }
+
+  public function updateFieldOrder() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $component_id = intval($_POST['component_id'] ?? 0);
+          $field_order = json_decode(wp_unslash($_POST['field_order'] ?? '[]'), true);
+
+          if (!$component_id || !is_array($field_order)) {
+              wp_send_json_error(['message' => 'Invalid component ID or field order.']);
+              return;
+          }
+
+          // Update the order of fields in the database
+          global $wpdb;
+          $fields_table = $wpdb->prefix . 'cc_fields';
+          
+          foreach ($field_order as $index => $field_id) {
+              $wpdb->update(
+                  $fields_table,
+                  ['field_order' => $index],
+                  ['id' => intval($field_id), 'component_id' => $component_id],
+                  ['%d'],
+                  ['%d', '%d']
+              );
+          }
+
+          wp_send_json_success(['message' => 'Field order updated successfully']);
+
+      } catch (\Exception $e) {
+          error_log("Exception in updateFieldOrder: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
   }
 }
