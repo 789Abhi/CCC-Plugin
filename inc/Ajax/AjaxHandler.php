@@ -34,6 +34,8 @@ class AjaxHandler {
       add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
       add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']);
       add_action('wp_ajax_ccc_update_field_order', [$this, 'updateFieldOrder']);
+      add_action('wp_ajax_ccc_update_component_fields', [$this, 'updateComponentFields']);
+      add_action('wp_ajax_ccc_update_field_from_hierarchy', [$this, 'updateFieldFromHierarchy']);
   }
 
   public function handleCreateComponent() {
@@ -175,21 +177,14 @@ class AjaxHandler {
           }
 
           $config = [];
-          
+          $nested_field_definitions = [];
           if ($type === 'repeater') {
               $max_sets = intval($_POST['max_sets'] ?? 0);
               $nested_field_definitions = json_decode(wp_unslash($_POST['nested_field_definitions'] ?? '[]'), true);
-              
               error_log("CCC AjaxHandler: Adding repeater field with " . count($nested_field_definitions) . " nested fields");
-              
-              $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_field_definitions);
-
               $config = [
-                  'max_sets' => $max_sets,
-                  'nested_fields' => $sanitized_nested_fields
+                  'max_sets' => $max_sets
               ];
-              
-              error_log("CCC AjaxHandler: Repeater config: " . json_encode($config));
           } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
               $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
               $config = [
@@ -206,7 +201,7 @@ class AjaxHandler {
               $config = [
                   'taxonomy' => sanitize_text_field($field_config['taxonomy'] ?? 'category')
               ];
-          } elseif ($type === 'color') { // NEW: Color field has no specific config for now
+          } elseif ($type === 'color') {
               $config = [];
           }
 
@@ -222,6 +217,10 @@ class AjaxHandler {
           ]);
 
           if ($field->save()) {
+              // If repeater, save nested fields as real DB rows
+              if ($type === 'repeater' && !empty($nested_field_definitions)) {
+                  \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($component_id, $field->getId(), $nested_field_definitions);
+              }
               error_log("CCC AjaxHandler: Successfully saved field {$name} with config: " . json_encode($config));
               wp_send_json_success(['message' => 'Field added successfully.']);
           } else {
@@ -256,25 +255,14 @@ class AjaxHandler {
               return;
           }
 
-          $field->setLabel($label);
-          $field->setRequired($required);
-          $field->setPlaceholder($placeholder);
-          $field->setType($type);
-
           $config = json_decode($field->getConfig(), true) ?: [];
-          
+          $nested_field_definitions = [];
           if ($type === 'repeater') {
               $max_sets = intval($_POST['max_sets'] ?? 0);
               $nested_field_definitions = json_decode(wp_unslash($_POST['nested_field_definitions'] ?? '[]'), true);
-              
-              error_log("CCC AjaxHandler: Updating repeater field {$field_id} with " . count($nested_field_definitions) . " nested fields");
-              
-              $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_field_definitions);
-
-              $config['max_sets'] = $max_sets;
-              $config['nested_fields'] = $sanitized_nested_fields;
-              
-              error_log("CCC AjaxHandler: Updated repeater config: " . json_encode($config));
+              $config = [
+                  'max_sets' => $max_sets
+              ];
           } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
               $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
               $config = [
@@ -288,10 +276,10 @@ class AjaxHandler {
           } elseif ($type === 'taxonomy_term') {
               $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
               $config['taxonomy'] = sanitize_text_field($field_config['taxonomy'] ?? 'category');
-          } elseif ($type === 'color') { // NEW: Color field has no specific config for now
+          } elseif ($type === 'color') {
               $config = [];
           }
-          
+
           $data = [
               'label' => $label,
               'name' => $name,
@@ -302,6 +290,16 @@ class AjaxHandler {
           ];
 
           $this->field_service->updateField($field_id, $data);
+
+          // If repeater, delete all existing children and re-insert nested fields as real DB rows
+          if ($type === 'repeater') {
+              global $wpdb;
+              $fields_table = $wpdb->prefix . 'cc_fields';
+              $wpdb->delete($fields_table, ['parent_field_id' => $field_id]);
+              if (!empty($nested_field_definitions)) {
+                  \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($field->getComponentId(), $field_id, $nested_field_definitions);
+              }
+          }
 
           wp_send_json_success(['message' => 'Field updated successfully.']);
 
@@ -443,19 +441,11 @@ class AjaxHandler {
               return;
           }
 
-          $fields = Field::findByComponent($component_id);
-          $field_data = [];
-
-          foreach ($fields as $field) {
-              $value = '';
-              if ($post_id && $instance_id) {
-                  global $wpdb;
-                  $values_table = $wpdb->prefix . 'cc_field_values';
-                  $value = $wpdb->get_var($wpdb->prepare(
-                      "SELECT value FROM $values_table WHERE post_id = %d AND field_id = %d AND instance_id = %s",
-                      $post_id, $field->getId(), $instance_id
-                  ));
-              }
+          // Use the recursive tree loader instead of flat loader
+          $fields = Field::findFieldsTree($component_id);
+          
+          // Helper to recursively convert Field objects to arrays
+          function ccc_field_to_array($field) {
               $config_json = $field->getConfig();
               $decoded_config = [];
               if (!empty($config_json)) {
@@ -465,17 +455,24 @@ class AjaxHandler {
                       $decoded_config = [];
                   }
               }
-              $field_data[] = [
+              $arr = [
                   'id' => $field->getId(),
                   'label' => $field->getLabel(),
                   'name' => $field->getName(),
                   'type' => $field->getType(),
-                  'value' => $value ?: '',
+                  'value' => '', // Value loading for nested fields can be added if needed
                   'config' => $decoded_config,
                   'required' => $field->getRequired(),
-                  'placeholder' => $field->getPlaceholder()
+                  'placeholder' => $field->getPlaceholder(),
+                  'children' => []
               ];
+              if ($field->getType() === 'repeater' && is_array($field->getChildren()) && count($field->getChildren()) > 0) {
+                  $arr['children'] = array_map('ccc_field_to_array', $field->getChildren());
+              }
+              return $arr;
           }
+
+          $field_data = array_map('ccc_field_to_array', $fields);
 
           // Render the accordion HTML for this component instance
           ob_start();
@@ -621,6 +618,171 @@ class AjaxHandler {
 
       } catch (\Exception $e) {
           error_log("Exception in updateFieldOrder: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  public function updateComponentFields() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $component_id = intval($_POST['component_id'] ?? 0);
+          $fields_data = json_decode(wp_unslash($_POST['fields'] ?? '[]'), true);
+
+          if (!$component_id || !is_array($fields_data)) {
+              wp_send_json_error(['message' => 'Invalid component ID or fields data.']);
+              return;
+          }
+
+          error_log("CCC AjaxHandler: updateComponentFields - Updating component $component_id with " . count($fields_data) . " fields");
+
+          // Get existing fields for this component
+          $existing_fields = Field::findByComponent($component_id);
+          $existing_field_ids = array_map(function($field) {
+              return $field->getId();
+          }, $existing_fields);
+
+          // Update each field
+          foreach ($fields_data as $field_data) {
+              $field_id = intval($field_data['id'] ?? 0);
+              
+              if (!$field_id || !in_array($field_id, $existing_field_ids)) {
+                  error_log("CCC AjaxHandler: Skipping invalid field ID: $field_id");
+                  continue;
+              }
+
+              $field = Field::find($field_id);
+              if (!$field) {
+                  error_log("CCC AjaxHandler: Field not found: $field_id");
+                  continue;
+              }
+
+              // Update field properties
+              $field->setLabel(sanitize_text_field($field_data['label'] ?? ''));
+              $field->setName(sanitize_title($field_data['name'] ?? ''));
+              $field->setType(sanitize_text_field($field_data['type'] ?? ''));
+              $field->setRequired(isset($field_data['required']) ? (bool) $field_data['required'] : false);
+              $field->setPlaceholder(sanitize_text_field($field_data['placeholder'] ?? ''));
+
+              // Handle field configuration
+              if (isset($field_data['config']) && is_array($field_data['config'])) {
+                  $config = $field_data['config'];
+                  
+                  if ($field->getType() === 'repeater') {
+                      $nested_fields = $config['nested_fields'] ?? [];
+                      $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_fields);
+                      
+                      $config = [
+                          'max_sets' => intval($config['max_sets'] ?? 0),
+                          'nested_fields' => $sanitized_nested_fields
+                      ];
+                  }
+                  
+                  $field->setConfig(json_encode($config));
+              }
+
+              $field->save();
+              error_log("CCC AjaxHandler: Updated field: " . $field->getName());
+          }
+
+          wp_send_json_success(['message' => 'Component fields updated successfully']);
+
+      } catch (\Exception $e) {
+          error_log("Exception in updateComponentFields: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  public function updateFieldFromHierarchy() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $field_id = intval($_POST['field_id'] ?? 0);
+          $label = sanitize_text_field($_POST['label'] ?? '');
+          $name = sanitize_text_field($_POST['name'] ?? '');
+          $type = sanitize_text_field($_POST['type'] ?? '');
+          $required = isset($_POST['required']) ? (bool) $_POST['required'] : false;
+          $placeholder = sanitize_text_field($_POST['placeholder'] ?? '');
+
+          if (empty($field_id) || empty($label)) {
+              wp_send_json_error(['message' => 'Missing required fields.']);
+              return;
+          }
+
+          $field = Field::find($field_id);
+          if (!$field) {
+              wp_send_json_error(['message' => 'Field not found.']);
+              return;
+          }
+
+          $field->setLabel($label);
+          $field->setRequired($required);
+          $field->setPlaceholder($placeholder);
+          $field->setType($type);
+
+          $config = json_decode($field->getConfig(), true) ?: [];
+          
+          // Handle field configuration based on type
+          if ($type === 'repeater') {
+              $field_config = json_decode(wp_unslash($_POST['config'] ?? '{}'), true);
+              $nested_fields = $field_config['nested_fields'] ?? null;
+              if (is_array($nested_fields)) {
+                  $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_fields);
+                  $config = [
+                      'max_sets' => intval($field_config['max_sets'] ?? 0),
+                      'nested_fields' => $sanitized_nested_fields
+                  ];
+                  error_log("CCC AjaxHandler: updateFieldFromHierarchy - Updated repeater config: " . json_encode($config));
+                  // Only delete/re-insert if we have a valid array
+                  global $wpdb;
+                  $fields_table = $wpdb->prefix . 'cc_fields';
+                  $wpdb->delete($fields_table, ['parent_field_id' => $field_id]);
+                  if (!empty($sanitized_nested_fields)) {
+                      \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($field->getComponentId(), $field_id, $sanitized_nested_fields);
+                  }
+              } else {
+                  // Do not delete anything if nested_fields is not a valid array
+                  $config = [
+                      'max_sets' => intval($field_config['max_sets'] ?? 0),
+                      'nested_fields' => []
+                  ];
+                  error_log("CCC AjaxHandler: updateFieldFromHierarchy - nested_fields not a valid array, skipping delete/re-insert");
+              }
+          } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
+              $field_config = json_decode(wp_unslash($_POST['config'] ?? '{}'), true);
+              $config = [
+                  'options' => $field_config['options'] ?? [],
+                  'multiple' => (bool)($field_config['multiple'] ?? false)
+              ];
+          } elseif ($type === 'image') {
+              $field_config = json_decode(wp_unslash($_POST['config'] ?? '{}'), true);
+              $config = [
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url')
+              ];
+          } elseif ($type === 'taxonomy_term') {
+              $field_config = json_decode(wp_unslash($_POST['config'] ?? '{}'), true);
+              $config = [
+                  'taxonomy' => sanitize_text_field($field_config['taxonomy'] ?? 'category')
+              ];
+          } elseif ($type === 'color') {
+              $config = [];
+          }
+          
+          $data = [
+              'label' => $label,
+              'name' => $name,
+              'type' => $type,
+              'required' => $required,
+              'placeholder' => $placeholder,
+              'config' => json_encode($config)
+          ];
+
+          $this->field_service->updateField($field_id, $data);
+
+          wp_send_json_success(['message' => 'Field updated successfully.']);
+
+      } catch (\Exception $e) {
+          error_log("Exception in updateFieldFromHierarchy: " . $e->getMessage());
           wp_send_json_error(['message' => $e->getMessage()]);
       }
   }

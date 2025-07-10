@@ -71,51 +71,49 @@ class ComponentService {
         $components = Component::all();
         $result = [];
 
+        // Helper to recursively convert Field objects to arrays, loading children from DB
+        $fieldToArray = function($field, $component_id) use (&$fieldToArray, $post_id) {
+            $config_json = $field->getConfig();
+            $decoded_config = null;
+            if (!empty($config_json)) {
+                $decoded_config = json_decode($config_json, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    error_log("CCC ComponentService: JSON decode error for field {$field->getId()}: " . json_last_error_msg());
+                    $decoded_config = [];
+                }
+            }
+            $arr = [
+                'id' => $field->getId(),
+                'label' => $field->getLabel(),
+                'name' => $field->getName(),
+                'type' => $field->getType(),
+                'required' => $field->getRequired(),
+                'placeholder' => $field->getPlaceholder(),
+                'field_order' => $field->getFieldOrder(),
+                'config' => $decoded_config,
+                'value' => $post_id ? $this->getFieldValue($field->getId(), $post_id) : '',
+                'children' => []
+            ];
+            // Recursively load children for repeaters
+            if ($field->getType() === 'repeater') {
+                $children = \CCC\Models\Field::findFieldsTree($component_id, $field->getId());
+                $arr['children'] = array_map(function($child) use (&$fieldToArray, $component_id) {
+                    return $fieldToArray($child, $component_id);
+                }, $children);
+            }
+            return $arr;
+        };
+
         foreach ($components as $component) {
-            $fields = Field::findByComponent($component->getId());
+            $fields = \CCC\Models\Field::findFieldsTree($component->getId());
             $component_data = [
                 'id' => $component->getId(),
                 'name' => $component->getName(),
                 'handle_name' => $component->getHandleName(),
-                'fields' => []
+                'fields' => array_map(function($field) use (&$fieldToArray, $component) {
+                    return $fieldToArray($field, $component->getId());
+                }, $fields)
             ];
-
-            foreach ($fields as $field) {
-                // Properly decode the config JSON
-                $config_json = $field->getConfig();
-                $decoded_config = null;
-                
-                if (!empty($config_json)) {
-                    $decoded_config = json_decode($config_json, true);
-                    if (json_last_error() !== JSON_ERROR_NONE) {
-                        error_log("CCC ComponentService: JSON decode error for field {$field->getId()}: " . json_last_error_msg());
-                        $decoded_config = [];
-                    }
-                }
-                
-                $field_data = [
-                    'id' => $field->getId(),
-                    'label' => $field->getLabel(),
-                    'name' => $field->getName(),
-                    'type' => $field->getType(),
-                    'required' => $field->getRequired(),
-                    'placeholder' => $field->getPlaceholder(),
-                    'field_order' => $field->getFieldOrder(),
-                    'config' => $decoded_config,
-                    'value' => $post_id ? $this->getFieldValue($field->getId(), $post_id) : ''
-                ];
-                
-                // Debug logging for repeater fields
-                if ($field->getType() === 'repeater') {
-                    error_log("CCC ComponentService: Repeater field {$field->getName()} config: " . print_r($decoded_config, true));
-                    if (isset($decoded_config['nested_fields'])) {
-                        error_log("CCC ComponentService: Found " . count($decoded_config['nested_fields']) . " nested fields");
-                    }
-                }
-                
-                $component_data['fields'][] = $field_data;
-            }
-
             $result[] = $component_data;
         }
 

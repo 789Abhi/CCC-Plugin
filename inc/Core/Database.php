@@ -396,4 +396,87 @@ class Database {
         
         error_log('CCC: Plugin data cleaned up on uninstall');
     }
+
+    /**
+     * Migrate nested fields in repeater configs to real DB rows with parent_field_id
+     */
+    public static function migrateNestedFieldsToRows() {
+        global $wpdb;
+        $fields_table = $wpdb->prefix . 'cc_fields';
+
+        // Add parent_field_id column if it doesn't exist
+        $columns = $wpdb->get_col("DESC $fields_table", 0);
+        if (!in_array('parent_field_id', $columns)) {
+            $wpdb->query("ALTER TABLE $fields_table ADD COLUMN parent_field_id BIGINT UNSIGNED DEFAULT NULL AFTER component_id");
+            $wpdb->query("ALTER TABLE $fields_table ADD KEY parent_field_id_idx (parent_field_id)");
+            $wpdb->query("ALTER TABLE $fields_table ADD CONSTRAINT fk_parent_field FOREIGN KEY (parent_field_id) REFERENCES $fields_table(id) ON DELETE CASCADE");
+        }
+
+        // Get all repeater fields (top-level and nested)
+        $repeaters = $wpdb->get_results("SELECT * FROM $fields_table WHERE type = 'repeater'", ARRAY_A);
+
+        foreach ($repeaters as $repeater) {
+            $component_id = $repeater['component_id'];
+            $parent_field_id = $repeater['id'];
+            $config = json_decode($repeater['config'], true);
+
+            if (!empty($config['nested_fields']) && is_array($config['nested_fields'])) {
+                self::migrateNestedFieldsToRowsRecursive($component_id, $parent_field_id, $config['nested_fields']);
+                // Remove nested_fields from the config of the parent repeater
+                unset($config['nested_fields']);
+                $wpdb->update($fields_table, ['config' => json_encode($config)], ['id' => $parent_field_id]);
+            }
+        }
+    }
+
+    public static function migrateNestedFieldsToRowsRecursive($component_id, $parent_field_id, $nested_fields) {
+        global $wpdb;
+        $fields_table = $wpdb->prefix . 'cc_fields';
+
+        foreach ($nested_fields as $order => $nested) {
+            $wpdb->insert($fields_table, [
+                'component_id' => $component_id,
+                'parent_field_id' => $parent_field_id,
+                'label' => $nested['label'] ?? '',
+                'name' => $nested['name'] ?? '',
+                'handle' => sanitize_title($nested['name'] ?? ''),
+                'type' => $nested['type'] ?? '',
+                'config' => isset($nested['config']) ? json_encode($nested['config']) : '{}',
+                'field_order' => $order,
+                'required' => isset($nested['required']) ? (int)$nested['required'] : 0,
+                'placeholder' => $nested['placeholder'] ?? '',
+                'created_at' => current_time('mysql'),
+                'updated_at' => current_time('mysql'),
+            ]);
+            $new_id = $wpdb->insert_id;
+
+            if (($nested['type'] ?? '') === 'repeater' && !empty($nested['config']['nested_fields'])) {
+                self::migrateNestedFieldsToRowsRecursive($component_id, $new_id, $nested['config']['nested_fields']);
+            }
+        }
+    }
+
+    /**
+     * Migration: Convert all nested fields in config.nested_fields to real DB rows with parent_field_id
+     */
+    public static function migrateAllNestedFieldsToRows() {
+        global $wpdb;
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $components = $wpdb->get_results("SELECT id FROM {$wpdb->prefix}cc_components", ARRAY_A);
+        foreach ($components as $component) {
+            $component_id = $component['id'];
+            $fields = $wpdb->get_results($wpdb->prepare("SELECT * FROM $fields_table WHERE component_id = %d AND parent_field_id IS NULL", $component_id), ARRAY_A);
+            foreach ($fields as $field) {
+                if ($field['type'] === 'repeater' && !empty($field['config'])) {
+                    $config = json_decode($field['config'], true);
+                    if (!empty($config['nested_fields'])) {
+                        self::migrateNestedFieldsToRowsRecursive($component_id, $field['id'], $config['nested_fields']);
+                        // Remove nested_fields from config after migration
+                        unset($config['nested_fields']);
+                        $wpdb->update($fields_table, ['config' => json_encode($config)], ['id' => $field['id']]);
+                    }
+                }
+            }
+        }
+    }
 }

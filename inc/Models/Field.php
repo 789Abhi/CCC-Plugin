@@ -15,6 +15,7 @@ class Field {
     private $config;
     private $field_order;
     private $created_at;
+    private $children;
 
     public function __construct($data = []) {
         $this->id = $data['id'] ?? null;
@@ -28,6 +29,7 @@ class Field {
         $this->config = $data['config'] ?? '';
         $this->field_order = $data['field_order'] ?? 0;
         $this->created_at = $data['created_at'] ?? null;
+        $this->children = $data['children'] ?? [];
     }
 
     public static function find($id) {
@@ -139,6 +141,7 @@ class Field {
     public function getConfig() { return $this->config; }
     public function getFieldOrder() { return $this->field_order; }
     public function getCreatedAt() { return $this->created_at; }
+    public function getChildren() { return $this->children; }
 
     // Setters
     public function setComponentId($id) { $this->component_id = $id; }
@@ -150,4 +153,32 @@ class Field {
     public function setPlaceholder($placeholder) { $this->placeholder = $placeholder; }
     public function setConfig($config) { $this->config = $config; }
     public function setFieldOrder($order) { $this->field_order = $order; }
+    public function setChildren($children) { $this->children = $children; }
+
+    /**
+     * Recursively load all fields for a component, including nested fields
+     */
+    public static function findFieldsTree($component_id, $parent_field_id = null) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cc_fields';
+        $fields = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM $table WHERE component_id = %d AND " .
+                ($parent_field_id === null ? "parent_field_id IS NULL" : "parent_field_id = %d") .
+                " ORDER BY field_order, created_at",
+                $parent_field_id === null ? $component_id : [$component_id, $parent_field_id]
+            ),
+            ARRAY_A
+        );
+        $result = [];
+        foreach ($fields as $data) {
+            $field = new self($data);
+            // Recursively load children for repeaters
+            if ($field->getType() === 'repeater') {
+                $field->children = self::findFieldsTree($component_id, $field->getId());
+            }
+            $result[] = $field;
+        }
+        return $result;
+    }
 }
