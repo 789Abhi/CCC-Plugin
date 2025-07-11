@@ -170,6 +170,7 @@ class AjaxHandler {
           $component_id = intval($_POST['component_id'] ?? 0);
           $required = isset($_POST['required']) ? (bool) $_POST['required'] : false;
           $placeholder = sanitize_text_field($_POST['placeholder'] ?? '');
+          $parent_field_id = isset($_POST['parent_field_id']) ? intval($_POST['parent_field_id']) : null;
 
           if (empty($label) || empty($name) || empty($type) || empty($component_id)) {
               wp_send_json_error(['message' => 'Missing required fields.']);
@@ -207,6 +208,7 @@ class AjaxHandler {
 
           $field = new \CCC\Models\Field([
               'component_id' => $component_id,
+              'parent_field_id' => $parent_field_id,
               'label' => $label,
               'name' => $name,
               'type' => $type,
@@ -216,7 +218,10 @@ class AjaxHandler {
               'placeholder' => $placeholder
           ]);
 
+          error_log('CCC AjaxHandler: addFieldCallback POST data: ' . json_encode($_POST));
+
           if ($field->save()) {
+              error_log('CCC AjaxHandler: Field saved, ID: ' . $field->getId());
               // If repeater, save nested fields as real DB rows
               if ($type === 'repeater' && !empty($nested_field_definitions)) {
                   \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($component_id, $field->getId(), $nested_field_definitions);
@@ -224,6 +229,8 @@ class AjaxHandler {
               error_log("CCC AjaxHandler: Successfully saved field {$name} with config: " . json_encode($config));
               wp_send_json_success(['message' => 'Field added successfully.']);
           } else {
+              global $wpdb;
+              error_log('CCC AjaxHandler: Failed to save field. DB error: ' . $wpdb->last_error);
               wp_send_json_error(['message' => 'Failed to save field.']);
           }
 
@@ -724,30 +731,30 @@ class AjaxHandler {
           
           // Handle field configuration based on type
           if ($type === 'repeater') {
+              error_log('CCC AjaxHandler: updateFieldFromHierarchy ENTRY');
+              error_log('CCC AjaxHandler: updateFieldFromHierarchy RAW POST: ' . json_encode($_POST));
               $field_config = json_decode(wp_unslash($_POST['config'] ?? '{}'), true);
+              error_log('CCC AjaxHandler: updateFieldFromHierarchy DECODED CONFIG: ' . json_encode($field_config));
               $nested_fields = $field_config['nested_fields'] ?? null;
+              error_log('CCC AjaxHandler: updateFieldFromHierarchy nested_fields type: ' . gettype($nested_fields) . ' value: ' . json_encode($nested_fields));
               if (is_array($nested_fields)) {
+                  error_log('CCC AjaxHandler: updateFieldFromHierarchy - nested_fields is a valid array, proceeding to sanitize and update');
                   $sanitized_nested_fields = $this->sanitizeNestedFieldDefinitions($nested_fields);
                   $config = [
                       'max_sets' => intval($field_config['max_sets'] ?? 0),
                       'nested_fields' => $sanitized_nested_fields
                   ];
-                  error_log("CCC AjaxHandler: updateFieldFromHierarchy - Updated repeater config: " . json_encode($config));
-                  // Only delete/re-insert if we have a valid array
+                  error_log("CCC AjaxHandler: updateFieldFromHierarchy - Sanitized nested fields: " . json_encode($sanitized_nested_fields));
                   global $wpdb;
-                  $fields_table = $wpdb->prefix . 'cc_fields';
-                  $wpdb->delete($fields_table, ['parent_field_id' => $field_id]);
-                  if (!empty($sanitized_nested_fields)) {
-                      \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($field->getComponentId(), $field_id, $sanitized_nested_fields);
-                  }
+                  $table = $wpdb->prefix . 'cc_fields';
+                  $delete_result = $wpdb->delete($table, ['parent_field_id' => intval($_POST['field_id'])]);
+                  error_log('CCC AjaxHandler: updateFieldFromHierarchy - Deleted children result: ' . json_encode($delete_result));
+                  \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($field->getComponentId(), intval($_POST['field_id']), $sanitized_nested_fields);
+                  error_log('CCC AjaxHandler: updateFieldFromHierarchy - Finished migrateNestedFieldsToRowsRecursive');
               } else {
-                  // Do not delete anything if nested_fields is not a valid array
-                  $config = [
-                      'max_sets' => intval($field_config['max_sets'] ?? 0),
-                      'nested_fields' => []
-                  ];
-                  error_log("CCC AjaxHandler: updateFieldFromHierarchy - nested_fields not a valid array, skipping delete/re-insert");
+                  error_log('CCC AjaxHandler: updateFieldFromHierarchy - nested_fields not a valid array, skipping delete/re-insert');
               }
+              error_log('CCC AjaxHandler: updateFieldFromHierarchy EXIT');
           } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
               $field_config = json_decode(wp_unslash($_POST['config'] ?? '{}'), true);
               $config = [

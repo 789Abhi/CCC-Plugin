@@ -16,10 +16,12 @@ class Field {
     private $field_order;
     private $created_at;
     private $children;
+    private $parent_field_id;
 
     public function __construct($data = []) {
         $this->id = $data['id'] ?? null;
         $this->component_id = $data['component_id'] ?? null;
+        $this->parent_field_id = $data['parent_field_id'] ?? null;
         $this->label = $data['label'] ?? '';
         $this->name = $data['name'] ?? '';
         $this->handle = $data['handle'] ?? sanitize_title($this->name);
@@ -76,6 +78,7 @@ class Field {
 
         $data = [
             'component_id' => $this->component_id,
+            'parent_field_id' => $this->parent_field_id,
             'label' => $this->label,
             'name' => $this->name,
             'handle' => $this->handle,
@@ -88,6 +91,7 @@ class Field {
 
         $format = [
             '%d', // component_id
+            '%d', // parent_field_id
             '%s', // label
             '%s', // name
             '%s', // handle
@@ -142,6 +146,7 @@ class Field {
     public function getFieldOrder() { return $this->field_order; }
     public function getCreatedAt() { return $this->created_at; }
     public function getChildren() { return $this->children; }
+    public function getParentFieldId() { return $this->parent_field_id; }
 
     // Setters
     public function setComponentId($id) { $this->component_id = $id; }
@@ -154,6 +159,7 @@ class Field {
     public function setConfig($config) { $this->config = $config; }
     public function setFieldOrder($order) { $this->field_order = $order; }
     public function setChildren($children) { $this->children = $children; }
+    public function setParentFieldId($id) { $this->parent_field_id = $id; }
 
     /**
      * Recursively load all fields for a component, including nested fields

@@ -430,11 +430,11 @@ class Database {
     }
 
     public static function migrateNestedFieldsToRowsRecursive($component_id, $parent_field_id, $nested_fields) {
+        error_log('CCC Database: migrateNestedFieldsToRowsRecursive called with component_id=' . $component_id . ', parent_field_id=' . $parent_field_id . ', nested_fields=' . json_encode($nested_fields));
         global $wpdb;
-        $fields_table = $wpdb->prefix . 'cc_fields';
-
+        $table = $wpdb->prefix . 'cc_fields';
         foreach ($nested_fields as $order => $nested) {
-            $wpdb->insert($fields_table, [
+            $insert_data = [
                 'component_id' => $component_id,
                 'parent_field_id' => $parent_field_id,
                 'label' => $nested['label'] ?? '',
@@ -447,13 +447,21 @@ class Database {
                 'placeholder' => $nested['placeholder'] ?? '',
                 'created_at' => current_time('mysql'),
                 'updated_at' => current_time('mysql'),
-            ]);
-            $new_id = $wpdb->insert_id;
-
-            if (($nested['type'] ?? '') === 'repeater' && !empty($nested['config']['nested_fields'])) {
-                self::migrateNestedFieldsToRowsRecursive($component_id, $new_id, $nested['config']['nested_fields']);
+            ];
+            error_log('CCC Database: Inserting nested field: ' . json_encode($insert_data));
+            $result = $wpdb->insert($table, $insert_data);
+            if ($result === false) {
+                error_log('CCC Database: DB error inserting nested field: ' . $wpdb->last_error);
+            } else {
+                error_log('CCC Database: Nested field inserted successfully, insert_id: ' . $wpdb->insert_id);
+            }
+            // If this nested field is a repeater, recurse
+            if (isset($nested['type']) && $nested['type'] === 'repeater' && isset($nested['config']['nested_fields'])) {
+                error_log('CCC Database: Recursing into nested repeater field: ' . $nested['name']);
+                self::migrateNestedFieldsToRowsRecursive($component_id, $wpdb->insert_id, $nested['config']['nested_fields']);
             }
         }
+        error_log('CCC Database: migrateNestedFieldsToRowsRecursive finished for parent_field_id=' . $parent_field_id);
     }
 
     /**
