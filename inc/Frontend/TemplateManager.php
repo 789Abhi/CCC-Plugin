@@ -10,7 +10,19 @@ class TemplateManager {
     }
 
     public function addCccTemplate($templates) {
-        $templates['ccc-template.php'] = 'CCC Component Template';
+        // Only add CCC template option if we're editing a page/post
+        global $post;
+        
+        // Check if we're in the admin area and editing a post/page
+        if (is_admin() && $post && $post->ID) {
+            // Check if this post has components assigned
+            $components = get_post_meta($post->ID, '_ccc_components', true);
+            
+            if (is_array($components) && !empty($components)) {
+                $templates['ccc-template.php'] = 'CCC Component Template';
+            }
+        }
+        
         return $templates;
     }
 

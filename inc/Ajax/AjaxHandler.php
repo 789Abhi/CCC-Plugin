@@ -106,7 +106,7 @@ class AjaxHandler {
               }
           }
 
-          wp_send_json_success(['components' => $components]);
+          wp_send_json_success($components);
 
       } catch (\Exception $e) {
           error_log("Exception in getComponents: " . $e->getMessage());
@@ -513,6 +513,27 @@ class AjaxHandler {
   public function getPostsWithComponents() {
       check_ajax_referer('ccc_nonce', 'nonce');
 
+      // Check if we're requesting a specific post
+      $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
+      
+      if ($post_id) {
+          // Return components for a specific post
+          $post = get_post($post_id);
+          if (!$post) {
+              wp_send_json_error(['message' => 'Post not found']);
+              return;
+          }
+          
+          $components = get_post_meta($post_id, '_ccc_components', true);
+          if (!is_array($components)) {
+              $components = [];
+          }
+          
+          wp_send_json_success(['components' => $components]);
+          return;
+      }
+
+      // Return list of posts with components (original functionality)
       $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
       $posts = get_posts([
           'post_type' => $post_type,
@@ -547,6 +568,17 @@ class AjaxHandler {
   public function saveComponentAssignments() {
       check_ajax_referer('ccc_nonce', 'nonce');
 
+      // Check if we're saving for a specific post (React metabox format)
+      $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
+      $components = isset($_POST['components']) ? json_decode(wp_unslash($_POST['components']), true) : null;
+      
+      if ($post_id && is_array($components)) {
+          // Metabox is now read-only - prevent saving from metabox
+          wp_send_json_error(['message' => 'Component management is disabled from the page metabox. Please use the main plugin interface to manage components.']);
+          return;
+      }
+
+      // Original format for bulk assignments (main plugin interface)
       $assignments = json_decode(wp_unslash($_POST['assignments'] ?? '{}'), true);
       
       if (!is_array($assignments)) {
@@ -590,6 +622,9 @@ class AjaxHandler {
           }
           
           update_post_meta($post_id, '_ccc_components', $new_components_data);
+          
+          // Note: Template removal is now manual - users must manually change the template
+          // if they want to remove the CCC template when no components are assigned
       }
 
       wp_send_json_success(['message' => 'Component assignments saved successfully']);
