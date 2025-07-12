@@ -77,22 +77,99 @@ class AdminManager {
     }
 
     public function renderComponentsPage() {
+        error_log("CCC AdminManager: Rendering Components page");
+        echo '<div class="wrap">';
         echo '<div id="root" data-page="components"></div>';
+        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
+        echo '<h2>React App Not Loading</h2>';
+        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
+        echo '</div>';
+        echo '<script>
+            console.log("CCC: Components page rendered, root element:", document.getElementById("root"));
+            setTimeout(function() {
+                if (!document.querySelector("#root").children.length) {
+                    document.getElementById("fallback").style.display = "block";
+                }
+            }, 2000);
+        </script>';
+        echo '</div>';
     }
 
     public function renderPostTypesPage() {
+        error_log("CCC AdminManager: Rendering Post Types page");
+        echo '<div class="wrap">';
         echo '<div id="root" data-page="posttypes"></div>';
+        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
+        echo '<h2>React App Not Loading</h2>';
+        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
+        echo '</div>';
+        echo '<script>
+            console.log("CCC: Post Types page rendered, root element:", document.getElementById("root"));
+            console.log("CCC: Checking if React script is loaded...");
+            console.log("CCC: React script elements:", document.querySelectorAll("script[src*=\'index-\']"));
+            setTimeout(function() {
+                if (!document.querySelector("#root").children.length) {
+                    document.getElementById("fallback").style.display = "block";
+                }
+            }, 2000);
+        </script>';
+        echo '</div>';
     }
 
     public function renderTaxonomiesPage() {
+        error_log("CCC AdminManager: Rendering Taxonomies page");
+        echo '<div class="wrap">';
         echo '<div id="root" data-page="taxonomies"></div>';
+        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
+        echo '<h2>React App Not Loading</h2>';
+        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
+        echo '</div>';
+        echo '<script>
+            console.log("CCC: Taxonomies page rendered, root element:", document.getElementById("root"));
+            setTimeout(function() {
+                if (!document.querySelector("#root").children.length) {
+                    document.getElementById("fallback").style.display = "block";
+                }
+            }, 2000);
+        </script>';
+        echo '</div>';
     }
 
     public function renderImportExportPage() {
+        error_log("CCC AdminManager: Rendering Import/Export page");
+        echo '<div class="wrap">';
         echo '<div id="root" data-page="importexport"></div>';
+        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
+        echo '<h2>React App Not Loading</h2>';
+        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
+        echo '</div>';
+        echo '<script>
+            console.log("CCC: Import/Export page rendered, root element:", document.getElementById("root"));
+            setTimeout(function() {
+                if (!document.querySelector("#root").children.length) {
+                    document.getElementById("fallback").style.display = "block";
+                }
+            }, 2000);
+        </script>';
+        echo '</div>';
     }
 
     public function renderSettingsPage() {
+        error_log("CCC AdminManager: Rendering Settings page");
+        echo '<div class="wrap">';
         echo '<div id="root" data-page="settings"></div>';
+        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
+        echo '<h2>React App Not Loading</h2>';
+        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
+        echo '</div>';
+        echo '<script>
+            console.log("CCC: Settings page rendered, root element:", document.getElementById("root"));
+            setTimeout(function() {
+                if (!document.querySelector("#root").children.length) {
+                    document.getElementById("fallback").style.display = "block";
+                }
+            }, 2000);
+        </script>';
+        echo '</div>';
     }
 }

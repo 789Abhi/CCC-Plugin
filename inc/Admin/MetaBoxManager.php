@@ -73,59 +73,9 @@ class MetaBoxManager {
     public function renderComponentMetaBox($post) {
         wp_nonce_field('ccc_component_meta_box', 'ccc_component_nonce');
         
-        $components = Component::all();
-        $current_components = get_post_meta($post->ID, '_ccc_components', true);
-        if (!is_array($current_components)) {
-            $current_components = [];
-        }
-
-        usort($current_components, function($a, $b) {
-            return ($a['order'] ?? 0) - ($b['order'] ?? 0);
-        });
-
-        $field_values = $this->getFieldValues($components, $post->ID);
-        
-        ?>
-        <div id="ccc-component-manager" data-post-id="<?php echo esc_attr($post->ID); ?>">
-            <?php if (empty($components)): ?>
-                <p>No components available. Please create components in the <a href="<?php echo admin_url('admin.php?page=custom-craft-component'); ?>">Custom Components</a> section.</p>
-            <?php else: ?>
-                
-                <div class="ccc-add-component-section">
-                    <label for="ccc-component-dropdown">Add Component:</label>
-                    <select id="ccc-component-dropdown" style="width: 300px; margin-right: 10px;">
-                        <option value="">Select a component to add...</option>
-                        <?php foreach ($components as $component): ?>
-                            <option value="<?php echo esc_attr($component->getId()); ?>" 
-                                    data-name="<?php echo esc_attr($component->getName()); ?>"
-                                    data-handle="<?php echo esc_attr($component->getHandleName()); ?>">
-                                <?php echo esc_html($component->getName()); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <button type="button" id="ccc-add-component-btn" class="button">Add Component</button>
-                </div>
-
-                <div id="ccc-selected-components" class="ccc-sortable-components">
-                    <h4>Selected Components (drag to reorder):</h4>
-                    <div id="ccc-components-list">
-                        <?php foreach ($current_components as $index => $comp): ?>
-                            <?php $this->renderComponentAccordion($comp, $index, $field_values); ?>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-
-                <input type="hidden" id="ccc-components-data" name="ccc_components_data" value="<?php echo esc_attr(json_encode($current_components)); ?>" />
-                
-                <p><em>Use the dropdown above to add components, then drag to reorder them. You can add the same component multiple times with different values. Component values are saved automatically when you save the page.</em></p>
-                <p><strong>Note:</strong> Each component instance can have different field values. The order you set here will be reflected on the frontend.</p>
-                
-            <?php endif; ?>
-        </div>
-
-        <?php $this->renderMetaBoxStyles(); ?>
-        <?php $this->renderMetaBoxScript(); ?>
-        <?php
+        echo '<div class="ccc-meta-box">';
+        echo '<div id="ccc-metabox-root" data-post-id="' . esc_attr($post->ID) . '"></div>';
+        echo '</div>';
     }
 
     public function renderComponentAccordion($comp, $index, $field_values) {

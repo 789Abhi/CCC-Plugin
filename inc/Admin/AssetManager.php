@@ -9,25 +9,47 @@ class AssetManager {
   }
 
   public function enqueueAssets($hook) {
-      $plugin_pages = [
-          'toplevel_page_custom-craft-component',
-          'custom-craft-component_page_custom-craft-posttypes',
-          'custom-craft-component_page_custom-craft-taxonomies',
-          'custom-craft-component_page_custom-craft-importexport',
-          'custom-craft-component_page_custom-craft-settings',
-          'post.php',
-          'post-new.php'
-      ];
+      error_log("CCC AssetManager: enqueueAssets called with hook: $hook");
+      
+      // For debugging, let's log ALL hooks to see what we're actually getting
+      if (strpos($hook, 'custom-craft') !== false) {
+          error_log("CCC AssetManager: Found custom-craft hook: $hook");
+      }
+      
+      // Check if this is one of our plugin pages
+      $is_plugin_page = false;
+      
+      // Check for main page
+      if ($hook === 'toplevel_page_custom-craft-component') {
+          $is_plugin_page = true;
+          error_log("CCC AssetManager: Main plugin page detected");
+      }
+      
+      // Check for submenu pages - WordPress sanitizes the slug, so we need to check for both variations
+      if (strpos($hook, 'custom-craft-component_page_') === 0 || strpos($hook, 'custom-components_page_') === 0) {
+          $is_plugin_page = true;
+          error_log("CCC AssetManager: Submenu page detected: $hook");
+      }
+      
+      // Check for post edit pages
+      if (in_array($hook, ['post.php', 'post-new.php'])) {
+          $is_plugin_page = true;
+          error_log("CCC AssetManager: Post edit page detected - will load metabox assets");
+      }
 
-      if (!in_array($hook, $plugin_pages)) {
+      if (!$is_plugin_page) {
+          error_log("CCC AssetManager: Not a plugin page, enqueuing frontend assets");
           $this->enqueueFrontendAssets();
           return;
       }
 
+      error_log("CCC AssetManager: Plugin page detected, enqueuing admin assets");
       $this->enqueueAdminAssets($hook);
   }
 
   private function enqueueAdminAssets($hook) {
+      error_log("CCC AssetManager: enqueueAdminAssets called with hook: $hook");
+      
       // Ensure React dependencies are loaded
       wp_enqueue_script('react', 'https://unpkg.com/react@17/umd/react.production.min.js', [], '17.0.2', true);
       wp_enqueue_script('react-dom', 'https://unpkg.com/react-dom@17/umd/react-dom.production.min.js', ['react'], '17.0.2', true);
@@ -43,12 +65,18 @@ class AssetManager {
       $build_dir = plugin_dir_path(__FILE__) . '../../build/assets/';
       $build_url = plugin_dir_url(__FILE__) . '../../build/assets/';
 
+      error_log("CCC AssetManager: Build directory: $build_dir");
+      error_log("CCC AssetManager: Build URL: $build_url");
+
       $js_file = $this->findBuildFile($build_dir, '*.js');
       $css_file = $this->findBuildFile($build_dir, '*.css');
 
       if ($js_file) {
+          error_log("CCC AssetManager: Enqueuing React script: $build_url$js_file");
           wp_enqueue_script('ccc-react', $build_url . $js_file, ['wp-api', 'react', 'react-dom'], '1.2.8', true);
           $this->localizeScript($hook);
+      } else {
+          error_log("CCC AssetManager: No JS file found in $build_dir");
       }
 
       if ($css_file) {
@@ -165,20 +193,34 @@ class AssetManager {
 
   private function findBuildFile($dir, $pattern) {
       if (!is_dir($dir)) {
+          error_log("CCC AssetManager: Build directory not found: $dir");
           return '';
       }
 
       $files = glob($dir . $pattern);
-      return $files ? basename($files[0]) : '';
+      $file = $files ? basename($files[0]) : '';
+      error_log("CCC AssetManager: Found build file: $file in $dir");
+      return $file;
   }
 
   private function localizeScript($hook) {
       $current_page = $hook;
-      if (strpos($hook, 'custom-craft-component_page_') !== false) {
-          $current_page = str_replace('custom-craft-component_page_', '', $hook);
-      } elseif ($hook === 'toplevel_page_custom-craft-component') {
+      
+      // Map WordPress hooks to page slugs - handle both sanitized and unsanitized hook names
+      if ($hook === 'toplevel_page_custom-craft-component') {
           $current_page = 'custom-craft-component';
+      } elseif ($hook === 'custom-craft-component_page_custom-craft-posttypes' || $hook === 'custom-components_page_custom-craft-posttypes') {
+          $current_page = 'custom-craft-posttypes';
+      } elseif ($hook === 'custom-craft-component_page_custom-craft-taxonomies' || $hook === 'custom-components_page_custom-craft-taxonomies') {
+          $current_page = 'custom-craft-taxonomies';
+      } elseif ($hook === 'custom-craft-component_page_custom-craft-importexport' || $hook === 'custom-components_page_custom-craft-importexport') {
+          $current_page = 'custom-craft-importexport';
+      } elseif ($hook === 'custom-craft-component_page_custom-craft-settings' || $hook === 'custom-components_page_custom-craft-settings') {
+          $current_page = 'custom-craft-settings';
       }
+
+      // Debug logging
+      error_log("CCC AssetManager: Hook: $hook, Current Page: $current_page");
 
       wp_localize_script('ccc-react', 'cccData', [
           'currentPage' => $current_page,
