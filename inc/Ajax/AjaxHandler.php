@@ -27,6 +27,7 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_get_posts', [$this, 'getPosts']);
       add_action('wp_ajax_ccc_get_posts_with_components', [$this, 'getPostsWithComponents']);
       add_action('wp_ajax_ccc_save_component_assignments', [$this, 'saveComponentAssignments']);
+      add_action('wp_ajax_ccc_save_metabox_components', [$this, 'saveMetaboxComponents']);
       add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
       add_action('wp_ajax_ccc_delete_field', [$this, 'deleteField']);
       add_action('wp_ajax_ccc_save_assignments', [$this, 'saveAssignments']);
@@ -403,9 +404,31 @@ class AjaxHandler {
               ]);
               foreach ($posts as $post) {
                   update_post_meta($post->ID, '_ccc_components', $components);
+                  
+                  // Update the had_components flag based on whether components are currently assigned
+                  if (!empty($components)) {
+                      update_post_meta($post->ID, '_ccc_had_components', '1');
+                      update_post_meta($post->ID, '_ccc_assigned_via_main_interface', '1'); // Mark as assigned via main interface
+                  } else {
+                      // For main plugin interface saves, we can remove the had_components flag
+                      delete_post_meta($post->ID, '_ccc_had_components');
+                      delete_post_meta($post->ID, '_ccc_assigned_via_main_interface'); // Remove main interface flag
+                      error_log("CCC AjaxHandler: Post {$post->ID} main interface save with no components, removing _ccc_had_components flag");
+                  }
               }
           } else {
               update_post_meta($post_id, '_ccc_components', $components);
+              
+              // Update the had_components flag based on whether components are currently assigned
+              if (!empty($components)) {
+                  update_post_meta($post_id, '_ccc_had_components', '1');
+                  update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1'); // Mark as assigned via main interface
+              } else {
+                  // For main plugin interface saves, we can remove the had_components flag
+                  delete_post_meta($post_id, '_ccc_had_components');
+                  delete_post_meta($post_id, '_ccc_assigned_via_main_interface'); // Remove main interface flag
+                  error_log("CCC AjaxHandler: Post {$post_id} main interface save with no components, removing _ccc_had_components flag");
+              }
           }
       }
 
@@ -546,6 +569,7 @@ class AjaxHandler {
       $post_list = array_map(function ($post) {
           $components = get_post_meta($post->ID, '_ccc_components', true);
           $assigned_components = [];
+          $assigned_via_main_interface = get_post_meta($post->ID, '_ccc_assigned_via_main_interface', true);
           
           if (is_array($components)) {
               $assigned_components = array_map(function($comp) {
@@ -553,13 +577,23 @@ class AjaxHandler {
               }, $components);
           }
           
-          return [
+          $result = [
               'id' => $post->ID,
               'title' => $post->post_title,
               'status' => $post->post_status,
               'has_components' => !empty($components),
-              'assigned_components' => array_unique($assigned_components)
+              'assigned_components' => array_unique($assigned_components),
+              'assigned_via_main_interface' => !empty($assigned_via_main_interface)
           ];
+          
+          // DEBUG: Log the decision making for each post
+          error_log("CCC DEBUG getPostsWithComponents - Post {$post->ID} ({$post->post_title}):");
+          error_log("  - Has components: " . ($result['has_components'] ? 'YES' : 'NO'));
+          error_log("  - Assigned via main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO'));
+          error_log("  - Will be selected in main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO')); // Changed: only depends on main interface flag
+          error_log("  - Component count: " . count($components));
+          
+          return $result;
       }, $posts);
 
       wp_send_json_success(['posts' => $post_list]);
@@ -567,6 +601,10 @@ class AjaxHandler {
 
   public function saveComponentAssignments() {
       check_ajax_referer('ccc_nonce', 'nonce');
+
+      // DEBUG: Log the incoming request
+      error_log("CCC DEBUG saveComponentAssignments - START");
+      error_log("  - POST data: " . json_encode($_POST));
 
       // Check if we're saving for a specific post (React metabox format)
       $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
@@ -623,11 +661,128 @@ class AjaxHandler {
           
           update_post_meta($post_id, '_ccc_components', $new_components_data);
           
+          // Update the had_components flag based on whether components are currently assigned
+          if (!empty($new_components_data)) {
+              update_post_meta($post_id, '_ccc_had_components', '1'); // Mark that components were previously assigned
+              update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1'); // Mark as assigned via main interface
+              error_log("CCC DEBUG saveComponentAssignments - Post {$post_id}: Set _ccc_assigned_via_main_interface flag");
+          } else {
+              // For main plugin interface saves, we can remove the had_components flag
+              // This allows the metabox to disappear when all components are removed via main interface
+              delete_post_meta($post_id, '_ccc_had_components');
+              delete_post_meta($post_id, '_ccc_assigned_via_main_interface'); // Remove main interface flag
+              error_log("CCC DEBUG saveComponentAssignments - Post {$post_id}: Removed _ccc_assigned_via_main_interface flag");
+          }
+          
+          // DEBUG: Log the final state for this post
+          $final_components = get_post_meta($post_id, '_ccc_components', true);
+          $final_assigned_via_main = get_post_meta($post_id, '_ccc_assigned_via_main_interface', true);
+          $final_had_components = get_post_meta($post_id, '_ccc_had_components', true);
+          
+          error_log("CCC DEBUG saveComponentAssignments - Post {$post_id} FINAL STATE:");
+          error_log("  - Final components: " . json_encode($final_components));
+          error_log("  - Final _ccc_assigned_via_main_interface: " . ($final_assigned_via_main ? 'YES' : 'NO'));
+          error_log("  - Final _ccc_had_components: " . ($final_had_components ? 'YES' : 'NO'));
+          
           // Note: Template removal is now manual - users must manually change the template
           // if they want to remove the CCC template when no components are assigned
       }
 
+      error_log("CCC DEBUG saveComponentAssignments - END");
       wp_send_json_success(['message' => 'Component assignments saved successfully']);
+  }
+
+  public function saveMetaboxComponents() {
+      check_ajax_referer('ccc_nonce', 'nonce');
+
+      $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
+      $components = isset($_POST['components']) ? json_decode(wp_unslash($_POST['components']), true) : null;
+      
+      // DEBUG: Log the incoming request
+      error_log("CCC DEBUG saveMetaboxComponents - START");
+      error_log("  - Post ID: $post_id");
+      error_log("  - Components data: " . json_encode($components));
+      error_log("  - Components count: " . (is_array($components) ? count($components) : 'NOT_ARRAY'));
+      
+      if (!$post_id || !is_array($components)) {
+          wp_send_json_error(['message' => 'Invalid post ID or components data']);
+          return;
+      }
+
+      // Validate post exists
+      $post = get_post($post_id);
+      if (!$post) {
+          wp_send_json_error(['message' => 'Post not found']);
+          return;
+      }
+
+      // Check user permissions
+      if (!current_user_can('edit_post', $post_id)) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+          return;
+      }
+
+      // Process components data
+      $processed_components = [];
+      $current_order = 0;
+
+      foreach ($components as $comp) {
+          $component_id = intval($comp['id']);
+          
+          // Validate component exists
+          $component = Component::find($component_id);
+          if (!$component) {
+              error_log("CCC AjaxHandler: Component not found for ID: $component_id");
+              continue;
+          }
+
+          $processed_components[] = [
+              'id' => $component_id,
+              'name' => sanitize_text_field($comp['name']),
+              'handle_name' => sanitize_text_field($comp['handle_name']),
+              'order' => $current_order++,
+              'instance_id' => sanitize_text_field($comp['instance_id'] ?? '')
+          ];
+      }
+      
+      // Sort by order
+      usort($processed_components, function($a, $b) {
+          return $a['order'] - $b['order'];
+      });
+      
+      // Save components
+      update_post_meta($post_id, '_ccc_components', $processed_components);
+      
+      // IMPORTANT: Metabox saves should NOT affect main interface selection
+      // We preserve the _ccc_assigned_via_main_interface flag to maintain main interface state
+      // This ensures metabox changes don't affect main interface selection
+      
+      // Update the had_components flag based on whether components are currently assigned
+      if (!empty($processed_components)) {
+          update_post_meta($post_id, '_ccc_had_components', '1');
+          error_log("CCC AjaxHandler: Metabox save - Post {$post_id} has components, setting _ccc_had_components flag");
+      } else {
+          // For metabox saves, preserve the flag to keep metabox visible
+          // This ensures the metabox stays visible even when all components are removed
+          error_log("CCC AjaxHandler: Metabox save - Post {$post_id} has no components, preserving _ccc_had_components flag");
+      }
+
+      // DEBUG: Log the final state after metabox save
+      $final_components = get_post_meta($post_id, '_ccc_components', true);
+      $final_assigned_via_main = get_post_meta($post_id, '_ccc_assigned_via_main_interface', true);
+      $final_had_components = get_post_meta($post_id, '_ccc_had_components', true);
+      
+      error_log("CCC DEBUG saveMetaboxComponents - FINAL STATE:");
+      error_log("  - Final components: " . json_encode($final_components));
+      error_log("  - Final _ccc_assigned_via_main_interface: " . ($final_assigned_via_main ? 'YES' : 'NO'));
+      error_log("  - Final _ccc_had_components: " . ($final_had_components ? 'YES' : 'NO'));
+      error_log("  - Components count: " . (is_array($final_components) ? count($final_components) : 'NOT_ARRAY'));
+      error_log("CCC DEBUG saveMetaboxComponents - END");
+
+      wp_send_json_success([
+          'message' => 'Components saved successfully',
+          'components' => $processed_components
+      ]);
   }
 
   public function updateFieldOrder() {

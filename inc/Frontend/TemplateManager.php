@@ -15,10 +15,11 @@ class TemplateManager {
         
         // Check if we're in the admin area and editing a post/page
         if (is_admin() && $post && $post->ID) {
-            // Check if this post has components assigned
+            // Check if this post has components assigned OR previously had components
             $components = get_post_meta($post->ID, '_ccc_components', true);
+            $had_components = get_post_meta($post->ID, '_ccc_had_components', true);
             
-            if (is_array($components) && !empty($components)) {
+            if ((is_array($components) && !empty($components)) || $had_components) {
                 $templates['ccc-template.php'] = 'CCC Component Template';
             }
         }

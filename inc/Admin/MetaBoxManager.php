@@ -25,10 +25,16 @@ class MetaBoxManager {
             return;
         }
 
-        // Only show metabox if this post has components assigned
+        // Show metabox if this post has components assigned OR if it previously had components
+        // This ensures the metabox stays visible even when all components are removed
+        // The metabox will only disappear when the user explicitly saves the page with no components
         $components = get_post_meta($post->ID, '_ccc_components', true);
+        $had_components = get_post_meta($post->ID, '_ccc_had_components', true);
         
-        if (is_array($components) && !empty($components)) {
+        error_log("CCC MetaBoxManager: Post {$post->ID} - components: " . json_encode($components) . ", had_components: " . $had_components);
+        
+        if ((is_array($components) && !empty($components)) || $had_components) {
+            error_log("CCC MetaBoxManager: Adding metabox for post {$post->ID}");
             add_meta_box(
                 'ccc_component_selector',
                 'Custom Components',
@@ -37,11 +43,15 @@ class MetaBoxManager {
                 'normal',
                 'high'
             );
+        } else {
+            error_log("CCC MetaBoxManager: Not adding metabox for post {$post->ID} - no components and never had components");
         }
     }
 
     public function renderComponentMetaBox($post) {
         wp_nonce_field('ccc_component_meta_box', 'ccc_component_nonce');
+        
+        error_log("CCC MetaBoxManager: Rendering metabox for post {$post->ID}");
         
         echo '<div class="ccc-meta-box">';
         echo '<div id="ccc-metabox-root" data-post-id="' . esc_attr($post->ID) . '"></div>';
@@ -67,6 +77,8 @@ class MetaBoxManager {
 
         $components_data = isset($_POST['ccc_components_data']) ? json_decode(wp_unslash($_POST['ccc_components_data']), true) : [];
         
+        error_log("CCC MetaBoxManager: Saving component data for post {$post_id} - received " . count($components_data) . " components");
+        
         $components = [];
         foreach ($components_data as $comp) {
             $components[] = [
@@ -83,6 +95,17 @@ class MetaBoxManager {
         });
         
         update_post_meta($post_id, '_ccc_components', $components);
+        
+        // Update the had_components flag based on whether components are currently assigned
+        if (!empty($components)) {
+            update_post_meta($post_id, '_ccc_had_components', '1'); // Mark that components were previously assigned
+            error_log("CCC MetaBoxManager: Post {$post_id} has components, setting _ccc_had_components flag");
+        } else {
+            // For metabox saves, preserve the flag to keep metabox visible
+            // This ensures the metabox stays visible even when all components are removed
+            // The metabox will only disappear when the user explicitly saves via main plugin interface
+            error_log("CCC MetaBoxManager: Post {$post_id} metabox save with no components, preserving _ccc_had_components flag");
+        }
         
         // Note: Template removal is now manual - users must manually change the template
         // if they want to remove the CCC template when no components are assigned
