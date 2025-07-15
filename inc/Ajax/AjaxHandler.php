@@ -546,12 +546,14 @@ class AjaxHandler {
               wp_send_json_error(['message' => 'Post not found']);
               return;
           }
-          
           $components = get_post_meta($post_id, '_ccc_components', true);
           if (!is_array($components)) {
               $components = [];
           }
-          
+          // Sort components by 'order' property before returning
+          usort($components, function($a, $b) {
+              return ($a['order'] ?? 0) - ($b['order'] ?? 0);
+          });
           wp_send_json_success(['components' => $components]);
           return;
       }
@@ -601,8 +603,6 @@ class AjaxHandler {
 
   public function saveComponentAssignments() {
       check_ajax_referer('ccc_nonce', 'nonce');
-
-      // DEBUG: Log the incoming request
       error_log("CCC DEBUG saveComponentAssignments - START");
       error_log("  - POST data: " . json_encode($_POST));
 
@@ -626,66 +626,50 @@ class AjaxHandler {
 
       foreach ($assignments as $post_id => $component_data_array) {
           $post_id = intval($post_id);
-      
           if (!$post_id) continue;
-     
+          error_log("CCC DEBUG saveComponentAssignments - Processing post: $post_id");
           $existing_components = get_post_meta($post_id, '_ccc_components', true);
           if (!is_array($existing_components)) {
               $existing_components = [];
           }
-
           $new_components_data = [];
           $current_order = 0;
-
-          foreach ($component_data_array as $incoming_comp) {
-              $component_id = intval($incoming_comp['id']);
-              
-              $existing_instance = null;
-              foreach ($existing_components as $ec) {
-                  if ($ec['id'] === $component_id) {
-                      $existing_instance = $ec;
-                      break;
-                  }
+          if (is_null($component_data_array)) {
+              // Mark as assigned, but no components yet
+              update_post_meta($post_id, '_ccc_components', []);
+              update_post_meta($post_id, '_ccc_had_components', '1');
+              update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
+              error_log("CCC DEBUG saveComponentAssignments - Post $post_id: assigned (no components yet)");
+          } else if (is_array($component_data_array)) {
+              foreach ($component_data_array as $incoming_comp) {
+                  $component_id = intval($incoming_comp['id']);
+                  $instance_id = time() . '_' . $component_id . '_' . uniqid();
+                  $new_components_data[] = [
+                      'id' => $component_id,
+                      'name' => sanitize_text_field($incoming_comp['name']),
+                      'handle_name' => sanitize_text_field($incoming_comp['handle_name']),
+                      'order' => $current_order++,
+                      'instance_id' => $instance_id
+                  ];
               }
-
-              $instance_id = $existing_instance['instance_id'] ?? (time() . '_' . $component_id . '_' . uniqid());
-
-              $new_components_data[] = [
-                  'id' => $component_id,
-                  'name' => sanitize_text_field($incoming_comp['name']),
-                  'handle_name' => sanitize_text_field($incoming_comp['handle_name']),
-                  'order' => $current_order++,
-                  'instance_id' => $instance_id
-              ];
+              update_post_meta($post_id, '_ccc_components', $new_components_data);
+              if (!empty($new_components_data)) {
+                  update_post_meta($post_id, '_ccc_had_components', '1');
+                  update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
+                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id: assigned, components: " . json_encode($new_components_data));
+              } else {
+                  delete_post_meta($post_id, '_ccc_had_components');
+                  delete_post_meta($post_id, '_ccc_assigned_via_main_interface');
+                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id: unassigned (no components)");
+              }
           }
-          
-          update_post_meta($post_id, '_ccc_components', $new_components_data);
-          
-          // Update the had_components flag based on whether components are currently assigned
-          if (!empty($new_components_data)) {
-              update_post_meta($post_id, '_ccc_had_components', '1'); // Mark that components were previously assigned
-              update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1'); // Mark as assigned via main interface
-              error_log("CCC DEBUG saveComponentAssignments - Post {$post_id}: Set _ccc_assigned_via_main_interface flag");
-          } else {
-              // For main plugin interface saves, we can remove the had_components flag
-              // This allows the metabox to disappear when all components are removed via main interface
-              delete_post_meta($post_id, '_ccc_had_components');
-              delete_post_meta($post_id, '_ccc_assigned_via_main_interface'); // Remove main interface flag
-              error_log("CCC DEBUG saveComponentAssignments - Post {$post_id}: Removed _ccc_assigned_via_main_interface flag");
-          }
-          
-          // DEBUG: Log the final state for this post
           $final_components = get_post_meta($post_id, '_ccc_components', true);
           $final_assigned_via_main = get_post_meta($post_id, '_ccc_assigned_via_main_interface', true);
           $final_had_components = get_post_meta($post_id, '_ccc_had_components', true);
-          
-          error_log("CCC DEBUG saveComponentAssignments - Post {$post_id} FINAL STATE:");
+          error_log("CCC DEBUG saveComponentAssignments - Post $post_id FINAL STATE:");
           error_log("  - Final components: " . json_encode($final_components));
           error_log("  - Final _ccc_assigned_via_main_interface: " . ($final_assigned_via_main ? 'YES' : 'NO'));
           error_log("  - Final _ccc_had_components: " . ($final_had_components ? 'YES' : 'NO'));
-          
-          // Note: Template removal is now manual - users must manually change the template
-          // if they want to remove the CCC template when no components are assigned
       }
 
       error_log("CCC DEBUG saveComponentAssignments - END");
@@ -694,12 +678,9 @@ class AjaxHandler {
 
   public function saveMetaboxComponents() {
       check_ajax_referer('ccc_nonce', 'nonce');
-
+      error_log("CCC DEBUG saveMetaboxComponents - START");
       $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
       $components = isset($_POST['components']) ? json_decode(wp_unslash($_POST['components']), true) : null;
-      
-      // DEBUG: Log the incoming request
-      error_log("CCC DEBUG saveMetaboxComponents - START");
       error_log("  - Post ID: $post_id");
       error_log("  - Components data: " . json_encode($components));
       error_log("  - Components count: " . (is_array($components) ? count($components) : 'NOT_ARRAY'));
@@ -740,8 +721,9 @@ class AjaxHandler {
               'id' => $component_id,
               'name' => sanitize_text_field($comp['name']),
               'handle_name' => sanitize_text_field($comp['handle_name']),
-              'order' => $current_order++,
-              'instance_id' => sanitize_text_field($comp['instance_id'] ?? '')
+              'order' => isset($comp['order']) ? intval($comp['order']) : 0,
+              'instance_id' => sanitize_text_field($comp['instance_id'] ?? ''),
+              'isHidden' => isset($comp['isHidden']) ? (bool)$comp['isHidden'] : false
           ];
       }
       
@@ -771,7 +753,6 @@ class AjaxHandler {
       $final_components = get_post_meta($post_id, '_ccc_components', true);
       $final_assigned_via_main = get_post_meta($post_id, '_ccc_assigned_via_main_interface', true);
       $final_had_components = get_post_meta($post_id, '_ccc_had_components', true);
-      
       error_log("CCC DEBUG saveMetaboxComponents - FINAL STATE:");
       error_log("  - Final components: " . json_encode($final_components));
       error_log("  - Final _ccc_assigned_via_main_interface: " . ($final_assigned_via_main ? 'YES' : 'NO'));

@@ -86,7 +86,8 @@ class MetaBoxManager {
                 'name' => sanitize_text_field($comp['name']),
                 'handle_name' => sanitize_text_field($comp['handle_name']),
                 'order' => intval($comp['order'] ?? 0),
-                'instance_id' => sanitize_text_field($comp['instance_id'] ?? '')
+                'instance_id' => sanitize_text_field($comp['instance_id'] ?? ''),
+                'isHidden' => isset($comp['isHidden']) ? (bool)$comp['isHidden'] : false
             ];
         }
         
