@@ -475,7 +475,7 @@ class AjaxHandler {
           $fields = Field::findFieldsTree($component_id);
           
           // Helper to recursively convert Field objects to arrays
-          function ccc_field_to_array($field) {
+          $fieldToArray = function($field) use (&$fieldToArray) {
               $config_json = $field->getConfig();
               $decoded_config = [];
               if (!empty($config_json)) {
@@ -497,35 +497,13 @@ class AjaxHandler {
                   'children' => []
               ];
               if ($field->getType() === 'repeater' && is_array($field->getChildren()) && count($field->getChildren()) > 0) {
-                  $arr['children'] = array_map('ccc_field_to_array', $field->getChildren());
+                  $arr['children'] = array_map($fieldToArray, $field->getChildren());
               }
               return $arr;
-          }
+          };
+          $field_data = array_map($fieldToArray, $fields);
 
-          $field_data = array_map('ccc_field_to_array', $fields);
-
-          // Render the accordion HTML for this component instance
-          ob_start();
-          $component = Component::find($component_id);
-          if ($component) {
-              // Use the same render logic as renderComponentAccordion
-              $manager = new \CCC\Admin\MetaBoxManager();
-              $comp = [
-                  'id' => $component->getId(),
-                  'name' => $component->getName(),
-                  'handle_name' => $component->getHandleName(),
-                  'order' => 0, // Will be set by JS
-                  'instance_id' => $instance_id
-              ];
-              $field_values = [];
-              foreach ($fields as $field) {
-                  $field_values[$field->getId()] = '';
-              }
-              $manager->renderComponentAccordion($comp, 0, [$instance_id => $field_values]);
-          }
-          $accordion_html = ob_get_clean();
-
-          wp_send_json_success(['fields' => $field_data, 'html' => $accordion_html]);
+          wp_send_json_success(['fields' => $field_data]);
 
       } catch (\Exception $e) {
           error_log("Exception in getComponentFields: " . $e->getMessage());

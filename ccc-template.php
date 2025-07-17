@@ -66,7 +66,10 @@ if (have_posts()) :
                             $component_id = isset($component['id']) ? intval($component['id']) : 0;
                             $handle_name = $component['handle_name'] ?? '';
                             $instance_id = $component['instance_id'] ?? ('legacy_' . $index);
-                            
+                            // Skip hidden components
+                            if (!empty($component['isHidden'])) {
+                                continue;
+                            }
                             if (!$component_id || !$handle_name) {
                                 error_log("CCC: Invalid component data at index $index");
                                 continue;

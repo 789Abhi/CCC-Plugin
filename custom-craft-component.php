@@ -85,3 +85,15 @@ function custom_craft_component_init() {
       );
   }
 }
+
+add_action('admin_enqueue_scripts', function($hook) {
+    // Adjust the slug as needed for your plugin
+    if (
+        $hook === 'toplevel_page_custom-craft-component' ||
+        strpos($hook, 'custom-craft-component') !== false
+    ) {
+        echo '<style>
+            .notice, .notice-warning, .notice-error, .notice-success, .update-nag { display: none !important; }
+        </style>';
+    }
+});

@@ -64,7 +64,7 @@ class AdminManager {
                 $error = $e->getMessage();
             }
         }
-        echo '<div class="wrap"><h1>CCC Migrate Nested Fields</h1>';
+        echo '<div class=""><h1>CCC Migrate Nested Fields</h1>';
         if ($ran) {
             echo '<div style="color:green;font-weight:bold;">Migration complete! All nested fields are now real DB rows.</div>';
         } elseif ($error) {
@@ -78,7 +78,7 @@ class AdminManager {
 
     public function renderComponentsPage() {
         error_log("CCC AdminManager: Rendering Components page");
-        echo '<div class="wrap">';
+        echo '<div class="">';
         echo '<div id="root" data-page="components"></div>';
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
@@ -97,7 +97,7 @@ class AdminManager {
 
     public function renderPostTypesPage() {
         error_log("CCC AdminManager: Rendering Post Types page");
-        echo '<div class="wrap">';
+        echo '<div class="">';
         echo '<div id="root" data-page="posttypes"></div>';
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
@@ -118,7 +118,7 @@ class AdminManager {
 
     public function renderTaxonomiesPage() {
         error_log("CCC AdminManager: Rendering Taxonomies page");
-        echo '<div class="wrap">';
+        echo '<div class="">';
         echo '<div id="root" data-page="taxonomies"></div>';
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
@@ -137,7 +137,7 @@ class AdminManager {
 
     public function renderImportExportPage() {
         error_log("CCC AdminManager: Rendering Import/Export page");
-        echo '<div class="wrap">';
+        echo '<div class="">';
         echo '<div id="root" data-page="importexport"></div>';
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
@@ -156,7 +156,7 @@ class AdminManager {
 
     public function renderSettingsPage() {
         error_log("CCC AdminManager: Rendering Settings page");
-        echo '<div class="wrap">';
+        echo '<div class="">';
         echo '<div id="root" data-page="settings"></div>';
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
