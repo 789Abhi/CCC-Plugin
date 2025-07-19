@@ -436,6 +436,7 @@ class AjaxHandler {
   }
 
   public function saveFieldValues() {
+      error_log('CCC DEBUG: saveFieldValues payload: ' . print_r($_POST, true));
       try {
           check_ajax_referer('ccc_nonce', 'nonce');
 
@@ -446,6 +447,13 @@ class AjaxHandler {
               wp_send_json_error(['message' => 'Invalid post ID.']);
               return;
           }
+
+          // Decode JSON if needed
+          if (is_string($field_values)) {
+              $field_values = stripslashes($field_values); // Remove extra slashes
+              $field_values = json_decode($field_values, true);
+          }
+          error_log('CCC DEBUG: Decoded field_values: ' . print_r($field_values, true));
 
           FieldValue::saveMultiple($post_id, $field_values);
           wp_send_json_success(['message' => 'Field values saved successfully']);
@@ -475,7 +483,7 @@ class AjaxHandler {
           $fields = Field::findFieldsTree($component_id);
           
           // Helper to recursively convert Field objects to arrays
-          $fieldToArray = function($field) use (&$fieldToArray) {
+          $fieldToArray = function($field) use (&$fieldToArray, $post_id, $instance_id) {
               $config_json = $field->getConfig();
               $decoded_config = [];
               if (!empty($config_json)) {
@@ -485,23 +493,30 @@ class AjaxHandler {
                       $decoded_config = [];
                   }
               }
+              // Fetch the saved value for this field, post, and instance
+              $value = '';
+              if ($post_id && $instance_id) {
+                  $value = \CCC\Models\FieldValue::getValue($field->getId(), $post_id, $instance_id);
+              }
               $arr = [
                   'id' => $field->getId(),
                   'label' => $field->getLabel(),
                   'name' => $field->getName(),
                   'type' => $field->getType(),
-                  'value' => '', // Value loading for nested fields can be added if needed
+                  'value' => $value,
                   'config' => $decoded_config,
                   'required' => $field->getRequired(),
                   'placeholder' => $field->getPlaceholder(),
                   'children' => []
               ];
               if ($field->getType() === 'repeater' && is_array($field->getChildren()) && count($field->getChildren()) > 0) {
-                  $arr['children'] = array_map($fieldToArray, $field->getChildren());
+                  $arr['children'] = array_map(function($child) use (&$fieldToArray, $post_id, $instance_id) {
+                      return $fieldToArray($child);
+                  }, $field->getChildren());
               }
               return $arr;
           };
-          $field_data = array_map($fieldToArray, $fields);
+          $field_data = array_map(function($field) use ($fieldToArray) { return $fieldToArray($field); }, $fields);
 
           wp_send_json_success(['fields' => $field_data]);
 

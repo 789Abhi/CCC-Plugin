@@ -30,7 +30,7 @@ class Database {
      */
     public static function createTables() {
         global $wpdb;
-
+ 
         $charset_collate = $wpdb->get_charset_collate();
 
         $components_table = $wpdb->prefix . 'cc_components';

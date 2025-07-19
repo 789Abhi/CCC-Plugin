@@ -118,7 +118,7 @@ class MetaBoxManager {
         global $wpdb;
         $field_values_table = $wpdb->prefix . 'cc_field_values';
         
-        $wpdb->delete($field_values_table, ['post_id' => $post_id], ['%d']);
+        // $wpdb->delete($field_values_table, ['post_id' => $post_id], ['%d']); // Disabled: do not delete all field values on save
 
         foreach ($field_values as $instance_id => $instance_fields) {
             if (!is_array($instance_fields)) continue;

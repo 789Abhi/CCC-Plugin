@@ -69,8 +69,25 @@ class FieldValue {
                 ['%s', '%s'],
                 ['%d']
             );
+            if ($result === false) {
+                error_log("CCC FieldValue: DB update error: " . $wpdb->last_error);
+            }
+            // Log the updated row
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$table_name} WHERE id = %d",
+                $existing_id
+            ), ARRAY_A);
+            error_log("CCC FieldValue: Updated row: " . print_r($row, true));
         } else {
             // Insert new value
+            error_log("CCC FieldValue: About to insert row into $table_name: " . print_r([
+                'field_id' => $field_id,
+                'post_id' => $post_id,
+                'instance_id' => $instance_id,
+                'value' => $value,
+                'created_at' => current_time('mysql'),
+                'updated_at' => current_time('mysql')
+            ], true));
             $result = $wpdb->insert(
                 $table_name,
                 [
@@ -83,6 +100,20 @@ class FieldValue {
                 ],
                 ['%d', '%d', '%s', '%s', '%s', '%s']
             );
+            error_log("CCC FieldValue: Insert result: $result, error: " . $wpdb->last_error);
+            if ($result === false) {
+                error_log("CCC FieldValue: DB insert error: " . $wpdb->last_error);
+            }
+            // Log the inserted row
+            $insert_id = $wpdb->insert_id;
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$table_name} WHERE id = %d",
+                $insert_id
+            ), ARRAY_A);
+            error_log("CCC FieldValue: Inserted row: " . print_r($row, true));
+            // Log the total row count in the table
+            $count = $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}");
+            error_log("CCC FieldValue: Total rows in table after insert: $count");
         }
 
         return $result !== false;
