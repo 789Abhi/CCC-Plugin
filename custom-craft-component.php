@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 1.4.0
+ * Version: 1.4.1
  * Author: Abhishek
 */
 
@@ -48,6 +48,18 @@ use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 use CCC\Core\Plugin;
 
 register_activation_hook(__FILE__, ['CCC\Core\Database', 'activate']);
+
+// Create revision table on activation
+register_activation_hook(__FILE__, function() {
+    // Create the main database tables
+    \CCC\Core\Database::activate();
+    
+    // Create the revisions table
+    \CCC\Models\FieldValueRevision::createTable();
+});
+
+// Prevent data deletion on uninstall - comment out or remove the uninstall hook
+// register_uninstall_hook(__FILE__, ['CCC\Core\Database', 'uninstall']);
 
 // Load helper functions on multiple hooks to ensure availability
 add_action('plugins_loaded', 'ccc_load_helpers', 1);

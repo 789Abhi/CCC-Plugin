@@ -96,7 +96,8 @@ class MetaBoxManager {
         });
         
         update_post_meta($post_id, '_ccc_components', $components);
-        
+        // Also update _ccc_previous_components to match current components
+        update_post_meta($post_id, '_ccc_previous_components', $components);
         // Update the had_components flag based on whether components are currently assigned
         if (!empty($components)) {
             update_post_meta($post_id, '_ccc_had_components', '1'); // Mark that components were previously assigned
@@ -111,9 +112,14 @@ class MetaBoxManager {
         // Note: Template removal is now manual - users must manually change the template
         // if they want to remove the CCC template when no components are assigned
 
-        $field_values = isset($_POST['ccc_field_values']) && is_array($_POST['ccc_field_values']) 
-            ? $_POST['ccc_field_values'] 
-            : [];
+        // Fix: decode JSON string to array for field values
+        $field_values = [];
+        if (isset($_POST['ccc_field_values'])) {
+            $decoded = json_decode(wp_unslash($_POST['ccc_field_values']), true);
+            if (is_array($decoded)) {
+                $field_values = $decoded;
+            }
+        }
 
         global $wpdb;
         $field_values_table = $wpdb->prefix . 'cc_field_values';

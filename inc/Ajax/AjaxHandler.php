@@ -403,31 +403,55 @@ class AjaxHandler {
                   'numberposts' => -1
               ]);
               foreach ($posts as $post) {
-                  update_post_meta($post->ID, '_ccc_components', $components);
-                  
-                  // Update the had_components flag based on whether components are currently assigned
                   if (!empty($components)) {
+                      // Page is being checked - restore previous components if available
+                      $previous_components = get_post_meta($post->ID, '_ccc_previous_components', true);
+                      if (!empty($previous_components) && is_array($previous_components)) {
+                          update_post_meta($post->ID, '_ccc_components', $previous_components);
+                          error_log("CCC AjaxHandler: Post {$post->ID} rechecked, restoring previous components: " . json_encode($previous_components));
+                      } else {
+                          update_post_meta($post->ID, '_ccc_components', $components);
+                      }
                       update_post_meta($post->ID, '_ccc_had_components', '1');
-                      update_post_meta($post->ID, '_ccc_assigned_via_main_interface', '1'); // Mark as assigned via main interface
+                      update_post_meta($post->ID, '_ccc_assigned_via_main_interface', '1');
                   } else {
-                      // For main plugin interface saves, we can remove the had_components flag
-                      delete_post_meta($post->ID, '_ccc_had_components');
+                      // Page is being unchecked - store current components for later restoration
+                      $current_components = get_post_meta($post->ID, '_ccc_components', true);
+                      if (!empty($current_components) && is_array($current_components)) {
+                          update_post_meta($post->ID, '_ccc_previous_components', $current_components);
+                          error_log("CCC AjaxHandler: Post {$post->ID} unchecked, storing previous components: " . json_encode($current_components));
+                      }
+                      update_post_meta($post->ID, '_ccc_components', []);
+                      delete_post_meta($post->ID, '_ccc_had_components'); // Hide metabox
                       delete_post_meta($post->ID, '_ccc_assigned_via_main_interface'); // Remove main interface flag
-                      error_log("CCC AjaxHandler: Post {$post->ID} main interface save with no components, removing _ccc_had_components flag");
+                      // DO NOT DELETE FIELD VALUES - they remain in database for when page is rechecked
+                      error_log("CCC AjaxHandler: Post {$post->ID} unchecked from main interface, hiding metabox but preserving field values in database");
                   }
               }
           } else {
-              update_post_meta($post_id, '_ccc_components', $components);
-              
-              // Update the had_components flag based on whether components are currently assigned
               if (!empty($components)) {
+                  // Page is being checked - restore previous components if available
+                  $previous_components = get_post_meta($post_id, '_ccc_previous_components', true);
+                  if (!empty($previous_components) && is_array($previous_components)) {
+                      update_post_meta($post_id, '_ccc_components', $previous_components);
+                      error_log("CCC AjaxHandler: Post {$post_id} rechecked, restoring previous components: " . json_encode($previous_components));
+                  } else {
+                      update_post_meta($post_id, '_ccc_components', $components);
+                  }
                   update_post_meta($post_id, '_ccc_had_components', '1');
-                  update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1'); // Mark as assigned via main interface
+                  update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
               } else {
-                  // For main plugin interface saves, we can remove the had_components flag
-                  delete_post_meta($post_id, '_ccc_had_components');
+                  // Page is being unchecked - store current components for later restoration
+                  $current_components = get_post_meta($post_id, '_ccc_components', true);
+                  if (!empty($current_components) && is_array($current_components)) {
+                      update_post_meta($post_id, '_ccc_previous_components', $current_components);
+                      error_log("CCC AjaxHandler: Post {$post_id} unchecked, storing previous components: " . json_encode($current_components));
+                  }
+                  update_post_meta($post_id, '_ccc_components', []);
+                  delete_post_meta($post_id, '_ccc_had_components'); // Hide metabox
                   delete_post_meta($post_id, '_ccc_assigned_via_main_interface'); // Remove main interface flag
-                  error_log("CCC AjaxHandler: Post {$post_id} main interface save with no components, removing _ccc_had_components flag");
+                  // DO NOT DELETE FIELD VALUES - they remain in database for when page is rechecked
+                  error_log("CCC AjaxHandler: Post {$post_id} unchecked from main interface, hiding metabox but preserving field values in database");
               }
           }
       }
@@ -441,7 +465,7 @@ class AjaxHandler {
           check_ajax_referer('ccc_nonce', 'nonce');
 
           $post_id = intval($_POST['post_id'] ?? 0);
-          $field_values = $_POST['ccc_field_values'] ?? [];
+          $field_values = $_POST['field_values'] ?? $_POST['ccc_field_values'] ?? [];
 
           if (!$post_id) {
               wp_send_json_error(['message' => 'Invalid post ID.']);
@@ -455,8 +479,15 @@ class AjaxHandler {
           }
           error_log('CCC DEBUG: Decoded field_values: ' . print_r($field_values, true));
 
-          FieldValue::saveMultiple($post_id, $field_values);
-          wp_send_json_success(['message' => 'Field values saved successfully']);
+          $success = FieldValue::saveMultiple($post_id, $field_values);
+          if ($success) {
+              error_log("CCC DEBUG saveFieldValues - SUCCESS: Saved " . count($field_values) . " field values for post $post_id");
+              
+              wp_send_json_success(['message' => 'Field values saved successfully']);
+          } else {
+              error_log("CCC DEBUG saveFieldValues - FAILED: Could not save field values for post $post_id");
+              wp_send_json_error(['message' => 'Failed to save field values']);
+          }
 
       } catch (\Exception $e) {
           error_log("Exception in saveFieldValues: " . $e->getMessage());
@@ -621,41 +652,35 @@ class AjaxHandler {
           $post_id = intval($post_id);
           if (!$post_id) continue;
           error_log("CCC DEBUG saveComponentAssignments - Processing post: $post_id");
-          $existing_components = get_post_meta($post_id, '_ccc_components', true);
-          if (!is_array($existing_components)) {
-              $existing_components = [];
-          }
-          $new_components_data = [];
-          $current_order = 0;
+          
           if (is_null($component_data_array)) {
-              // Mark as assigned, but no components yet
-              update_post_meta($post_id, '_ccc_components', []);
+              // Page is being checked - restore previous components if available
+              $previous_components = get_post_meta($post_id, '_ccc_previous_components', true);
+              if (!empty($previous_components) && is_array($previous_components)) {
+                  update_post_meta($post_id, '_ccc_components', $previous_components);
+                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id rechecked, restoring previous components: " . json_encode($previous_components));
+              } else {
+                  // No previous components, assign empty array (will be populated later)
+                  update_post_meta($post_id, '_ccc_components', []);
+                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id rechecked, no previous components to restore");
+              }
               update_post_meta($post_id, '_ccc_had_components', '1');
               update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
-              error_log("CCC DEBUG saveComponentAssignments - Post $post_id: assigned (no components yet)");
+              error_log("CCC DEBUG saveComponentAssignments - Post $post_id: checked from main interface, showing metabox");
           } else if (is_array($component_data_array)) {
-              foreach ($component_data_array as $incoming_comp) {
-                  $component_id = intval($incoming_comp['id']);
-                  $instance_id = time() . '_' . $component_id . '_' . uniqid();
-                  $new_components_data[] = [
-                      'id' => $component_id,
-                      'name' => sanitize_text_field($incoming_comp['name']),
-                      'handle_name' => sanitize_text_field($incoming_comp['handle_name']),
-                      'order' => $current_order++,
-                      'instance_id' => $instance_id
-                  ];
+              // Page is being unchecked - store current components for later restoration
+              $current_components = get_post_meta($post_id, '_ccc_components', true);
+              if (!empty($current_components) && is_array($current_components)) {
+                  update_post_meta($post_id, '_ccc_previous_components', $current_components);
+                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id unchecked, storing previous components: " . json_encode($current_components));
               }
-              update_post_meta($post_id, '_ccc_components', $new_components_data);
-              if (!empty($new_components_data)) {
-                  update_post_meta($post_id, '_ccc_had_components', '1');
-                  update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
-                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id: assigned, components: " . json_encode($new_components_data));
-              } else {
-                  delete_post_meta($post_id, '_ccc_had_components');
-                  delete_post_meta($post_id, '_ccc_assigned_via_main_interface');
-                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id: unassigned (no components)");
-              }
+              update_post_meta($post_id, '_ccc_components', []);
+              delete_post_meta($post_id, '_ccc_had_components'); // Hide metabox
+              delete_post_meta($post_id, '_ccc_assigned_via_main_interface'); // Remove main interface flag
+              // DO NOT DELETE FIELD VALUES - they remain in database for when page is rechecked
+              error_log("CCC DEBUG saveComponentAssignments - Post $post_id: unchecked from main interface, hiding metabox but preserving field values in database");
           }
+          
           $final_components = get_post_meta($post_id, '_ccc_components', true);
           $final_assigned_via_main = get_post_meta($post_id, '_ccc_assigned_via_main_interface', true);
           $final_had_components = get_post_meta($post_id, '_ccc_had_components', true);

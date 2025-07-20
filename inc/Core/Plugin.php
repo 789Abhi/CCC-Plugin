@@ -3,6 +3,7 @@
 namespace CCC\Core;
 
 use CCC\Admin\AdminManager;
+use CCC\Admin\RevisionAdmin;
 use CCC\Frontend\TemplateManager;
 use CCC\Ajax\AjaxHandler;
 
@@ -10,6 +11,7 @@ defined('ABSPATH') || exit;
 
 class Plugin {
    private $admin_manager;
+   private $revision_admin;
    private $template_manager;
    private $ajax_handler;
    
@@ -45,6 +47,9 @@ class Plugin {
        
        // Also check on plugin init for safety
        add_action('init', ['\CCC\Core\Database', 'checkAndUpdateSchema'], 1);
+       
+       // Ensure revisions table exists
+       add_action('init', ['\CCC\Core\Database', 'createRevisionsTable'], 2);
        
        // Initialize components
        $this->admin_manager->init();

@@ -14,7 +14,87 @@ class Database {
      * Plugin activation hook
      */
     public static function activate() {
-        self::createTables();
+        global $wpdb;
+        
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        // Components table
+        $components_table = $wpdb->prefix . 'cc_components';
+        $components_sql = "CREATE TABLE $components_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            name varchar(255) NOT NULL,
+            handle_name varchar(255) NOT NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY handle_name (handle_name)
+        ) $charset_collate;";
+        
+        // Fields table
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $fields_sql = "CREATE TABLE $fields_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            component_id bigint(20) NOT NULL,
+            label varchar(255) NOT NULL,
+            name varchar(255) NOT NULL,
+            type varchar(50) NOT NULL,
+            required tinyint(1) DEFAULT 0,
+            placeholder varchar(255) DEFAULT '',
+            config longtext,
+            field_order int(11) DEFAULT 0,
+            parent_id bigint(20) DEFAULT NULL,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY component_id (component_id),
+            KEY parent_id (parent_id),
+            FOREIGN KEY (component_id) REFERENCES $components_table(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_id) REFERENCES $fields_table(id) ON DELETE CASCADE
+        ) $charset_collate;";
+        
+        // Field values table
+        $field_values_table = $wpdb->prefix . 'cc_field_values';
+        $field_values_sql = "CREATE TABLE $field_values_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            field_id bigint(20) NOT NULL,
+            post_id bigint(20) NOT NULL,
+            instance_id varchar(255) NOT NULL,
+            value longtext,
+            created_at datetime NOT NULL,
+            updated_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY field_id (field_id),
+            KEY post_id (post_id),
+            KEY instance_id (instance_id),
+            UNIQUE KEY unique_field_value (field_id, post_id, instance_id),
+            FOREIGN KEY (field_id) REFERENCES $fields_table(id) ON DELETE CASCADE
+        ) $charset_collate;";
+        
+        // Field value revisions table
+        $revisions_table = $wpdb->prefix . 'cc_field_value_revisions';
+        $revisions_sql = "CREATE TABLE $revisions_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            post_id bigint(20) NOT NULL,
+            revision_data longtext NOT NULL,
+            revision_note varchar(255) DEFAULT '',
+            created_at datetime NOT NULL,
+            created_by bigint(20) NOT NULL,
+            is_active tinyint(1) DEFAULT 0,
+            PRIMARY KEY (id),
+            KEY post_id (post_id),
+            KEY created_at (created_at)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        
+        dbDelta($components_sql);
+        dbDelta($fields_sql);
+        dbDelta($field_values_sql);
+        dbDelta($revisions_sql);
+        
+        error_log("CCC Database: Tables created/updated successfully");
+        
+        // Create templates directory and set default options
         self::createTemplatesDirectory();
         self::setDefaultOptions();
         
@@ -23,6 +103,34 @@ class Database {
         
         // Log activation
         error_log('CCC Plugin activated - Database version: ' . self::DB_VERSION);
+    }
+    
+    /**
+     * Manually create the revisions table if it doesn't exist
+     */
+    public static function createRevisionsTable() {
+        global $wpdb;
+        
+        $charset_collate = $wpdb->get_charset_collate();
+        $revisions_table = $wpdb->prefix . 'cc_field_value_revisions';
+        
+        $revisions_sql = "CREATE TABLE $revisions_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            post_id bigint(20) NOT NULL,
+            revision_data longtext NOT NULL,
+            revision_note varchar(255) DEFAULT '',
+            created_at datetime NOT NULL,
+            created_by bigint(20) NOT NULL,
+            is_active tinyint(1) DEFAULT 0,
+            PRIMARY KEY (id),
+            KEY post_id (post_id),
+            KEY created_at (created_at)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($revisions_sql);
+        
+        error_log("CCC Database: Revisions table created/updated successfully");
     }
     
     /**
