@@ -159,6 +159,21 @@ class MetaBoxManager {
                 }
             }
         }
+
+        // Clean up orphaned field values for removed component instances
+        $current_instance_ids = array_map(function($comp) { return $comp['instance_id']; }, $components);
+        global $wpdb;
+        $field_values_table = $wpdb->prefix . 'cc_field_values';
+        if (!empty($current_instance_ids)) {
+            $placeholders = implode(',', array_fill(0, count($current_instance_ids), '%s'));
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM $field_values_table WHERE post_id = %d AND instance_id NOT IN ($placeholders)",
+                array_merge([$post_id], $current_instance_ids)
+            ));
+        } else {
+            // If no components left, delete all field values for this post
+            $wpdb->delete($field_values_table, ['post_id' => $post_id]);
+        }
     }
 
     private function sanitizeFieldValue($value, $field_obj) {
