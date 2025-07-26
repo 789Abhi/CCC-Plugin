@@ -76,7 +76,9 @@ class MetaBoxManager {
         }
 
         $components_data = isset($_POST['ccc_components_data']) ? json_decode(wp_unslash($_POST['ccc_components_data']), true) : [];
-        
+        if (!is_array($components_data)) {
+            $components_data = [];
+        }
         error_log("CCC MetaBoxManager: Saving component data for post {$post_id} - received " . count($components_data) . " components");
         
         $components = [];
@@ -140,19 +142,44 @@ class MetaBoxManager {
 
                 $value_to_save = $this->sanitizeFieldValue($value, $field_obj);
                 
-                if ($value_to_save !== '' && $value_to_save !== '[]') {
-                    $result = $wpdb->insert(
-                        $field_values_table,
-                        [
-                            'post_id' => $post_id,
-                            'field_id' => $field_id,
-                            'instance_id' => $instance_id,
-                            'value' => $value_to_save,
-                            'created_at' => current_time('mysql')
-                        ],
-                        ['%d', '%d', '%s', '%s', '%s']
-                    );
-                    
+                // Save even if empty string or '[]', only skip if null or false
+                if ($value_to_save !== null && $value_to_save !== false) {
+                    // Check if a row already exists for this post_id, field_id, instance_id
+                    $existing_id = $wpdb->get_var($wpdb->prepare(
+                        "SELECT id FROM $field_values_table WHERE post_id = %d AND field_id = %d AND instance_id = %s",
+                        $post_id, $field_id, $instance_id
+                    ));
+                    if ($existing_id) {
+                        // Update existing row
+                        $result = $wpdb->update(
+                            $field_values_table,
+                            [
+                                'value' => $value_to_save,
+                                'updated_at' => current_time('mysql')
+                            ],
+                            [
+                                'id' => $existing_id
+                            ],
+                            ['%s', '%s'],
+                            ['%d']
+                        );
+                        error_log("CCC DEBUG:   Update result for field $field_id: $result, error: " . $wpdb->last_error);
+                    } else {
+                        // Insert new row
+                        $result = $wpdb->insert(
+                            $field_values_table,
+                            [
+                                'post_id' => $post_id,
+                                'field_id' => $field_id,
+                                'instance_id' => $instance_id,
+                                'value' => $value_to_save,
+                                'created_at' => current_time('mysql'),
+                                'updated_at' => current_time('mysql')
+                            ],
+                            ['%d', '%d', '%s', '%s', '%s', '%s']
+                        );
+                        error_log("CCC DEBUG:   Insert result for field $field_id: $result, error: " . $wpdb->last_error);
+                    }
                     if ($result === false) {
                         error_log("CCC: Failed to save field value for field_id: $field_id, instance: $instance_id, post_id: $post_id, error: " . $wpdb->last_error);
                     }
@@ -376,6 +403,7 @@ class MetaBoxManager {
     private function getFieldValues($components, $post_id) {
         global $wpdb;
         $field_values_table = $wpdb->prefix . 'cc_field_values';
+        $fields_table = $wpdb->prefix . 'cc_fields';
         
         $values = $wpdb->get_results(
             $wpdb->prepare(
@@ -388,7 +416,24 @@ class MetaBoxManager {
         $field_values = [];
         foreach ($values as $value) {
             $instance_id = $value['instance_id'] ?: 'default';
-            $field_values[$instance_id][$value['field_id']] = $value['value'];
+            $field_id = $value['field_id'];
+            $raw_value = $value['value'];
+            // Fetch field type and config
+            $field = \CCC\Models\Field::find($field_id);
+            if ($field && $field->getType() === 'select') {
+                $config = $field->getConfig();
+                if (is_string($config)) {
+                    $config = json_decode($config, true);
+                }
+                $multiple = isset($config['multiple']) && $config['multiple'];
+                if ($multiple) {
+                    $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+                } else {
+                    $field_values[$instance_id][$field_id] = $raw_value;
+                }
+            } else {
+                $field_values[$instance_id][$field_id] = $raw_value;
+            }
         }
         
         return $field_values;

@@ -410,8 +410,8 @@ class AjaxHandler {
                           update_post_meta($post->ID, '_ccc_components', $previous_components);
                           error_log("CCC AjaxHandler: Post {$post->ID} rechecked, restoring previous components: " . json_encode($previous_components));
                       } else {
-                          update_post_meta($post->ID, '_ccc_components', $components);
-                      }
+                  update_post_meta($post->ID, '_ccc_components', $components);
+              }
                       update_post_meta($post->ID, '_ccc_had_components', '1');
                       update_post_meta($post->ID, '_ccc_assigned_via_main_interface', '1');
                   } else {
@@ -435,8 +435,8 @@ class AjaxHandler {
                   if (!empty($previous_components) && is_array($previous_components)) {
                       update_post_meta($post_id, '_ccc_components', $previous_components);
                       error_log("CCC AjaxHandler: Post {$post_id} rechecked, restoring previous components: " . json_encode($previous_components));
-                  } else {
-                      update_post_meta($post_id, '_ccc_components', $components);
+          } else {
+              update_post_meta($post_id, '_ccc_components', $components);
                   }
                   update_post_meta($post_id, '_ccc_had_components', '1');
                   update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
@@ -483,7 +483,7 @@ class AjaxHandler {
           if ($success) {
               error_log("CCC DEBUG saveFieldValues - SUCCESS: Saved " . count($field_values) . " field values for post $post_id");
               
-              wp_send_json_success(['message' => 'Field values saved successfully']);
+          wp_send_json_success(['message' => 'Field values saved successfully']);
           } else {
               error_log("CCC DEBUG saveFieldValues - FAILED: Could not save field values for post $post_id");
               wp_send_json_error(['message' => 'Failed to save field values']);
@@ -528,6 +528,13 @@ class AjaxHandler {
               $value = '';
               if ($post_id && $instance_id) {
                   $value = \CCC\Models\FieldValue::getValue($field->getId(), $post_id, $instance_id);
+                  
+                  // Handle select multiple fields
+                  if ($field->getType() === 'select' && isset($decoded_config['multiple']) && $decoded_config['multiple']) {
+                      if (is_string($value)) {
+                          $value = $value ? explode(',', $value) : [];
+                      }
+                  }
               }
               $arr = [
                   'id' => $field->getId(),
@@ -557,6 +564,46 @@ class AjaxHandler {
       }
   }
 
+  private function getFieldValuesForPost($post_id) {
+      global $wpdb;
+      $field_values_table = $wpdb->prefix . 'cc_field_values';
+      $fields_table = $wpdb->prefix . 'cc_fields';
+      
+      $values = $wpdb->get_results(
+          $wpdb->prepare(
+              "SELECT field_id, instance_id, value FROM $field_values_table WHERE post_id = %d",
+              $post_id
+          ),
+          ARRAY_A
+      );
+      
+      $field_values = [];
+      foreach ($values as $value) {
+          $instance_id = $value['instance_id'] ?: 'default';
+          $field_id = $value['field_id'];
+          $raw_value = $value['value'];
+          
+          // Fetch field type and config
+          $field = \CCC\Models\Field::find($field_id);
+          if ($field && $field->getType() === 'select') {
+              $config = $field->getConfig();
+              if (is_string($config)) {
+                  $config = json_decode($config, true);
+              }
+              $multiple = isset($config['multiple']) && $config['multiple'];
+              if ($multiple) {
+                  $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+              } else {
+                  $field_values[$instance_id][$field_id] = $raw_value;
+              }
+          } else {
+              $field_values[$instance_id][$field_id] = $raw_value;
+          }
+      }
+      
+      return $field_values;
+  }
+
   public function getPostsWithComponents() {
       check_ajax_referer('ccc_nonce', 'nonce');
 
@@ -574,11 +621,19 @@ class AjaxHandler {
           if (!is_array($components)) {
               $components = [];
           }
+          
+          // Get field values for this post with proper instance_id handling
+          $field_values = $this->getFieldValuesForPost($post_id);
+          
           // Sort components by 'order' property before returning
           usort($components, function($a, $b) {
               return ($a['order'] ?? 0) - ($b['order'] ?? 0);
           });
-          wp_send_json_success(['components' => $components]);
+          
+          wp_send_json_success([
+              'components' => $components,
+              'field_values' => $field_values
+          ]);
           return;
       }
 
@@ -736,7 +791,7 @@ class AjaxHandler {
           }
 
           $processed_components[] = [
-              'id' => $component_id,
+                  'id' => $component_id,
               'name' => sanitize_text_field($comp['name']),
               'handle_name' => sanitize_text_field($comp['handle_name']),
               'order' => isset($comp['order']) ? intval($comp['order']) : 0,

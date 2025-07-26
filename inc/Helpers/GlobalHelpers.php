@@ -410,3 +410,69 @@ if (!function_exists('ccc_debug_field_values')) {
         return $results;
     }
 }
+
+if (!function_exists('get_ccc_select_values')) {
+    function get_ccc_select_values($field_name, $post_id = null, $instance_id = null, $format = 'array') {
+        $values = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        // Handle both single and multiple select fields
+        if (is_array($values)) {
+            // Multiple select field
+            if (empty($values)) {
+                return $format === 'array' ? [] : '';
+            }
+            
+            switch ($format) {
+                case 'array':
+                    return $values;
+                case 'string':
+                    return implode(', ', $values);
+                case 'list':
+                    return '<ul><li>' . implode('</li><li>', array_map('esc_html', $values)) . '</li></ul>';
+                case 'options':
+                    return implode(' | ', array_map('esc_html', $values));
+                default:
+                    return $values;
+            }
+        } else {
+            // Single select field
+            if (empty($values)) {
+                return $format === 'array' ? [] : '';
+            }
+            
+            switch ($format) {
+                case 'array':
+                    return [$values];
+                case 'string':
+                    return $values;
+                case 'list':
+                    return '<ul><li>' . esc_html($values) . '</li></ul>';
+                case 'options':
+                    return esc_html($values);
+                default:
+                    return $values;
+            }
+        }
+    }
+}
+
+if (!function_exists('get_ccc_select_display')) {
+    function get_ccc_select_display($field_name, $post_id = null, $instance_id = null, $empty_text = 'No option selected') {
+        $values = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        // Handle both single and multiple select fields
+        if (is_array($values)) {
+            // Multiple select field
+            if (empty($values)) {
+                return esc_html($empty_text);
+            }
+            return esc_html(implode(', ', $values));
+        } else {
+            // Single select field
+            if (empty($values)) {
+                return esc_html($empty_text);
+            }
+            return esc_html($values);
+        }
+    }
+}

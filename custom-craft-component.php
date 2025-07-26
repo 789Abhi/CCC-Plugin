@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 1.4.2
+ * Version: 1.4.3
  * Author: Abhishek
 */
 
@@ -107,5 +107,11 @@ add_action('admin_enqueue_scripts', function($hook) {
         echo '<style>
             .notice, .notice-warning, .notice-error, .notice-success, .update-nag { display: none !important; }
         </style>';
+    }
+});
+
+add_action('admin_enqueue_scripts', function() {
+    if (is_admin()) {
+        wp_enqueue_editor();
     }
 });
