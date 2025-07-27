@@ -198,6 +198,21 @@ class AjaxHandler {
               $config = [
                   'return_type' => $return_type
               ];
+          } elseif ($type === 'video') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
+                  'sources' => is_array($field_config['sources']) ? $field_config['sources'] : ['file', 'youtube', 'vimeo', 'url'],
+                  'player_options' => is_array($field_config['player_options']) ? $field_config['player_options'] : [
+                      'controls' => true,
+                      'autoplay' => false,
+                      'muted' => false,
+                      'loop' => false,
+                      'download' => true,
+                      'fullscreen' => true,
+                      'pictureInPicture' => true
+                  ]
+              ];
           } elseif ($type === 'taxonomy_term') {
               $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
               $config = [
@@ -207,6 +222,15 @@ class AjaxHandler {
               $config = [];
           }
 
+          // Calculate the next field order
+          global $wpdb;
+          $fields_table = $wpdb->prefix . 'cc_fields';
+          $max_order = $wpdb->get_var($wpdb->prepare(
+              "SELECT MAX(field_order) FROM $fields_table WHERE component_id = %d",
+              $component_id
+          ));
+          $next_order = ($max_order !== null) ? intval($max_order) + 1 : 0;
+
           $field = new \CCC\Models\Field([
               'component_id' => $component_id,
               'parent_field_id' => $parent_field_id,
@@ -214,7 +238,7 @@ class AjaxHandler {
               'name' => $name,
               'type' => $type,
               'config' => json_encode($config),
-              'field_order' => 0,
+              'field_order' => $next_order,
               'required' => $required,
               'placeholder' => $placeholder
           ]);
@@ -281,6 +305,21 @@ class AjaxHandler {
               if (!isset($config['return_type'])) {
                   $config['return_type'] = 'url';
               }
+          } elseif ($type === 'video') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
+                  'sources' => is_array($field_config['sources']) ? $field_config['sources'] : ['file', 'youtube', 'vimeo', 'url'],
+                  'player_options' => is_array($field_config['player_options']) ? $field_config['player_options'] : [
+                      'controls' => true,
+                      'autoplay' => false,
+                      'muted' => false,
+                      'loop' => false,
+                      'download' => true,
+                      'fullscreen' => true,
+                      'pictureInPicture' => true
+                  ]
+              ];
           } elseif ($type === 'taxonomy_term') {
               $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
               $config['taxonomy'] = sanitize_text_field($field_config['taxonomy'] ?? 'category');
@@ -535,6 +574,12 @@ class AjaxHandler {
                           $value = $value ? explode(',', $value) : [];
                       }
                   }
+                  // Handle checkbox fields (always multiple)
+                  if ($field->getType() === 'checkbox') {
+                      if (is_string($value)) {
+                          $value = $value ? explode(',', $value) : [];
+                      }
+                  }
               }
               $arr = [
                   'id' => $field->getId(),
@@ -585,13 +630,21 @@ class AjaxHandler {
           
           // Fetch field type and config
           $field = \CCC\Models\Field::find($field_id);
-          if ($field && $field->getType() === 'select') {
-              $config = $field->getConfig();
-              if (is_string($config)) {
-                  $config = json_decode($config, true);
-              }
-              $multiple = isset($config['multiple']) && $config['multiple'];
-              if ($multiple) {
+          if ($field) {
+              $field_type = $field->getType();
+              if ($field_type === 'select') {
+                  $config = $field->getConfig();
+                  if (is_string($config)) {
+                      $config = json_decode($config, true);
+                  }
+                  $multiple = isset($config['multiple']) && $config['multiple'];
+                  if ($multiple) {
+                      $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+                  } else {
+                      $field_values[$instance_id][$field_id] = $raw_value;
+                  }
+              } elseif ($field_type === 'checkbox') {
+                  // Checkbox fields are always multiple by default
                   $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
               } else {
                   $field_values[$instance_id][$field_id] = $raw_value;
@@ -743,7 +796,7 @@ class AjaxHandler {
           error_log("  - Final components: " . json_encode($final_components));
           error_log("  - Final _ccc_assigned_via_main_interface: " . ($final_assigned_via_main ? 'YES' : 'NO'));
           error_log("  - Final _ccc_had_components: " . ($final_had_components ? 'YES' : 'NO'));
-      }
+                  }
 
       error_log("CCC DEBUG saveComponentAssignments - END");
       wp_send_json_success(['message' => 'Component assignments saved successfully']);
@@ -797,9 +850,9 @@ class AjaxHandler {
               'order' => isset($comp['order']) ? intval($comp['order']) : 0,
               'instance_id' => sanitize_text_field($comp['instance_id'] ?? ''),
               'isHidden' => isset($comp['isHidden']) ? (bool)$comp['isHidden'] : false
-          ];
-      }
-      
+              ];
+          }
+          
       // Sort by order
       usort($processed_components, function($a, $b) {
           return $a['order'] - $b['order'];
@@ -807,7 +860,7 @@ class AjaxHandler {
       
       // Save components
       update_post_meta($post_id, '_ccc_components', $processed_components);
-      
+          
       // IMPORTANT: Metabox saves should NOT affect main interface selection
       // We preserve the _ccc_assigned_via_main_interface flag to maintain main interface state
       // This ensures metabox changes don't affect main interface selection

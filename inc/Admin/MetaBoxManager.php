@@ -228,7 +228,58 @@ class MetaBoxManager {
                     return json_encode($decoded_value);
                 }
                 
+            case 'video':
+                $field_config = json_decode($field_obj->getConfig(), true);
+                $return_type = $field_config['return_type'] ?? 'url';
+                if ($return_type === 'url') {
+                    $decoded_value = json_decode($value_to_save, true);
+                    if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                        return esc_url_raw($decoded_value['url']);
+                    } else {
+                        return esc_url_raw($value_to_save);
+                    }
+                } else {
+                    $decoded_value = json_decode($value_to_save, true);
+                    if (is_array($decoded_value)) {
+                        // Sanitize video data
+                        $sanitized_video = [];
+                        if (isset($decoded_value['url'])) {
+                            $sanitized_video['url'] = esc_url_raw($decoded_value['url']);
+                        }
+                        if (isset($decoded_value['type'])) {
+                            $sanitized_video['type'] = sanitize_text_field($decoded_value['type']);
+                        }
+                        if (isset($decoded_value['title'])) {
+                            $sanitized_video['title'] = sanitize_text_field($decoded_value['title']);
+                        }
+                        if (isset($decoded_value['description'])) {
+                            $sanitized_video['description'] = sanitize_textarea_field($decoded_value['description']);
+                        }
+                        return json_encode($sanitized_video);
+                    }
+                    return json_encode($decoded_value);
+                }
+                
             case 'color':
+                // Handle enhanced color data structure
+                if (is_string($value_to_save) && $value_to_save !== '' && $value_to_save[0] === '{') {
+                    // JSON color data structure
+                    $decoded_color = json_decode($value_to_save, true);
+                    if (is_array($decoded_color)) {
+                        $sanitized_color = [];
+                        if (isset($decoded_color['main'])) {
+                            $sanitized_color['main'] = sanitize_hex_color($decoded_color['main']) ?: sanitize_text_field($decoded_color['main']);
+                        }
+                        if (isset($decoded_color['adjusted'])) {
+                            $sanitized_color['adjusted'] = sanitize_hex_color($decoded_color['adjusted']) ?: sanitize_text_field($decoded_color['adjusted']);
+                        }
+                        if (isset($decoded_color['hover'])) {
+                            $sanitized_color['hover'] = sanitize_hex_color($decoded_color['hover']) ?: sanitize_text_field($decoded_color['hover']);
+                        }
+                        return json_encode($sanitized_color);
+                    }
+                }
+                // Fallback to simple hex color
                 return sanitize_hex_color($value_to_save) ?: sanitize_text_field($value_to_save);
                 
             case 'checkbox':
@@ -288,6 +339,39 @@ class MetaBoxManager {
                                 } else {
                                     $decoded_value = json_decode($value, true);
                                     $sanitized_item[$field_name] = json_encode($decoded_value);
+                                }
+                                break;
+                                
+                            case 'video':
+                                $return_type = $nested_field_config['return_type'] ?? 'url';
+                                if ($return_type === 'url') {
+                                    $decoded_value = json_decode($value, true);
+                                    if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                        $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                                    } else {
+                                        $sanitized_item[$field_name] = esc_url_raw($value);
+                                    }
+                                } else {
+                                    $decoded_value = json_decode($value, true);
+                                    if (is_array($decoded_value)) {
+                                        // Sanitize video data
+                                        $sanitized_video = [];
+                                        if (isset($decoded_value['url'])) {
+                                            $sanitized_video['url'] = esc_url_raw($decoded_value['url']);
+                                        }
+                                        if (isset($decoded_value['type'])) {
+                                            $sanitized_video['type'] = sanitize_text_field($decoded_value['type']);
+                                        }
+                                        if (isset($decoded_value['title'])) {
+                                            $sanitized_video['title'] = sanitize_text_field($decoded_value['title']);
+                                        }
+                                        if (isset($decoded_value['description'])) {
+                                            $sanitized_video['description'] = sanitize_textarea_field($decoded_value['description']);
+                                        }
+                                        $sanitized_item[$field_name] = json_encode($sanitized_video);
+                                    } else {
+                                        $sanitized_item[$field_name] = json_encode($decoded_value);
+                                    }
                                 }
                                 break;
                                 
@@ -365,6 +449,39 @@ class MetaBoxManager {
                                 }
                                 break;
                                 
+                            case 'video':
+                                $return_type = $nested_field_config['return_type'] ?? 'url';
+                                if ($return_type === 'url') {
+                                    $decoded_value = json_decode($value, true);
+                                    if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                        $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                                    } else {
+                                        $sanitized_item[$field_name] = esc_url_raw($value);
+                                    }
+                                } else {
+                                    $decoded_value = json_decode($value, true);
+                                    if (is_array($decoded_value)) {
+                                        // Sanitize video data
+                                        $sanitized_video = [];
+                                        if (isset($decoded_value['url'])) {
+                                            $sanitized_video['url'] = esc_url_raw($decoded_value['url']);
+                                        }
+                                        if (isset($decoded_value['type'])) {
+                                            $sanitized_video['type'] = sanitize_text_field($decoded_value['type']);
+                                        }
+                                        if (isset($decoded_value['title'])) {
+                                            $sanitized_video['title'] = sanitize_text_field($decoded_value['title']);
+                                        }
+                                        if (isset($decoded_value['description'])) {
+                                            $sanitized_video['description'] = sanitize_textarea_field($decoded_value['description']);
+                                        }
+                                        $sanitized_item[$field_name] = json_encode($sanitized_video);
+                                    } else {
+                                        $sanitized_item[$field_name] = json_encode($decoded_value);
+                                    }
+                                }
+                                break;
+                                
                             case 'repeater':
                                 $decoded_value = is_array($value) ? $value : json_decode($value, true);
                                 $sanitized_item[$field_name] = $this->sanitizeRepeaterData($decoded_value, json_encode($nested_field_config));
@@ -420,14 +537,25 @@ class MetaBoxManager {
             $raw_value = $value['value'];
             // Fetch field type and config
             $field = \CCC\Models\Field::find($field_id);
-            if ($field && $field->getType() === 'select') {
-                $config = $field->getConfig();
-                if (is_string($config)) {
-                    $config = json_decode($config, true);
-                }
-                $multiple = isset($config['multiple']) && $config['multiple'];
-                if ($multiple) {
+            if ($field) {
+                $field_type = $field->getType();
+                if ($field_type === 'select') {
+                    $config = $field->getConfig();
+                    if (is_string($config)) {
+                        $config = json_decode($config, true);
+                    }
+                    $multiple = isset($config['multiple']) && $config['multiple'];
+                    if ($multiple) {
+                        $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+                    } else {
+                        $field_values[$instance_id][$field_id] = $raw_value;
+                    }
+                } elseif ($field_type === 'checkbox') {
+                    // Checkbox fields are always multiple by default
                     $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+                } elseif ($field_type === 'video') {
+                    // Video fields are single values (URL or JSON)
+                    $field_values[$instance_id][$field_id] = $raw_value;
                 } else {
                     $field_values[$instance_id][$field_id] = $raw_value;
                 }

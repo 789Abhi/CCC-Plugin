@@ -276,3 +276,102 @@ Custom Craft Component - Where flexibility meets simplicity ✨
 - Escaped or fixed any broken HTML/Markdown edge cases
 
 Let me know if you'd like this exported into a downloadable file or added to a GitHub repo for you!
+
+
+
+
+// Method 1: Direct array handling (like your original)
+<?php if (is_array($checkbox) && !empty($checkbox)): ?>
+    <ul>
+        <?php foreach ($checkbox as $option): ?>
+            <li><?php echo esc_html($option); ?></li>   
+        <?php endforeach; ?>
+    </ul>
+<?php endif; ?>
+
+// Method 2: Simple display helper
+<?php echo get_ccc_checkbox_display('checkbox', null, null, 'No options selected'); ?>
+
+// Method 3: Different formats
+<?php 
+// Array format
+$checkbox_array = get_ccc_checkbox_values('checkbox', null, null, 'array');
+
+// String format
+$checkbox_string = get_ccc_checkbox_values('checkbox', null, null, 'string');
+
+// HTML list format
+echo get_ccc_checkbox_values('checkbox', null, null, 'list');
+
+// Options format
+echo get_ccc_checkbox_values('checkbox', null, null, 'options');
+?>
+
+
+
+
+ <!-- Using Helper Functions -->
+        <div class="helper_examples">
+            <h3>Using Helper Functions:</h3>
+            
+            <!-- Using get_ccc_radio_display -->
+            <div class="helper_section">
+                <h4>Display Helper:</h4>
+                <p><strong>Selected:</strong> <?php echo get_ccc_radio_display('radio_option', null, null, 'No radio option selected'); ?></p>
+            </div>
+            
+            <!-- Using get_ccc_radio_values with different formats -->
+            <div class="helper_section">
+                <h4>Values Helper (String):</h4>
+                <p><?php echo get_ccc_radio_values('radio_option', null, null, 'string'); ?></p>
+            </div>
+            
+            <div class="helper_section">
+                <h4>Values Helper (Array):</h4>
+                <?php 
+                $radio_array = get_ccc_radio_values('radio_option', null, null, 'array');
+                if (!empty($radio_array)): ?>
+                    <ul>
+                        <?php foreach ($radio_array as $value): ?>
+                            <li><?php echo esc_html($value); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php else: ?>
+                    <span>No value</span>
+                <?php endif; ?>
+            </div>
+            
+            <div class="helper_section">
+                <h4>Values Helper (List):</h4>
+                <?php echo get_ccc_radio_values('radio_option', null, null, 'list'); ?>
+            </div>
+            
+            <div class="helper_section">
+                <h4>Values Helper (Options):</h4>
+                <p><?php echo get_ccc_radio_values('radio_option', null, null, 'options'); ?></p>
+            </div>
+        </div>
+    </div>
+
+
+
+SOLUTION: CSS Variables Approach
+Method 1: Global CSS Variables (Recommended)
+
+<style>
+<?php echo get_ccc_color_css_variables_root('color'); ?>
+
+.text_color {
+    color: var(--ccc-color-main);
+    transition: color 0.3s ease;
+    cursor: pointer;
+}
+
+.text_color:hover {
+    color: var(--ccc-color-hover);
+}
+</style>
+
+<h2 class="text_color">Hello</h2>
+
+    
