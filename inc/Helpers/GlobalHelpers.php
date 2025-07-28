@@ -410,43 +410,94 @@ if (!function_exists('get_ccc_video_embed')) {
     }
 }
 
-// New function to get repeater field with state information
-if (!function_exists('get_ccc_repeater_field_with_state')) {
-    function get_ccc_repeater_field_with_state($field_name, $post_id = null, $component_id = null, $instance_id = null) {
-        global $wpdb, $ccc_current_post_id, $ccc_current_instance_id;
+if (!function_exists('get_ccc_date_field')) {
+    function get_ccc_date_field($field_name, $post_id = null, $instance_id = null) {
+        return get_ccc_field($field_name, $post_id, null, $instance_id);
+    }
+}
+
+if (!function_exists('get_ccc_date_display')) {
+    function get_ccc_date_display($field_name, $post_id = null, $instance_id = null, $format = null, $empty_text = 'No date selected') {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
         
-        if (!$post_id) {
-            $post_id = $ccc_current_post_id ?: get_the_ID();
+        if (empty($value)) {
+            return $empty_text;
         }
         
-        if (!$instance_id && isset($ccc_current_instance_id)) {
-            $instance_id = $ccc_current_instance_id;
+        // Parse the date value
+        $date_data = _ccc_parse_date_value($value);
+        
+        if (!$date_data) {
+            return $empty_text;
         }
         
-        if (!$post_id || !$component_id) {
-            error_log("CCC: Invalid parameters for get_ccc_repeater_field_with_state($field_name, $post_id, $component_id, '$instance_id')");
-            return [];
-        }
-        
+        // Get field config for format
+        global $wpdb;
         $fields_table = $wpdb->prefix . 'cc_fields';
-        $values_table = $wpdb->prefix . 'cc_field_values';
-        
-        $field_db_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM $fields_table WHERE name = %s AND component_id = %d",
-            $field_name,
-            $component_id
+        $field = $wpdb->get_row($wpdb->prepare(
+            "SELECT config FROM $fields_table WHERE name = %s",
+            $field_name
         ));
         
-        if (!$field_db_id) {
-            error_log("CCC: Field '$field_name' not found for component $component_id");
-            return [];
+        $field_config = $field ? json_decode($field->config, true) : [];
+        $date_format = $format ?: ($field_config['custom_date_format'] ?: $field_config['date_format'] ?: 'Y-m-d');
+        
+        return _ccc_format_date_display($date_data, $date_format);
+    }
+}
+
+if (!function_exists('get_ccc_date_start')) {
+    function get_ccc_date_start($field_name, $post_id = null, $instance_id = null, $format = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (empty($value)) {
+            return '';
         }
         
-        $field_config = $wpdb->get_var($wpdb->prepare(
-            "SELECT config FROM $fields_table WHERE id = %d",
-            $field_db_id
+        $date_data = _ccc_parse_date_value($value);
+        
+        if (!$date_data || empty($date_data['start_date'])) {
+            return '';
+        }
+        
+        // Get field config for format
+        global $wpdb;
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $field = $wpdb->get_row($wpdb->prepare(
+            "SELECT config FROM $fields_table WHERE name = %s",
+            $field_name
         ));
         
+        $field_config = $field ? json_decode($field->config, true) : [];
+        $date_format = $format ?: ($field_config['custom_date_format'] ?: $field_config['date_format'] ?: 'Y-m-d');
+        
+        return _ccc_format_single_date($date_data['start_date'], $date_data['start_time'], $date_format);
+    }
+}
+
+if (!function_exists('get_ccc_date_end')) {
+    function get_ccc_date_end($field_name, $post_id = null, $instance_id = null, $format = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (empty($value)) {
+            return '';
+        }
+        
+        $date_data = _ccc_parse_date_value($value);
+        
+        if (!$date_data || empty($date_data['end_date'])) {
+            return '';
+        }
+        
+        // Get field config for format
+        global $wpdb;
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $field = $wpdb->get_row($wpdb->prepare(
+            "SELECT config FROM $fields_table WHERE name = %s",
+            $field_name
+        ));
+        
+        $field_config = $field ? json_decode($field->config, true) : [];
         $field_config = json_decode($field_config, true) ?: [];
         
         // Base query to get the field value
