@@ -117,10 +117,16 @@ class MetaBoxManager {
         // Fix: decode JSON string to array for field values
         $field_values = [];
         if (isset($_POST['ccc_field_values'])) {
+            error_log("CCC DEBUG: MetaBoxManager received ccc_field_values: " . $_POST['ccc_field_values']);
             $decoded = json_decode(wp_unslash($_POST['ccc_field_values']), true);
             if (is_array($decoded)) {
                 $field_values = $decoded;
+                error_log("CCC DEBUG: MetaBoxManager decoded field_values: " . json_encode($field_values));
+            } else {
+                error_log("CCC DEBUG: MetaBoxManager failed to decode field_values");
             }
+        } else {
+            error_log("CCC DEBUG: MetaBoxManager no ccc_field_values in POST");
         }
 
         global $wpdb;
@@ -133,14 +139,33 @@ class MetaBoxManager {
             
             foreach ($instance_fields as $field_id => $value) {
                 $field_id = intval($field_id);
+                error_log("CCC DEBUG: MetaBoxManager processing field_id: $field_id, instance_id: $instance_id, value: " . $value);
                 
+                // For repeater fields, we need to load the field with its children
+                // First, get the field to check its type
                 $field_obj = Field::find($field_id);
                 if (!$field_obj) {
                     error_log("CCC: Field object not found for field_id: $field_id during save.");
                     continue;
                 }
+                
+                // If it's a repeater field, load it with children
+                if ($field_obj->getType() === 'repeater') {
+                    // Get the component ID for this field
+                    $component_id = $field_obj->getComponentId();
+                    if ($component_id) {
+                        // Load the field with its children using findFieldsTree
+                        $fields_with_children = Field::findFieldsTree($component_id, $field_id);
+                        if (!empty($fields_with_children)) {
+                            // The first field should be our repeater field with children
+                            $field_obj = $fields_with_children[0];
+                            error_log("CCC DEBUG: MetaBoxManager loaded repeater field with " . count($field_obj->getChildren()) . " children");
+                        }
+                    }
+                }
 
                 $value_to_save = $this->sanitizeFieldValue($value, $field_obj);
+                error_log("CCC DEBUG: MetaBoxManager sanitized value for field_id: $field_id: " . $value_to_save);
                 
                 // Save even if empty string or '[]', only skip if null or false
                 if ($value_to_save !== null && $value_to_save !== false) {
@@ -209,8 +234,11 @@ class MetaBoxManager {
         
         switch ($field_type) {
             case 'repeater':
+                error_log("CCC DEBUG: MetaBoxManager sanitizing repeater field value: " . $value_to_save);
                 $decoded_value = json_decode($value_to_save, true);
-                $sanitized_decoded_value = $this->sanitizeRepeaterData($decoded_value, $field_obj->getConfig());
+                error_log("CCC DEBUG: MetaBoxManager decoded repeater value: " . json_encode($decoded_value));
+                $sanitized_decoded_value = $this->sanitizeRepeaterData($decoded_value, $field_obj->getConfig(), $field_obj);
+                error_log("CCC DEBUG: MetaBoxManager sanitized repeater value: " . json_encode($sanitized_decoded_value));
                 return json_encode($sanitized_decoded_value);
                 
             case 'image':
@@ -305,7 +333,11 @@ class MetaBoxManager {
         }
     }
 
-    private function sanitizeRepeaterData($data, $config_json) {
+    private function sanitizeRepeaterData($data, $config_json, $field_obj = null) {
+        error_log("CCC DEBUG: MetaBoxManager sanitizeRepeaterData called with data: " . json_encode($data));
+        error_log("CCC DEBUG: MetaBoxManager config_json: " . $config_json);
+        error_log("CCC DEBUG: MetaBoxManager field_obj: " . ($field_obj ? 'provided' : 'null'));
+        
         // Check if this is the new format with data and state
         if (is_array($data) && isset($data['data']) && isset($data['state'])) {
             $repeater_data = $data['data'];
@@ -515,6 +547,162 @@ class MetaBoxManager {
 
             return $sanitized_data;
         }
+        
+        // Handle simple array format (what our RepeaterField sends)
+        if (is_array($data)) {
+            error_log("CCC DEBUG: MetaBoxManager handling simple array format for repeater");
+            $sanitized_data = [];
+            $config = json_decode($config_json, true);
+            $nested_field_definitions = $config['nested_fields'] ?? [];
+            
+            error_log("CCC DEBUG: MetaBoxManager config: " . json_encode($config));
+            error_log("CCC DEBUG: MetaBoxManager nested_field_definitions: " . json_encode($nested_field_definitions));
+            error_log("CCC DEBUG: MetaBoxManager empty(nested_field_definitions): " . (empty($nested_field_definitions) ? 'true' : 'false'));
+            error_log("CCC DEBUG: MetaBoxManager field_obj provided: " . ($field_obj ? 'true' : 'false'));
+
+            // If no nested_fields in config, try to get them from the field object's children
+            if (empty($nested_field_definitions) && $field_obj) {
+                error_log("CCC DEBUG: MetaBoxManager no nested_fields in config, trying to get from field object children");
+                
+                $children = $field_obj->getChildren();
+                error_log("CCC DEBUG: MetaBoxManager field object has " . count($children) . " children");
+                
+                if (!empty($children)) {
+                    // Convert field children to nested_field_definitions format
+                    $nested_field_definitions = [];
+                    foreach ($children as $child_field) {
+                        $nested_field_definitions[] = [
+                            'name' => $child_field->getName(),
+                            'type' => $child_field->getType(),
+                            'config' => json_decode($child_field->getConfig(), true) ?: []
+                        ];
+                    }
+                    error_log("CCC DEBUG: MetaBoxManager converted children to nested fields: " . json_encode($nested_field_definitions));
+                    error_log("CCC DEBUG: MetaBoxManager will now process with nested field definitions");
+                } else {
+                    // Fallback to basic sanitization if no children found
+                    error_log("CCC DEBUG: MetaBoxManager no children found in field object, using basic sanitization");
+                    error_log("CCC DEBUG: MetaBoxManager will process with basic sanitization");
+                    foreach ($data as $item) {
+                        if (!is_array($item)) continue;
+                        
+                        $sanitized_item = [];
+                        foreach ($item as $field_name => $value) {
+                            // Basic sanitization based on common field types
+                            if (strpos($field_name, 'url') !== false) {
+                                $sanitized_item[$field_name] = esc_url_raw($value);
+                            } elseif (strpos($field_name, 'photo') !== false || strpos($field_name, 'image') !== false) {
+                                $sanitized_item[$field_name] = esc_url_raw($value);
+                            } else {
+                                $sanitized_item[$field_name] = sanitize_text_field($value);
+                            }
+                        }
+                        $sanitized_data[] = $sanitized_item;
+                    }
+                    
+                    error_log("CCC DEBUG: MetaBoxManager returning sanitized simple array: " . json_encode($sanitized_data));
+                    return $sanitized_data;
+                }
+            } else {
+                error_log("CCC DEBUG: MetaBoxManager processing with existing nested field definitions from config");
+                foreach ($data as $item) {
+                    if (!is_array($item)) continue;
+                    
+                    $sanitized_item = [];
+                    foreach ($nested_field_definitions as $nested_field_def) {
+                        $field_name = $nested_field_def['name'];
+                        $field_type = $nested_field_def['type'];
+                        $nested_field_config = $nested_field_def['config'] ?? [];
+
+                        if (isset($item[$field_name])) {
+                            $value = $item[$field_name];
+                            
+                            switch ($field_type) {
+                                case 'text':
+                                case 'textarea':
+                                    $sanitized_item[$field_name] = sanitize_text_field($value);
+                                    break;
+                                    
+                                case 'image':
+                                    $return_type = $nested_field_config['return_type'] ?? 'url';
+                                    if ($return_type === 'url') {
+                                        $decoded_value = json_decode($value, true);
+                                        if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                            $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                                        } else {
+                                            $sanitized_item[$field_name] = esc_url_raw($value);
+                                        }
+                                    } else {
+                                        $decoded_value = json_decode($value, true);
+                                        $sanitized_item[$field_name] = json_encode($decoded_value);
+                                    }
+                                    break;
+                                    
+                                case 'video':
+                                    $return_type = $nested_field_config['return_type'] ?? 'url';
+                                    if ($return_type === 'url') {
+                                        $decoded_value = json_decode($value, true);
+                                        if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                                            $sanitized_item[$field_name] = esc_url_raw($decoded_value['url']);
+                                        } else {
+                                            $sanitized_item[$field_name] = esc_url_raw($value);
+                                        }
+                                    } else {
+                                        $decoded_value = json_decode($value, true);
+                                        if (is_array($decoded_value)) {
+                                            $sanitized_video = [];
+                                            if (isset($decoded_value['url'])) {
+                                                $sanitized_video['url'] = esc_url_raw($decoded_value['url']);
+                                            }
+                                            if (isset($decoded_value['type'])) {
+                                                $sanitized_video['type'] = sanitize_text_field($decoded_value['type']);
+                                            }
+                                            if (isset($decoded_value['title'])) {
+                                                $sanitized_video['title'] = sanitize_text_field($decoded_value['title']);
+                                            }
+                                            if (isset($decoded_value['description'])) {
+                                                $sanitized_video['description'] = sanitize_textarea_field($decoded_value['description']);
+                                            }
+                                            $sanitized_item[$field_name] = json_encode($sanitized_video);
+                                        } else {
+                                            $sanitized_item[$field_name] = json_encode($decoded_value);
+                                        }
+                                    }
+                                    break;
+                                    
+                                case 'color':
+                                    $sanitized_item[$field_name] = sanitize_hex_color($value) ?: sanitize_text_field($value);
+                                    break;
+                                    
+                                case 'checkbox':
+                                case 'select':
+                                    if (is_array($value)) {
+                                        $sanitized_item[$field_name] = implode(',', array_map('sanitize_text_field', $value));
+                                    } else {
+                                        $sanitized_item[$field_name] = sanitize_text_field($value);
+                                    }
+                                    break;
+                                    
+                                case 'wysiwyg':
+                                    $sanitized_item[$field_name] = wp_kses_post($value);
+                                    break;
+                                    
+                                default:
+                                    $sanitized_item[$field_name] = wp_kses_post($value);
+                                    break;
+                            }
+                        }
+                    }
+                    $sanitized_data[] = $sanitized_item;
+                }
+            }
+            
+            error_log("CCC DEBUG: MetaBoxManager returning sanitized simple array: " . json_encode($sanitized_data));
+            return $sanitized_data;
+        }
+        
+        error_log("CCC DEBUG: MetaBoxManager unknown repeater data format, returning as-is");
+        return $data;
     }
 
     private function getFieldValues($components, $post_id) {

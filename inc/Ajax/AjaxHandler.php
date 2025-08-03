@@ -551,6 +551,7 @@ class AjaxHandler {
 
           // Use the recursive tree loader instead of flat loader
           $fields = Field::findFieldsTree($component_id);
+          error_log("CCC AjaxHandler: getComponentFields - Found " . count($fields) . " fields for component $component_id");
           
           // Helper to recursively convert Field objects to arrays
           $fieldToArray = function($field) use (&$fieldToArray, $post_id, $instance_id) {
@@ -592,10 +593,29 @@ class AjaxHandler {
                   'placeholder' => $field->getPlaceholder(),
                   'children' => []
               ];
-              if ($field->getType() === 'repeater' && is_array($field->getChildren()) && count($field->getChildren()) > 0) {
-                  $arr['children'] = array_map(function($child) use (&$fieldToArray, $post_id, $instance_id) {
-                      return $fieldToArray($child);
-                  }, $field->getChildren());
+              // Handle repeater fields - check both database children and config nested_fields
+              if ($field->getType() === 'repeater') {
+                  error_log("CCC AjaxHandler: Processing repeater field {$field->getId()} ({$field->getName()})");
+                  error_log("CCC AjaxHandler: Field config: " . json_encode($decoded_config));
+                  
+                  $children = $field->getChildren();
+                  error_log("CCC AjaxHandler: Database children count: " . (is_array($children) ? count($children) : 'not array'));
+                  
+                  if (is_array($children) && count($children) > 0) {
+                      // Traditional nested fields stored as database records
+                      $arr['children'] = array_map(function($child) use (&$fieldToArray, $post_id, $instance_id) {
+                          return $fieldToArray($child);
+                      }, $children);
+                      error_log("CCC AjaxHandler: Using database children for field {$field->getId()}: " . count($children) . " fields");
+                  } elseif ($decoded_config && isset($decoded_config['nested_fields'])) {
+                      // ChatGPT-created nested fields stored in config
+                      $arr['children'] = $decoded_config['nested_fields'];
+                      error_log("CCC AjaxHandler: Using nested_fields from config for field {$field->getId()}: " . count($decoded_config['nested_fields']) . " fields");
+                  } else {
+                      // No children found
+                      $arr['children'] = [];
+                      error_log("CCC AjaxHandler: No nested fields found for repeater field {$field->getId()}");
+                  }
               }
               return $arr;
           };
