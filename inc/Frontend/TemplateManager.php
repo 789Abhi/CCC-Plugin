@@ -185,5 +185,45 @@ class TemplateManager {
                 return $fields;
             }
         }
+        
+        // Make get_ccc_repeater_items function available globally
+        if (!function_exists('get_ccc_repeater_items')) {
+            /**
+             * Get CCC repeater field items, filtering out hidden items
+             * 
+             * @param string $field_name The repeater field name
+             * @param int $post_id Optional post ID (defaults to current post)
+             * @param string $instance_id Optional instance ID
+             * @return array Array of visible repeater items
+             */
+            function get_ccc_repeater_items($field_name, $post_id = null, $instance_id = '') {
+                // Get the raw repeater data
+                $raw_data = get_ccc_field($field_name, 'raw', $post_id, $instance_id);
+                
+                if (!$raw_data) {
+                    return [];
+                }
+                
+                // Parse the JSON data
+                $items = json_decode($raw_data, true);
+                
+                if (!is_array($items)) {
+                    return [];
+                }
+                
+                // Filter out hidden items
+                $visible_items = array_filter($items, function($item) {
+                    return !isset($item['_hidden']) || !$item['_hidden'];
+                });
+                
+                // Remove the _hidden property from visible items
+                $clean_items = array_map(function($item) {
+                    unset($item['_hidden']);
+                    return $item;
+                }, $visible_items);
+                
+                return array_values($clean_items); // Re-index array
+            }
+        }
     }
 }

@@ -1,6 +1,23 @@
 <?php
 /*
 Template Name: CCC Component Template
+
+USAGE EXAMPLES:
+
+1. Get a single field value:
+   <?php $title = get_ccc_field('title'); ?>
+
+2. Get repeater items (automatically filters out hidden items):
+   <?php 
+   $team_members = get_ccc_repeater_items('team_members');
+   foreach ($team_members as $member) {
+       echo $member['name'];
+       echo $member['role'];
+   }
+   ?>
+
+3. Get all fields for current post:
+   <?php $all_fields = get_ccc_fields(); ?>
 */
 
 // Ensure helper functions are loaded FIRST
