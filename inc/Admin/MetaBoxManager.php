@@ -338,6 +338,46 @@ class MetaBoxManager {
             case 'wysiwyg':
                 return wp_kses_post($value_to_save);
                 
+            case 'oembed':
+                error_log("CCC DEBUG: MetaBoxManager sanitizing oembed field value: " . $value_to_save);
+                // Allow iframe tags and common attributes for oembed fields
+                $allowed_html = [
+                    'iframe' => [
+                        'src' => true,
+                        'width' => true,
+                        'height' => true,
+                        'frameborder' => true,
+                        'allowfullscreen' => true,
+                        'loading' => true,
+                        'referrerpolicy' => true,
+                        'title' => true,
+                        'style' => true,
+                        'class' => true,
+                        'id' => true
+                    ]
+                ];
+                $sanitized_value = wp_kses($value_to_save, $allowed_html);
+                error_log("CCC DEBUG: MetaBoxManager sanitized oembed value: " . $sanitized_value);
+                return $sanitized_value;
+                
+            case 'relationship':
+                error_log("CCC DEBUG: MetaBoxManager sanitizing relationship field value: " . $value_to_save);
+                // Sanitize relationship field (comma-separated post IDs)
+                if (empty($value_to_save)) {
+                    return '';
+                }
+                $post_ids = explode(',', $value_to_save);
+                $sanitized_ids = [];
+                foreach ($post_ids as $post_id) {
+                    $post_id = intval(trim($post_id));
+                    if ($post_id > 0 && get_post($post_id)) {
+                        $sanitized_ids[] = $post_id;
+                    }
+                }
+                $sanitized_value = implode(',', $sanitized_ids);
+                error_log("CCC DEBUG: MetaBoxManager sanitized relationship value: " . $sanitized_value);
+                return $sanitized_value;
+                
             default:
                 return wp_kses_post($value_to_save);
         }

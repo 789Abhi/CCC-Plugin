@@ -13,6 +13,9 @@ use CCC\Fields\SelectField;
 use CCC\Fields\CheckboxField;
 use CCC\Fields\RadioField;
 use CCC\Fields\WysiwygField;
+use CCC\Fields\OembedField;
+use CCC\Fields\RelationshipField;
+use CCC\Fields\LinkField;
 
 defined('ABSPATH') || exit;
 
@@ -51,6 +54,15 @@ class FieldService {
                 break;
             case 'wysiwyg':
                 $field = new WysiwygField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'oembed':
+                $field = new OembedField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'relationship':
+                $field = new RelationshipField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'link':
+                $field = new LinkField($label, $name, $component_id, false, '', $config);
                 break;
             default:
                 throw new \Exception('Invalid field type.');

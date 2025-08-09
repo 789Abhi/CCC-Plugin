@@ -70,11 +70,28 @@ if (!function_exists('get_ccc_field')) {
             $decoded_value = json_decode($value, true) ?: [];
             // Check if this is the new format with data and state
             if (is_array($decoded_value) && isset($decoded_value['data']) && isset($decoded_value['state'])) {
-                return $decoded_value['data']; // Return only the data part for backward compatibility
+                $items = $decoded_value['data']; // Get the data part for backward compatibility
             } else {
-                // Legacy format - return as is
-                return $decoded_value;
+                // Legacy format - use as is
+                $items = $decoded_value;
             }
+            
+            // Filter out hidden items
+            if (is_array($items)) {
+                $visible_items = array_filter($items, function($item) {
+                    return !isset($item['_hidden']) || !$item['_hidden'];
+                });
+                
+                // Remove the _hidden property from visible items
+                $clean_items = array_map(function($item) {
+                    unset($item['_hidden']);
+                    return $item;
+                }, $visible_items);
+                
+                return array_values($clean_items); // Re-index array
+            }
+            
+            return [];
         } elseif ($field_type === 'image') {
             $return_type = $field_config['return_type'] ?? 'url';
             $decoded_value = json_decode($value, true);
@@ -106,9 +123,22 @@ if (!function_exists('get_ccc_field')) {
             return $value ?: '';
         } elseif ($field_type === 'wysiwyg') {
             return wp_kses_post($value);
-        } elseif ($field_type === 'color') {
-            return $value ?: '';
-        }
+                    } elseif ($field_type === 'oembed') {
+                if (empty($value)) {
+                    return '';
+                }
+                // Return the iframe code directly since it's already HTML
+                return $value;
+            } elseif ($field_type === 'relationship') {
+                if (empty($value)) {
+                    return [];
+                }
+                // Return array of post IDs
+                $post_ids = is_array($value) ? $value : explode(',', $value);
+                return array_map('intval', array_filter($post_ids));
+            } elseif ($field_type === 'color') {
+                return $value ?: '';
+            }
         
         error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
         
@@ -773,6 +803,40 @@ if (!function_exists('get_ccc_select_values')) {
             }
         }
     }
+
+    // Relationship field helper functions
+    if (!function_exists('get_ccc_relationship_posts')) {
+        function get_ccc_relationship_posts($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+            $post_ids = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+            if (empty($post_ids)) {
+                return [];
+            }
+            
+            $posts = [];
+            foreach ($post_ids as $post_id) {
+                $post = get_post($post_id);
+                if ($post) {
+                    $posts[] = $post;
+                }
+            }
+            return $posts;
+        }
+    }
+
+    if (!function_exists('get_ccc_relationship_post_ids')) {
+        function get_ccc_relationship_post_ids($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+            return get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+        }
+    }
+
+    if (!function_exists('get_ccc_relationship_post_titles')) {
+        function get_ccc_relationship_post_titles($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+            $posts = get_ccc_relationship_posts($field_name, $post_id, $component_id, $instance_id);
+            return array_map(function($post) {
+                return $post->post_title;
+            }, $posts);
+        }
+    }
 }
 
 if (!function_exists('get_ccc_select_display')) {
@@ -1210,5 +1274,53 @@ if (!function_exists('get_ccc_color_adjusted_style')) {
         }
         
         return ' style="' . esc_attr($css) . '"';
+    }
+}
+
+if (!function_exists('get_ccc_oembed_field')) {
+    function get_ccc_oembed_field($field_name, $post_id = null, $instance_id = null, $width = '100%', $height = '400px') {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        if (empty($value)) {
+            return '';
+        }
+        
+        // If it's already iframe code, process it with custom dimensions
+        if (strpos($value, '<iframe') !== false) {
+            $processed_code = $value;
+            
+            // Replace width attribute
+            $processed_code = preg_replace('/width=["\'][^"\']*["\']/', 'width="' . $width . '"', $processed_code);
+            if (!preg_match('/width=/', $processed_code)) {
+                $processed_code = str_replace('<iframe', '<iframe width="' . $width . '"', $processed_code);
+            }
+            
+            // Replace height attribute
+            $processed_code = preg_replace('/height=["\'][^"\']*["\']/', 'height="' . $height . '"', $processed_code);
+            if (!preg_match('/height=/', $processed_code)) {
+                $processed_code = str_replace('<iframe', '<iframe height="' . $height . '"', $processed_code);
+            }
+            
+            return $processed_code;
+        }
+        
+        // Fallback: return the original value
+        return $value;
+    }
+}
+
+if (!function_exists('get_ccc_oembed_url')) {
+    function get_ccc_oembed_url($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        if (empty($value)) {
+            return '';
+        }
+        
+        // Extract URL from iframe code if present
+        if (strpos($value, '<iframe') !== false) {
+            preg_match('/src=["\']([^"\']+)["\']/', $value, $matches);
+            return isset($matches[1]) ? esc_url($matches[1]) : '';
+        }
+        
+        return esc_url($value);
     }
 }

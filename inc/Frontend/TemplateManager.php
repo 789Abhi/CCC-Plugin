@@ -4,6 +4,8 @@ namespace CCC\Frontend;
 defined('ABSPATH') || exit;
 
 class TemplateManager {
+    private static $helperFunctionsLoaded = false;
+    
     public function init() {
         add_filter('theme_page_templates', [$this, 'addCccTemplate']);
         add_filter('template_include', [$this, 'loadCccTemplate']);
@@ -51,9 +53,25 @@ class TemplateManager {
     }
     
     /**
+     * Static method to load helper functions (prevents multiple instantiation)
+     */
+    public static function loadHelperFunctions() {
+        static $instance = null;
+        if ($instance === null) {
+            $instance = new self();
+        }
+        $instance->addHelperFunctions();
+    }
+    
+    /**
      * Add helper functions for component templates
      */
-    private function addHelperFunctions() {
+    public function addHelperFunctions() {
+        // Prevent multiple function declarations
+        if (self::$helperFunctionsLoaded) {
+            return;
+        }
+        
         // Make get_ccc_field function available globally
         if (!function_exists('get_ccc_field')) {
             /**
@@ -65,28 +83,34 @@ class TemplateManager {
              * @param string $instance_id Optional instance ID for repeaters
              * @return mixed Field value
              */
-            function get_ccc_field($field_name, $format = null, $post_id = null, $instance_id = '') {
+                                     function get_ccc_field($field_name, $format = null, $post_id = null, $instance_id = '') {
                 global $wpdb;
                 
-                // Default to current post if not specified
-                if (!$post_id) {
-                    $post_id = get_the_ID();
-                }
+                error_log("CCC DEBUG: get_ccc_field FUNCTION START - field_name: $field_name, format: $format, post_id: $post_id, instance_id: $instance_id");
+                 
+                 // Default to current post if not specified
+                 if (!$post_id) {
+                     $post_id = get_the_ID();
+                 }
+                 
+                 if (!$post_id) {
+                     error_log("CCC DEBUG: get_ccc_field - No post ID available");
+                     return '';
+                 }
                 
-                if (!$post_id) {
-                    return '';
-                }
-                
-                // Get field ID from field name
-                $fields_table = $wpdb->prefix . 'cc_fields';
-                $field_id = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM $fields_table WHERE name = %s",
-                    $field_name
-                ));
-                
-                if (!$field_id) {
-                    return '';
-                }
+                                 // Get field ID from field name
+                 $fields_table = $wpdb->prefix . 'cc_fields';
+                 $field_id = $wpdb->get_var($wpdb->prepare(
+                     "SELECT id FROM $fields_table WHERE name = %s",
+                     $field_name
+                 ));
+                 
+                 error_log("CCC DEBUG: get_ccc_field - Field ID for '$field_name': " . ($field_id ? $field_id : 'NOT FOUND'));
+                 
+                 if (!$field_id) {
+                     error_log("CCC DEBUG: get_ccc_field - Field '$field_name' not found in database");
+                     return '';
+                 }
                 
                 // Get field value
                 $values_table = $wpdb->prefix . 'cc_field_values';
@@ -105,6 +129,18 @@ class TemplateManager {
                     return '';
                 }
                 
+                // Get field type to handle different field types appropriately
+                $fields_table = $wpdb->prefix . 'cc_fields';
+                $field_type = $wpdb->get_var($wpdb->prepare(
+                    "SELECT type FROM $fields_table WHERE id = %d",
+                    $field_id
+                ));
+                
+                error_log("CCC DEBUG: get_ccc_field - Field: $field_name, Type: $field_type, Value length: " . strlen($value));
+                error_log("CCC DEBUG: get_ccc_field - Field type check: " . ($field_type === 'repeater' ? 'IS REPEATER' : 'NOT REPEATER'));
+                
+
+                
                 // Handle different formats
                 if ($format === 'url' && is_numeric($value)) {
                     // Return image URL for image field
@@ -122,23 +158,57 @@ class TemplateManager {
                     // Return raw value
                     return $value;
                 } else {
-                    // Default: Check if this is an image field and return URL
-                    $fields_table = $wpdb->prefix . 'cc_fields';
-                    $field_type = $wpdb->get_var($wpdb->prepare(
-                        "SELECT type FROM $fields_table WHERE id = %d",
-                        $field_id
-                    ));
-                    
+                    // Default handling based on field type
+                    error_log("CCC DEBUG: get_ccc_field - Entering default handling, field_type: $field_type");
                     if ($field_type === 'image' && is_numeric($value)) {
                         // For image fields, return URL by default
+                        error_log("CCC DEBUG: get_ccc_field - Handling as image field");
                         return wp_get_attachment_url($value);
-                    } else {
-                        // For other fields, return escaped value
-                        return esc_html($value);
-                    }
-                }
-            }
+                    } elseif ($field_type === 'repeater') {
+                        error_log("CCC DEBUG: get_ccc_field - Handling as repeater field");
+                        // For repeater fields, parse JSON and filter out hidden items
+                        error_log("CCC DEBUG: get_ccc_field processing repeater field: $field_name");
+                        error_log("CCC DEBUG: Raw value: " . substr($value, 0, 200) . "...");
+                        
+                        $items = json_decode($value, true);
+                        error_log("CCC DEBUG: Decoded items: " . print_r($items, true));
+                        
+                        if (is_array($items)) {
+                            // Filter out hidden items
+                            $visible_items = array_filter($items, function($item) {
+                                $is_visible = !isset($item['_hidden']) || !$item['_hidden'];
+                                error_log("CCC DEBUG: Item hidden check - _hidden: " . (isset($item['_hidden']) ? ($item['_hidden'] ? 'true' : 'false') : 'not set') . ", is_visible: " . ($is_visible ? 'true' : 'false'));
+                                return $is_visible;
+                            });
+                            
+                            error_log("CCC DEBUG: Visible items count: " . count($visible_items) . " out of " . count($items));
+                            
+                            // Remove the _hidden property from visible items
+                            $clean_items = array_map(function($item) {
+                                unset($item['_hidden']);
+                                return $item;
+                            }, $visible_items);
+                            
+                            $result = array_values($clean_items); // Re-index array
+                            error_log("CCC DEBUG: Final result: " . print_r($result, true));
+                            return $result;
+                        }
+                        error_log("CCC DEBUG: Items is not an array, returning empty array");
+                        return [];
+                                         } else {
+                         // For other fields, return escaped value
+                         error_log("CCC DEBUG: get_ccc_field - Returning escaped value for non-repeater field");
+                         return esc_html($value);
+                     }
+                 }
+                 
+                 error_log("CCC DEBUG: get_ccc_field FUNCTION END - returning empty string");
+                 return '';
+             }
         }
+        
+        // Mark helper functions as loaded
+        self::$helperFunctionsLoaded = true;
         
         // Make get_ccc_fields function available globally
         if (!function_exists('get_ccc_fields')) {

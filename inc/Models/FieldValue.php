@@ -44,12 +44,36 @@ class FieldValue {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cc_field_values';
 
+        // Get field type to determine how to handle the value
+        $field = Field::find($field_id);
+        $field_type = $field ? $field->getType() : '';
+        
+        error_log("CCC FieldValue::saveValue - Field ID: $field_id, Type: $field_type, Value: " . print_r($value, true));
+
         // Handle array values (e.g., from checkboxes, repeaters) by JSON encoding them
         if (is_array($value)) {
             $value = json_encode($value);
         } else {
-            // Sanitize scalar values
-            $value = sanitize_text_field($value);
+            // For field types that store JSON data, preserve the JSON string
+            $json_field_types = ['link', 'relationship', 'repeater', 'color', 'video'];
+            
+            if (in_array($field_type, $json_field_types) && is_string($value)) {
+                // Validate if it's valid JSON, if so preserve it, otherwise treat as regular text
+                $decoded = json_decode($value, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    // Valid JSON, keep as is
+                    error_log("CCC FieldValue::saveValue - Valid JSON for field type $field_type, preserving: $value");
+                    $value = $value;
+                } else {
+                    // Not valid JSON, sanitize as text
+                    error_log("CCC FieldValue::saveValue - Invalid JSON for field type $field_type, sanitizing as text: $value");
+                    $value = sanitize_text_field($value);
+                }
+            } else {
+                // Sanitize scalar values for non-JSON field types
+                error_log("CCC FieldValue::saveValue - Non-JSON field type $field_type, sanitizing as text: $value");
+                $value = sanitize_text_field($value);
+            }
         }
 
         // Check if a value already exists for this field, post, and instance

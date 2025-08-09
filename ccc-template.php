@@ -31,6 +31,17 @@ if (file_exists($helper_file)) {
     require_once $helper_file;
 }
 
+// Load the TemplateManager to ensure get_ccc_field function is available
+$template_manager_file = plugin_dir_path(__FILE__) . 'inc/Frontend/TemplateManager.php';
+if (file_exists($template_manager_file)) {
+    require_once $template_manager_file;
+    // Initialize the TemplateManager to register helper functions
+    if (class_exists('CCC\Frontend\TemplateManager')) {
+        // Use a static method to ensure functions are only loaded once
+        CCC\Frontend\TemplateManager::loadHelperFunctions();
+    }
+}
+
 $post_id = get_the_ID();
 $theme_dir = get_stylesheet_directory();
 
@@ -94,6 +105,17 @@ if (have_posts()) :
 
                             $template_file = $theme_dir . '/ccc-templates/' . $handle_name . '.php';
                             if (file_exists($template_file)) {
+                                error_log("CCC: Including template: $template_file for component ID: $component_id, instance: $instance_id");
+                                
+                                // Test if get_ccc_field function is available
+                                if (function_exists('get_ccc_field')) {
+                                    error_log("CCC: get_ccc_field function is available");
+                                    $test_result = get_ccc_field('gallery');
+                                    error_log("CCC: Test get_ccc_field('gallery') result: " . print_r($test_result, true));
+                                } else {
+                                    error_log("CCC: get_ccc_field function is NOT available");
+                                }
+                                
                                 ?>
                                 <div class="ccc-component ccc-component-<?php echo esc_attr($handle_name); ?>" 
                                      data-component-order="<?php echo esc_attr($component['order'] ?? $index); ?>"
@@ -105,14 +127,7 @@ if (have_posts()) :
                                     $ccc_current_post_id = $post_id;
                                     $ccc_current_instance_id = $instance_id;
                                     
-                                    // Ensure helper functions are available before including template
-                                    if (!function_exists('get_ccc_field')) {
-                                        error_log("CCC: Helper functions not available, loading again");
-                                        $global_helpers_file = plugin_dir_path(__FILE__) . 'inc/Helpers/GlobalHelpers.php';
-                                        if (file_exists($global_helpers_file)) {
-                                            require_once $global_helpers_file;
-                                        }
-                                    }
+                                                                         // Helper functions should already be available from the static load above
                                     
                                     error_log("CCC: Including template: $template_file for component ID: $component_id, instance: $instance_id");
                                     include $template_file;
