@@ -62,6 +62,9 @@ class AssetManager {
       wp_enqueue_style('wp-color-picker');
       wp_enqueue_script('wp-color-picker');
 
+      // Enqueue WordPress Media scripts for file fields
+      wp_enqueue_media();
+
       $build_dir = plugin_dir_path(__FILE__) . '../../build/assets/';
       $build_url = plugin_dir_url(__FILE__) . '../../build/assets/';
 

@@ -139,7 +139,7 @@ class MetaBoxManager {
             
             foreach ($instance_fields as $field_id => $value) {
                 $field_id = intval($field_id);
-                error_log("CCC DEBUG: MetaBoxManager processing field_id: $field_id, instance_id: $instance_id, value: " . $value);
+                error_log("CCC DEBUG: MetaBoxManager processing field_id: $field_id, instance_id: $instance_id, value type: " . gettype($value) . ", value: " . json_encode($value));
                 
                 // For repeater fields, we need to load the field with its children
                 // First, get the field to check its type
@@ -148,6 +148,8 @@ class MetaBoxManager {
                     error_log("CCC: Field object not found for field_id: $field_id during save.");
                     continue;
                 }
+                
+                error_log("CCC DEBUG: MetaBoxManager field type: " . $field_obj->getType());
                 
                 // If it's a repeater field, load it with children
                 if ($field_obj->getType() === 'repeater') {
@@ -238,7 +240,13 @@ class MetaBoxManager {
 
     private function sanitizeFieldValue($value, $field_obj) {
         $field_type = $field_obj->getType();
-        $value_to_save = wp_unslash($value);
+        
+        // For file fields, don't use wp_unslash as it can break the object structure
+        if ($field_type === 'file') {
+            $value_to_save = $value;
+        } else {
+            $value_to_save = wp_unslash($value);
+        }
         
         switch ($field_type) {
             case 'repeater':
@@ -378,9 +386,235 @@ class MetaBoxManager {
                 error_log("CCC DEBUG: MetaBoxManager sanitized relationship value: " . $sanitized_value);
                 return $sanitized_value;
                 
-            default:
-                return wp_kses_post($value_to_save);
+            case 'number':
+                // Handle number field with min/max validation
+                if (empty($value_to_save)) {
+                    return '';
+                }
+                
+                // Check if it's a valid number
+                if (!is_numeric($value_to_save)) {
+                    error_log("CCC DEBUG: MetaBoxManager number field received non-numeric value: " . $value_to_save);
+                    return '';
+                }
+                
+                $num = floatval($value_to_save);
+                $field_config = $field_obj->getConfig();
+                
+                // Parse config if it's a string
+                if (is_string($field_config)) {
+                    try {
+                        $field_config = json_decode($field_config, true);
+                    } catch (Exception $e) {
+                        $field_config = [];
+                    }
+                }
+                
+                // Apply min/max constraints
+                if (isset($field_config['min_value']) && $field_config['min_value'] !== null && $num < $field_config['min_value']) {
+                    error_log("CCC DEBUG: MetaBoxManager number field value $num is below minimum {$field_config['min_value']}, adjusting");
+                    $num = $field_config['min_value'];
+                }
+                
+                if (isset($field_config['max_value']) && $field_config['max_value'] !== null && $num > $field_config['max_value']) {
+                    error_log("CCC DEBUG: MetaBoxManager number field value $num is above maximum {$field_config['max_value']}, adjusting");
+                    $num = $field_config['max_value'];
+                }
+                
+                error_log("CCC DEBUG: MetaBoxManager sanitized number field value: " . $num);
+                return $num;
+                
+            case 'range':
+                // Handle range field with min/max validation (similar to number field)
+                if (empty($value_to_save)) {
+                    return '';
+                }
+                
+                // Check if it's a valid number
+                if (!is_numeric($value_to_save)) {
+                    error_log("CCC DEBUG: MetaBoxManager range field received non-numeric value: " . $value_to_save);
+                    return '';
+                }
+                
+                $num = floatval($value_to_save);
+                $field_config = $field_obj->getConfig();
+                
+                // Parse config if it's a string
+                if (is_string($field_config)) {
+                    try {
+                        $field_config = json_decode($field_config, true);
+                    } catch (Exception $e) {
+                        $field_config = [];
+                    }
+                }
+                
+                // Apply min/max constraints
+                if (isset($field_config['min_value']) && $field_config['min_value'] !== null && $num < $field_config['min_value']) {
+                    error_log("CCC DEBUG: MetaBoxManager range field value $num is below minimum {$field_config['min_value']}, adjusting");
+                    $num = $field_config['min_value'];
+                }
+                
+                if (isset($field_config['max_value']) && $field_config['max_value'] !== null && $num > $field_config['max_value']) {
+                    error_log("CCC DEBUG: MetaBoxManager range field value $num is above maximum {$field_config['max_value']}, adjusting");
+                    $num = $field_config['max_value'];
+                }
+                
+                error_log("CCC DEBUG: MetaBoxManager sanitized range field value: " . $num);
+                return $num;
+                
+            case 'file':
+                error_log("CCC DEBUG: MetaBoxManager file field received value: " . json_encode($value_to_save));
+                error_log("CCC DEBUG: MetaBoxManager file field value type: " . gettype($value_to_save));
+                error_log("CCC DEBUG: MetaBoxManager file field is_array: " . (is_array($value_to_save) ? 'true' : 'false'));
+
+                // Check if this is a single file object (has temp_id or id property)
+                if (is_array($value_to_save) && (isset($value_to_save['temp_id']) || isset($value_to_save['id']))) {
+                    // This is a single file object, not an array of files
+                    error_log("CCC DEBUG: MetaBoxManager treating as single file object");
+                    $sanitized_file = $this->sanitizeSingleFile($value_to_save);
+                    error_log("CCC DEBUG: MetaBoxManager sanitized single file: " . $sanitized_file);
+                    return $sanitized_file;
+                }
+
+                // If it's an array (multiple files), sanitize each one
+                if (is_array($value_to_save)) {
+                    $sanitized_files = [];
+                    foreach ($value_to_save as $file) {
+                        $sanitized_file = $this->sanitizeSingleFile($file);
+                        if ($sanitized_file !== '') {
+                            $sanitized_files[] = $sanitized_file;
+                        }
+                    }
+                    error_log("CCC DEBUG: MetaBoxManager sanitized file field value: " . json_encode($sanitized_files));
+                    return json_encode($sanitized_files); // JSON encode array for storage
+                }
+
+                // Single file (fallback for non-array single values, though React should send array/object)
+                $sanitized_file = $this->sanitizeSingleFile($value_to_save);
+                error_log("CCC DEBUG: MetaBoxManager sanitized file field value: " . $sanitized_file);
+                return $sanitized_file;
+
+            case 'taxonomy_term':
+                error_log("CCC DEBUG: MetaBoxManager taxonomy_term field received value: " . json_encode($value_to_save));
+                if (is_array($value_to_save)) {
+                    $sanitized_terms = [];
+                    foreach ($value_to_save as $term) {
+                        if (isset($term['term_id']) && is_numeric($term['term_id'])) {
+                            $sanitized_terms[] = [
+                                'term_id' => intval($term['term_id']),
+                                'name' => sanitize_text_field($term['name'] ?? ''),
+                                'slug' => sanitize_text_field($term['slug'] ?? ''),
+                                'taxonomy' => sanitize_text_field($term['taxonomy'] ?? '')
+                            ];
+                        }
+                    }
+                    error_log("CCC DEBUG: MetaBoxManager sanitized taxonomy_term field value: " . json_encode($sanitized_terms));
+                    return json_encode($sanitized_terms);
+                }
+                return '';
+                
+        default:
+            return wp_kses_post($value_to_save);
         }
+    }
+    
+    private function sanitizeSingleFile($file) {
+        if (empty($file)) {
+            return '';
+        }
+        
+        error_log("CCC DEBUG: sanitizeSingleFile received: " . json_encode($file));
+        error_log("CCC DEBUG: sanitizeSingleFile data type: " . gettype($file));
+        error_log("CCC DEBUG: sanitizeSingleFile is_array: " . (is_array($file) ? 'true' : 'false'));
+        error_log("CCC DEBUG: sanitizeSingleFile is_object: " . (is_object($file) ? 'true' : 'false'));
+        
+        // If it's already a file ID, validate it exists
+        if (is_numeric($file)) {
+            $attachment = get_post($file);
+            if ($attachment) {
+                error_log("CCC DEBUG: File ID validated: " . $file);
+                return $file;
+            }
+            error_log("CCC DEBUG: File ID not found: " . $file);
+            return '';
+        }
+        
+        // If it's a URL, validate it's a valid attachment URL
+        if (is_string($file) && filter_var($file, FILTER_VALIDATE_URL)) {
+            $attachment_id = attachment_url_to_postid($file);
+            if ($attachment_id) {
+                error_log("CCC DEBUG: URL converted to ID: " . $attachment_id);
+                return $attachment_id;
+            }
+            error_log("CCC DEBUG: URL not found in attachments: " . $file);
+            return '';
+        }
+        
+
+        
+
+        
+        // If it's a temporary uploaded file (has temp_id), store the file data
+        if (is_array($file) && isset($file['temp_id']) && isset($file['is_temp']) && $file['is_temp'] === true) {
+            error_log("CCC DEBUG: Temporary file detected, storing file data: " . json_encode($file));
+            // For temporary files, we'll store the file information
+            // In a real implementation, you'd upload the file to the server first
+            $result = json_encode([
+                'temp_id' => $file['temp_id'],
+                'name' => $file['name'] ?? '',
+                'type' => $file['type'] ?? '',
+                'size' => $file['size'] ?? 0,
+                'is_temp' => true
+            ]);
+            error_log("CCC DEBUG: Temporary file result: " . $result);
+            return $result;
+        }
+
+        // If it's a media library file (has id and is_media_library), store the file data
+        if (is_array($file) && isset($file['id']) && isset($file['is_media_library']) && $file['is_media_library'] === true) {
+            error_log("CCC DEBUG: Media library file detected, storing file data: " . json_encode($file));
+            $result = json_encode([
+                'id' => $file['id'],
+                'url' => $file['url'] ?? '',
+                'type' => $file['type'] ?? '',
+                'name' => $file['name'] ?? '',
+                'size' => $file['size'] ?? 0,
+                'size_formatted' => $file['size_formatted'] ?? '',
+                'thumbnail' => $file['thumbnail'] ?? '',
+                'is_media_library' => true
+            ]);
+            error_log("CCC DEBUG: Media library file result: " . $result);
+            return $result;
+        }
+        // If it's an object with id and is_media_library properties
+        if (is_object($file) && isset($file->id) && isset($file->is_media_library) && $file->is_media_library === true) {
+            error_log("CCC DEBUG: Media library file object detected, storing file data: " . json_encode($file));
+            return json_encode([
+                'id' => $file->id,
+                'url' => $file->url ?? '',
+                'type' => $file->type ?? '',
+                'name' => $file->name ?? '',
+                'size' => $file->size ?? 0,
+                'size_formatted' => $file->size_formatted ?? '',
+                'thumbnail' => $file->thumbnail ?? '',
+                'is_media_library' => true
+            ]);
+        }
+        
+        // If it's an object with temp_id property
+        if (is_object($file) && isset($file->temp_id) && isset($file->is_temp) && $file->is_temp === true) {
+            error_log("CCC DEBUG: Temporary file object detected, storing file data: " . json_encode($file));
+            return json_encode([
+                'temp_id' => $file->temp_id,
+                'name' => $file->name ?? '',
+                'type' => $file->type ?? '',
+                'size' => $file->size ?? 0,
+                'is_temp' => true
+            ]);
+        }
+        
+        error_log("CCC DEBUG: File data not recognized: " . json_encode($file));
+        return '';
     }
 
     private function sanitizeRepeaterData($data, $config_json, $field_obj = null) {

@@ -4,6 +4,7 @@ namespace CCC\Services;
 
 use CCC\Models\Field;
 use CCC\Models\Component;
+use CCC\Fields\BaseField;
 use CCC\Fields\TextField;
 use CCC\Fields\TextAreaField;
 use CCC\Fields\ImageField;
@@ -16,6 +17,11 @@ use CCC\Fields\WysiwygField;
 use CCC\Fields\OembedField;
 use CCC\Fields\RelationshipField;
 use CCC\Fields\LinkField;
+use CCC\Fields\EmailField;
+use CCC\Fields\NumberField;
+use CCC\Fields\RangeField;
+use CCC\Fields\FileField;
+use CCC\Fields\TaxonomyTermField;
 
 defined('ABSPATH') || exit;
 
@@ -63,6 +69,21 @@ class FieldService {
                 break;
             case 'link':
                 $field = new LinkField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'email':
+                $field = new EmailField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'number':
+                $field = new NumberField($label, $name, $component_id, false, '', $config);
+                break;
+                    case 'range':
+            $field = new RangeField($label, $name, $component_id, false, '', $config);
+            break;
+        case 'file':
+            $field = new FileField($label, $name, $component_id, false, '', $config);
+            break;
+            case 'taxonomy_term':
+                $field = new TaxonomyTermField($label, $name, $component_id, false, '', $config);
                 break;
             default:
                 throw new \Exception('Invalid field type.');

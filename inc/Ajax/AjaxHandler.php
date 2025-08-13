@@ -42,6 +42,10 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_get_available_post_types', [$this, 'getAvailablePostTypes']);
       add_action('wp_ajax_ccc_get_available_taxonomies', [$this, 'getAvailableTaxonomies']);
       add_action('wp_ajax_ccc_get_taxonomies_for_post_type', [$this, 'getTaxonomiesForPostType']);
+      add_action('wp_ajax_ccc_check_number_uniqueness', [$this, 'checkNumberUniqueness']);
+      // Add more AJAX endpoints here
+      add_action('wp_ajax_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
+      add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
   }
 
   public function handleCreateComponent() {
@@ -152,6 +156,14 @@ class AjaxHandler {
                   $sanitized_config['multiple'] = (bool)($config['multiple'] ?? false);
               } elseif ($sanitized_nf['type'] === 'image') {
                   $sanitized_config['return_type'] = sanitize_text_field($config['return_type'] ?? 'url');
+              } elseif ($sanitized_nf['type'] === 'number') {
+                  $sanitized_config = [
+                      'unique' => (bool)($config['unique'] ?? false),
+                      'min_value' => isset($config['min_value']) && $config['min_value'] !== '' ? floatval($config['min_value']) : null,
+                      'max_value' => isset($config['max_value']) && $config['max_value'] !== '' ? floatval($config['max_value']) : null,
+                      'prepend' => sanitize_text_field($config['prepend'] ?? ''),
+                      'append' => sanitize_text_field($config['append'] ?? '')
+                  ];
               } elseif ($sanitized_nf['type'] === 'taxonomy_term') {
                   $sanitized_config['taxonomy'] = sanitize_text_field($config['taxonomy'] ?? 'category');
               }
@@ -223,6 +235,29 @@ class AjaxHandler {
               $config = [
                   'taxonomy' => sanitize_text_field($field_config['taxonomy'] ?? 'category')
               ];
+          } elseif ($type === 'number') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'unique' => (bool)($field_config['unique'] ?? false),
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : null,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : null,
+                  'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
+                  'append' => sanitize_text_field($field_config['append'] ?? '')
+              ];
+          } elseif ($type === 'range') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : 0,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : 100,
+                  'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
+                  'append' => sanitize_text_field($field_config['append'] ?? '')
+              ];
           } elseif ($type === 'color') {
               $config = [];
           } elseif ($type === 'link') {
@@ -237,6 +272,42 @@ class AjaxHandler {
                   'show_target' => (bool)($field_config['show_target'] ?? true),
                   'show_title' => (bool)($field_config['show_title'] ?? true)
               ];
+          } elseif ($type === 'file') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              error_log("CCC DEBUG: AjaxHandler file field_config raw: " . ($_POST['field_config'] ?? '{}'));
+              error_log("CCC DEBUG: AjaxHandler file field_config decoded: " . json_encode($field_config));
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'allowed_types' => isset($field_config['allowed_types']) && is_array($field_config['allowed_types']) ? array_map('sanitize_text_field', $field_config['allowed_types']) : ['image', 'video', 'document', 'audio', 'archive'],
+                  'max_file_size' => isset($field_config['max_file_size']) ? intval($field_config['max_file_size']) : 10,
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'show_preview' => (bool)($field_config['show_preview'] ?? true),
+                  'show_download' => (bool)($field_config['show_download'] ?? true),
+                  'show_delete' => (bool)($field_config['show_delete'] ?? true)
+              ];
+              error_log("CCC DEBUG: AjaxHandler file config final: " . json_encode($config));
+          } elseif ($type === 'taxonomy_term') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              error_log("CCC DEBUG: AjaxHandler taxonomy_term field_config raw: " . ($_POST['field_config'] ?? '{}'));
+              error_log("CCC DEBUG: AjaxHandler taxonomy_term field_config decoded: " . json_encode($field_config));
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'taxonomy' => sanitize_text_field($field_config['taxonomy'] ?? 'category'),
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'allow_empty' => (bool)($field_config['allow_empty'] ?? true),
+                  'placeholder' => sanitize_text_field($field_config['placeholder'] ?? 'Select terms...'),
+                  'searchable' => (bool)($field_config['searchable'] ?? true),
+                  'hierarchical' => (bool)($field_config['hierarchical'] ?? false),
+                  'show_count' => (bool)($field_config['show_count'] ?? false),
+                  'orderby' => sanitize_text_field($field_config['orderby'] ?? 'name'),
+                  'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
+              ];
+              error_log("CCC DEBUG: AjaxHandler taxonomy_term config final: " . json_encode($config));
           }
 
           // Calculate the next field order
@@ -350,6 +421,29 @@ class AjaxHandler {
                   'max_posts' => intval($field_config['max_posts'] ?? 0),
                   'return_format' => sanitize_text_field($field_config['return_format'] ?? 'object')
               ];
+          } elseif ($type === 'number') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'unique' => (bool)($field_config['unique'] ?? false),
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : null,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : null,
+                  'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
+                  'append' => sanitize_text_field($field_config['append'] ?? '')
+              ];
+          } elseif ($type === 'range') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : 0,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : 100,
+                  'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
+                  'append' => sanitize_text_field($field_config['append'] ?? '')
+              ];
           } elseif ($type === 'color') {
               $config = [];
           } elseif ($type === 'link') {
@@ -364,6 +458,42 @@ class AjaxHandler {
                   'show_target' => (bool)($field_config['show_target'] ?? true),
                   'show_title' => (bool)($field_config['show_title'] ?? true)
               ];
+          } elseif ($type === 'file') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              error_log("CCC DEBUG: AjaxHandler updateFieldCallback file field_config raw: " . ($_POST['field_config'] ?? '{}'));
+              error_log("CCC DEBUG: AjaxHandler updateFieldCallback file field_config decoded: " . json_encode($field_config));
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'allowed_types' => isset($field_config['allowed_types']) && is_array($field_config['allowed_types']) ? array_map('sanitize_text_field', $field_config['allowed_types']) : ['image', 'video', 'document', 'audio', 'archive'],
+                  'max_file_size' => isset($field_config['max_file_size']) ? intval($field_config['max_file_size']) : 10,
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'show_preview' => (bool)($field_config['show_preview'] ?? true),
+                  'show_download' => (bool)($field_config['show_download'] ?? true),
+                  'show_delete' => (bool)($field_config['show_delete'] ?? true)
+              ];
+              error_log("CCC DEBUG: AjaxHandler updateFieldCallback file config final: " . json_encode($config));
+          } elseif ($type === 'taxonomy_term') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              error_log("CCC DEBUG: AjaxHandler taxonomy_term field_config raw: " . ($_POST['field_config'] ?? '{}'));
+              error_log("CCC DEBUG: AjaxHandler taxonomy_term field_config decoded: " . json_encode($field_config));
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'taxonomy' => sanitize_text_field($field_config['taxonomy'] ?? 'category'),
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'allow_empty' => (bool)($field_config['allow_empty'] ?? true),
+                  'placeholder' => sanitize_text_field($field_config['placeholder'] ?? 'Select terms...'),
+                  'searchable' => (bool)($field_config['searchable'] ?? true),
+                  'hierarchical' => (bool)($field_config['hierarchical'] ?? false),
+                  'show_count' => (bool)($field_config['show_count'] ?? false),
+                  'orderby' => sanitize_text_field($field_config['orderby'] ?? 'name'),
+                  'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
+              ];
+              error_log("CCC DEBUG: AjaxHandler taxonomy_term config final: " . json_encode($config));
           }
 
           $data = [
@@ -1459,6 +1589,88 @@ class AjaxHandler {
       } catch (\Exception $e) {
           error_log("Exception in getTaxonomiesForPostType: " . $e->getMessage());
           wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  public function checkNumberUniqueness()
+  {
+      // Check nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_nonce')) {
+          wp_die('Security check failed');
+      }
+
+      $number = floatval($_POST['number'] ?? 0);
+      $field_id = intval($_POST['field_id'] ?? 0);
+      $post_id = intval($_POST['post_id'] ?? 0);
+      $instance_id = sanitize_text_field($_POST['instance_id'] ?? '');
+
+      if ($number <= 0 || $field_id <= 0) {
+          wp_send_json_error('Invalid parameters');
+      }
+
+      try {
+          $field_service = new FieldService();
+          $field = $field_service->getField($field_id);
+
+          if (!$field || $field->getType() !== 'number') {
+              wp_send_json_error('Invalid field');
+          }
+
+          $is_unique = $field->isUnique($number, $post_id, $instance_id);
+          wp_send_json_success(['is_unique' => $is_unique]);
+      } catch (Exception $e) {
+          wp_send_json_error('Error checking uniqueness: ' . $e->getMessage());
+      }
+  }
+
+  public function getTaxonomyTerms()
+  {
+      // Check nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_nonce')) {
+          wp_die('Security check failed');
+      }
+
+      $taxonomy = sanitize_text_field($_POST['taxonomy'] ?? 'category');
+      $orderby = sanitize_text_field($_POST['orderby'] ?? 'name');
+      $order = sanitize_text_field($_POST['order'] ?? 'ASC');
+      $hierarchical = (bool)($_POST['hierarchical'] ?? false);
+
+      if (!taxonomy_exists($taxonomy)) {
+          wp_send_json_error('Invalid taxonomy');
+      }
+
+      try {
+          $args = [
+              'taxonomy' => $taxonomy,
+              'hide_empty' => false,
+              'orderby' => $orderby,
+              'order' => $order,
+              'hierarchical' => $hierarchical
+          ];
+
+          $terms = get_terms($args);
+
+          if (is_wp_error($terms)) {
+              wp_send_json_error('Error getting terms: ' . $terms->get_error_message());
+          }
+
+          $formatted_terms = [];
+          foreach ($terms as $term) {
+              $formatted_terms[] = [
+                  'term_id' => $term->term_id,
+                  'name' => $term->name,
+                  'slug' => $term->slug,
+                  'taxonomy' => $term->taxonomy,
+                  'description' => $term->description,
+                  'count' => $term->count,
+                  'parent' => $term->parent,
+                  'term_taxonomy_id' => $term->term_taxonomy_id
+              ];
+          }
+
+          wp_send_json_success(['terms' => $formatted_terms]);
+      } catch (Exception $e) {
+          wp_send_json_error('Error getting taxonomy terms: ' . $e->getMessage());
       }
   }
 }
