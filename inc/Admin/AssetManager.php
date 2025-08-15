@@ -225,12 +225,18 @@ class AssetManager {
       // Debug logging
       error_log("CCC AssetManager: Hook: $hook, Current Page: $current_page");
 
+      // Get post ID for metabox pages
+      $post_id = 0;
+      if (in_array($hook, ['post.php', 'post-new.php']) && isset($_GET['post'])) {
+          $post_id = intval($_GET['post']);
+      }
+
       wp_localize_script('ccc-react', 'cccData', [
           'currentPage' => $current_page,
           'baseUrl' => plugin_dir_url(__FILE__) . '../../build/assets/',
           'ajaxUrl' => admin_url('admin-ajax.php'),
           'nonce' => wp_create_nonce('ccc_nonce'),
-          'postId' => isset($_GET['post']) ? intval($_GET['post']) : 0,
+          'postId' => $post_id,
       ]);
   }
 }

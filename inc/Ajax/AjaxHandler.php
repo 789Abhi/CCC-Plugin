@@ -46,6 +46,8 @@ class AjaxHandler {
       // Add more AJAX endpoints here
       add_action('wp_ajax_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
       add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
+      add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
+      add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
   }
 
   public function handleCreateComponent() {
@@ -301,13 +303,27 @@ class AjaxHandler {
                   'multiple' => (bool)($field_config['multiple'] ?? false),
                   'allow_empty' => (bool)($field_config['allow_empty'] ?? true),
                   'placeholder' => sanitize_text_field($field_config['placeholder'] ?? 'Select terms...'),
-                  'searchable' => (bool)($field_config['searchable'] ?? true),
+                  'searchable' => (bool)($field_config['searchable'] ?? false),
                   'hierarchical' => (bool)($field_config['hierarchical'] ?? false),
                   'show_count' => (bool)($field_config['show_count'] ?? false),
                   'orderby' => sanitize_text_field($field_config['orderby'] ?? 'name'),
                   'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
               ];
               error_log("CCC DEBUG: AjaxHandler taxonomy_term config final: " . json_encode($config));
+          } elseif ($type === 'user') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'role_filter' => isset($field_config['role_filter']) && is_array($field_config['role_filter']) ? array_map('sanitize_text_field', $field_config['role_filter']) : [],
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'id'),
+                  'searchable' => (bool)($field_config['searchable'] ?? true),
+                  'orderby' => sanitize_text_field($field_config['orderby'] ?? 'display_name'),
+                  'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
+              ];
+              error_log("CCC DEBUG: AjaxHandler user config final: " . json_encode($config));
           }
 
           // Calculate the next field order
@@ -494,6 +510,20 @@ class AjaxHandler {
                   'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
               ];
               error_log("CCC DEBUG: AjaxHandler taxonomy_term config final: " . json_encode($config));
+          } elseif ($type === 'user') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'role_filter' => isset($field_config['role_filter']) && is_array($field_config['role_filter']) ? array_map('sanitize_text_field', $field_config['role_filter']) : [],
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'id'),
+                  'searchable' => (bool)($field_config['searchable'] ?? true),
+                  'orderby' => sanitize_text_field($field_config['orderby'] ?? 'display_name'),
+                  'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
+              ];
+              error_log("CCC AjaxHandler updateFieldCallback user config final: " . json_encode($config));
           }
 
           $data = [
@@ -1671,6 +1701,82 @@ class AjaxHandler {
           wp_send_json_success(['terms' => $formatted_terms]);
       } catch (Exception $e) {
           wp_send_json_error('Error getting taxonomy terms: ' . $e->getMessage());
+      }
+  }
+
+  public function getUsers()
+  {
+      error_log("CCC DEBUG: getUsers called with POST data: " . json_encode($_POST));
+      
+      // Check nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_nonce')) {
+          error_log("CCC DEBUG: Nonce verification failed. Received nonce: " . ($_POST['nonce'] ?? 'none'));
+          wp_die('Security check failed');
+      }
+      
+      error_log("CCC DEBUG: Nonce verification passed");
+
+      $role_filter = json_decode(wp_unslash($_POST['role_filter'] ?? '[]'), true);
+      $search = sanitize_text_field($_POST['search'] ?? '');
+      $orderby = sanitize_text_field($_POST['orderby'] ?? 'display_name');
+      $order = sanitize_text_field($_POST['order'] ?? 'ASC');
+      
+      error_log("CCC DEBUG: Role filter received: " . json_encode($role_filter));
+      error_log("CCC DEBUG: Role filter type: " . gettype($role_filter));
+
+      try {
+          $args = [
+              'orderby' => $orderby,
+              'order' => $order,
+              'number' => -1
+          ];
+
+          // Add role filter if specified
+          if (!empty($role_filter) && is_array($role_filter)) {
+              $args['role__in'] = array_map('sanitize_text_field', $role_filter);
+              error_log("CCC DEBUG: Added role filter to args: " . json_encode($args['role__in']));
+          } else {
+              error_log("CCC DEBUG: No role filter applied - role_filter is empty or not array");
+          }
+          
+          // If role filter is empty or invalid, get all users
+          if (empty($args['role__in'])) {
+              error_log("CCC DEBUG: Getting all users (no role filter)");
+          }
+
+          // Add search if specified
+          if (!empty($search)) {
+              $args['search'] = '*' . $search . '*';
+              $args['search_columns'] = ['user_login', 'user_email', 'display_name', 'user_nicename'];
+          }
+
+          error_log("CCC DEBUG: get_users args: " . json_encode($args));
+          $users = get_users($args);
+
+          if (is_wp_error($users)) {
+              error_log("CCC DEBUG: get_users error: " . $users->get_error_message());
+              wp_send_json_error('Error getting users: ' . $users->get_error_message());
+          }
+
+          error_log("CCC DEBUG: Found " . count($users) . " users");
+          
+          $formatted_users = [];
+          foreach ($users as $user) {
+              $formatted_users[] = [
+                  'ID' => $user->ID,
+                  'user_login' => $user->user_login,
+                  'user_email' => $user->user_email,
+                  'display_name' => $user->display_name,
+                  'user_nicename' => $user->user_nicename,
+                  'roles' => $user->roles ?? []
+              ];
+          }
+
+          error_log("CCC DEBUG: Sending formatted users: " . json_encode($formatted_users));
+          error_log("CCC DEBUG: Response will be: " . json_encode(['data' => $formatted_users]));
+          wp_send_json_success(['data' => $formatted_users]);
+      } catch (Exception $e) {
+          wp_send_json_error('Error getting users: ' . $e->getMessage());
       }
   }
 }
