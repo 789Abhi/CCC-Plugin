@@ -769,9 +769,43 @@ class AjaxHandler {
               return;
           }
 
+          // Debug: Check if the component exists first
+          $component = Component::find($component_id);
+          if (!$component) {
+              error_log("CCC AjaxHandler: getComponentFields - Component $component_id not found");
+              wp_send_json_error(['message' => 'Component not found.']);
+              return;
+          }
+          
+          error_log("CCC AjaxHandler: getComponentFields - Component $component_id found: " . $component->getName());
+
+          // Debug: Check direct field query
+          global $wpdb;
+          $fields_table = $wpdb->prefix . 'cc_fields';
+          $direct_fields = $wpdb->get_results(
+              $wpdb->prepare("SELECT * FROM $fields_table WHERE component_id = %d", $component_id),
+              ARRAY_A
+          );
+          error_log("CCC AjaxHandler: getComponentFields - Direct query found " . count($direct_fields) . " fields");
+          foreach ($direct_fields as $direct_field) {
+              error_log("CCC AjaxHandler: getComponentFields - Direct field: " . json_encode($direct_field));
+          }
+
           // Use the recursive tree loader instead of flat loader
+          error_log("CCC AjaxHandler: getComponentFields - About to call Field::findFieldsTree($component_id)");
           $fields = Field::findFieldsTree($component_id);
           error_log("CCC AjaxHandler: getComponentFields - Found " . count($fields) . " fields for component $component_id");
+          
+          // Debug: Check what each field contains
+          foreach ($fields as $index => $field) {
+              error_log("CCC AjaxHandler: getComponentFields - Field $index: " . json_encode([
+                  'id' => $field->getId(),
+                  'label' => $field->getLabel(),
+                  'name' => $field->getName(),
+                  'type' => $field->getType(),
+                  'component_id' => $field->getComponentId()
+              ]));
+          }
           
           // Helper to recursively convert Field objects to arrays
           $fieldToArray = function($field) use (&$fieldToArray, $post_id, $instance_id) {
@@ -800,6 +834,62 @@ class AjaxHandler {
                       if (is_string($value)) {
                           $value = $value ? explode(',', $value) : [];
                       }
+                  }
+                  // Handle user fields (can be single or multiple)
+                  if ($field->getType() === 'user') {
+                      error_log("CCC DEBUG: Processing user field - value: " . json_encode($value) . ", type: " . gettype($value));
+                      if (isset($decoded_config['multiple']) && $decoded_config['multiple']) {
+                          // Multiple user selection - handle as array
+                          if (is_string($value)) {
+                              error_log("CCC DEBUG: User field value is string: " . $value);
+                              if (strpos($value, '[') === 0) {
+                                  // JSON array format
+                                  error_log("CCC DEBUG: Detected JSON array format, attempting to decode");
+                                  $decoded = json_decode($value, true);
+                                  error_log("CCC DEBUG: JSON decode result: " . json_encode($decoded));
+                                  if (is_array($decoded)) {
+                                      // Clean up the array to ensure all values are integers
+                                      $value = array_map(function($item) {
+                                          $clean = is_string($item) ? trim($item, '[]') : $item;
+                                          return intval($clean);
+                                      }, $decoded);
+                                      $value = array_filter($value, function($item) {
+                                          return $item > 0;
+                                      });
+                                      error_log("CCC DEBUG: Cleaned user array: " . json_encode($value));
+                                  } else {
+                                      error_log("CCC DEBUG: JSON decode failed, setting empty array");
+                                      $value = [];
+                                  }
+                              } else {
+                                  // Comma-separated format
+                                  error_log("CCC DEBUG: Detected comma-separated format");
+                                  $value = $value ? explode(',', $value) : [];
+                                  $value = array_map('intval', $value);
+                                  $value = array_filter($value, function($item) {
+                                      return $item > 0;
+                                  });
+                                  error_log("CCC DEBUG: Processed comma-separated array: " . json_encode($value));
+                              }
+                          } elseif (is_array($value)) {
+                              // If it's already an array, clean it up
+                              error_log("CCC DEBUG: Value is already array, cleaning up");
+                              $value = array_map('intval', $value);
+                              $value = array_filter($value, function($item) {
+                                  return $item > 0;
+                              });
+                              error_log("CCC DEBUG: Cleaned existing array: " . json_encode($value));
+                          }
+                      } else {
+                          // Single user selection - ensure it's a string
+                          if (is_array($value)) {
+                              $value = count($value) > 0 ? strval($value[0]) : '';
+                          } else {
+                              $value = strval($value);
+                          }
+                          error_log("CCC DEBUG: Single user selection, final value: " . $value);
+                      }
+                      error_log("CCC DEBUG: Final user field value: " . json_encode($value));
                   }
               }
               $arr = [

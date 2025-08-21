@@ -6,6 +6,492 @@ defined('ABSPATH') || exit;
 
 // Ensure these functions are only defined once
 
+if (!function_exists('get_ccc_field_video')) {
+    /**
+     * Get and render a video field with automatic type detection and proper controls
+     * 
+     * @param string $field_name The name of the video field
+     * @param array $options Optional rendering options
+     * @param int|null $post_id Post ID (optional)
+     * @param int|null $component_id Component ID (optional)
+     * @param string|null $instance_id Instance ID (optional)
+     * @return string HTML output for the video
+     */
+    function get_ccc_field_video($field_name, $options = [], $post_id = null, $component_id = null, $instance_id = null) {
+        // Get the video field value
+        $video_value = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+        
+        if (empty($video_value)) {
+            return '';
+        }
+        
+        // Get field configuration from database to read player options set in the plugin
+        global $wpdb;
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $field_config = null;
+        
+        // Try to get field config by name
+        $field_query = $wpdb->prepare(
+            "SELECT id, name, type, config FROM $fields_table WHERE name = %s",
+            $field_name
+        );
+        $field_result = $wpdb->get_row($field_query);
+        
+        if ($field_result && $field_result->config) {
+            try {
+                $field_config = json_decode($field_result->config, true);
+                error_log("CCC DEBUG: VideoField '$field_name' - Found field ID: " . $field_result->id . ", Type: " . $field_result->type);
+            } catch (Exception $e) {
+                error_log("CCC DEBUG: VideoField config decode error: " . $e->getMessage());
+            }
+        } else {
+            error_log("CCC DEBUG: VideoField '$field_name' - Field not found or no config. Query: " . $field_query);
+            // Try to find any field with similar name
+            $similar_query = $wpdb->prepare(
+                "SELECT id, name, type FROM $fields_table WHERE name LIKE %s",
+                '%' . $wpdb->esc_like($field_name) . '%'
+            );
+            $similar_fields = $wpdb->get_results($similar_query);
+            if ($similar_fields) {
+                error_log("CCC DEBUG: VideoField '$field_name' - Similar fields found: " . json_encode($similar_fields));
+            }
+        }
+        
+        // Get player options from field config (set in the plugin)
+        $plugin_player_options = [];
+        if ($field_config) {
+            // Check for player_options in the main config
+            if (isset($field_config['player_options'])) {
+                $plugin_player_options = $field_config['player_options'];
+            }
+            // Also check for direct player options at the root level
+            elseif (isset($field_config['controls']) || isset($field_config['autoplay']) || isset($field_config['muted'])) {
+                                 $plugin_player_options = [
+                     'controls' => $field_config['controls'] ?? true,
+                     'autoplay' => $field_config['autoplay'] ?? false,
+                     'muted' => $field_config['muted'] ?? false,
+                     'loop' => $field_config['loop'] ?? false,
+                     'download' => $field_config['download'] ?? true
+                 ];
+            }
+        }
+        
+        // Debug logging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("CCC DEBUG: VideoField '$field_name' - Field config: " . json_encode($field_config));
+            error_log("CCC DEBUG: VideoField '$field_name' - Plugin player options: " . json_encode($plugin_player_options));
+        }
+        
+        // Default options
+        $default_options = [
+            'width' => '100%',
+            'height' => '500',
+            'controls' => true,
+            'autoplay' => false,
+            'muted' => false,
+            'loop' => false,
+            'download' => true,
+            'class' => 'ccc-video-player',
+            'style' => '',
+            'preload' => 'metadata'
+        ];
+        
+        // Merge options in priority order: plugin config > function options > defaults
+        // But handle disabled options properly - if plugin explicitly sets an option to false, respect it
+        $final_options = $default_options;
+        
+        // Apply function options first (allows overriding)
+        $final_options = array_merge($final_options, $options);
+        
+        // Apply plugin options last, but respect explicit false values
+        if ($plugin_player_options) {
+            foreach ($plugin_player_options as $key => $value) {
+                // If plugin explicitly sets an option to false, respect it
+                if ($value === false) {
+                    $final_options[$key] = false;
+                } elseif ($value === true) {
+                    $final_options[$key] = true;
+                } elseif (isset($value)) {
+                    $final_options[$key] = $value;
+                }
+            }
+        }
+        
+        $options = $final_options;
+        
+                        // Debug logging for final options
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log("CCC DEBUG: VideoField '$field_name' - Final merged options: " . json_encode($options));
+                }
+        
+        // Add a helper function to debug field configuration
+        if (defined('WP_DEBUG') && WP_DEBUG && !function_exists('ccc_debug_video_field_config')) {
+            function ccc_debug_video_field_config($field_name) {
+                global $wpdb;
+                $fields_table = $wpdb->prefix . 'cc_fields';
+                $field_query = $wpdb->prepare(
+                    "SELECT id, name, type, config FROM $fields_table WHERE name = %s",
+                    $field_name
+                );
+                $field_result = $wpdb->get_row($field_query);
+                
+                if ($field_result) {
+                    error_log("CCC DEBUG: VideoField '$field_name' - Database record: " . json_encode($field_result));
+                    if ($field_result->config) {
+                        $config = json_decode($field_result->config, true);
+                        error_log("CCC DEBUG: VideoField '$field_name' - Decoded config: " . json_encode($config));
+                        
+                        // Check for player options specifically
+                        if (isset($config['player_options'])) {
+                            error_log("CCC DEBUG: VideoField '$field_name' - Player options found: " . json_encode($config['player_options']));
+                        } else {
+                            error_log("CCC DEBUG: VideoField '$field_name' - No player_options found in config");
+                        }
+                    }
+                } else {
+                    error_log("CCC DEBUG: VideoField '$field_name' - Field not found in database");
+                }
+            }
+        }
+        
+        // Try to decode as JSON first (for structured video data)
+        $video_data = null;
+        if (is_string($video_value)) {
+            $decoded = json_decode($video_value, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $video_data = $decoded;
+            }
+        }
+        
+        // If no structured data, treat as simple URL
+        if (!$video_data) {
+            $video_data = [
+                'url' => $video_value,
+                'type' => 'url',
+                'title' => '',
+                'description' => ''
+            ];
+        }
+        
+        // Auto-detect video type from URL if not already set
+        $video_type = $video_data['type'] ?? 'url';
+        $video_url = $video_data['url'] ?? '';
+        
+        if (!$video_url) {
+            return '';
+        }
+        
+        // Auto-detect video type from URL
+        if ($video_type === 'url' || empty($video_type)) {
+            if (strpos($video_url, 'youtube.com') !== false || strpos($video_url, 'youtu.be') !== false) {
+                $video_type = 'youtube';
+            } elseif (strpos($video_url, 'vimeo.com') !== false) {
+                $video_type = 'vimeo';
+            } elseif (strpos($video_url, 'dailymotion.com') !== false) {
+                $video_type = 'dailymotion';
+            } elseif (strpos($video_url, 'facebook.com') !== false && strpos($video_url, '/videos/') !== false) {
+                $video_type = 'facebook';
+            } elseif (strpos($video_url, 'twitch.tv') !== false) {
+                $video_type = 'twitch';
+            } elseif (strpos($video_url, 'tiktok.com') !== false) {
+                $video_type = 'tiktok';
+            } else {
+                $video_type = 'file';
+            }
+        }
+        
+        // Build CSS styles
+        $style_attr = '';
+        if ($options['style']) {
+            $style_attr = ' style="' . esc_attr($options['style']) . '"';
+        }
+        
+        // Build class attribute
+        $class_attr = ' class="' . esc_attr($options['class']) . '"';
+        
+        // Render based on video type
+        switch ($video_type) {
+            case 'youtube':
+                $youtube_id = extract_youtube_id($video_url);
+                if ($youtube_id) {
+                    $youtube_params = [];
+                                         if ($options['autoplay'] === true) {
+                         $youtube_params[] = 'autoplay=1';
+                         $youtube_params[] = 'mute=1'; // Autoplay requires muted
+                     } elseif ($options['muted'] === true) {
+                         $youtube_params[] = 'mute=1';
+                     }
+                     if ($options['loop'] === true) {
+                         $youtube_params[] = 'loop=1&playlist=' . $youtube_id;
+                     }
+                                         if ($options['controls'] === false) {
+                         $youtube_params[] = 'controls=0';
+                     }
+                    
+                    
+                    $youtube_url = 'https://www.youtube.com/embed/' . $youtube_id;
+                    if (!empty($youtube_params)) {
+                        $youtube_url .= '?' . implode('&', $youtube_params);
+                    }
+                    
+                                         return sprintf(
+                         '<iframe width="%s" height="%s" src="%s" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"%s%s></iframe>',
+                         esc_attr($options['width']),
+                         esc_attr($options['height']),
+                         esc_url($youtube_url),
+                         $class_attr,
+                         $style_attr
+                     );
+                }
+                break;
+                
+            case 'vimeo':
+                $vimeo_id = extract_vimeo_id($video_url);
+                if ($vimeo_id) {
+                    $vimeo_params = [];
+                                         if ($options['autoplay'] === true) {
+                         $vimeo_params[] = 'autoplay=1';
+                         $vimeo_params[] = 'muted=1'; // Autoplay requires muted
+                     } elseif ($options['muted'] === true) {
+                         $vimeo_params[] = 'muted=1';
+                     }
+                     if ($options['loop'] === true) {
+                         $vimeo_params[] = 'loop=1';
+                     }
+                                         if ($options['controls'] === false) {
+                         $vimeo_params[] = 'controls=0';
+                     }
+                    
+                    
+                    $vimeo_url = 'https://player.vimeo.com/video/' . $vimeo_id;
+                    if (!empty($vimeo_params)) {
+                        $vimeo_url .= '?' . implode('&', $vimeo_params);
+                    }
+                    
+                                         return sprintf(
+                         '<iframe width="%s" height="%s" src="%s" title="Vimeo video" frameborder="0" allow="autoplay; fullscreen; picture-in-picture"%s%s></iframe>',
+                         esc_attr($options['width']),
+                         esc_attr($options['height']),
+                         esc_url($vimeo_url),
+                         $class_attr,
+                         $style_attr
+                     );
+                }
+                break;
+                
+            case 'dailymotion':
+                $dailymotion_id = extract_dailymotion_id($video_url);
+                if ($dailymotion_id) {
+                    $dailymotion_params = [];
+                                         if ($options['autoplay'] === true) {
+                         $dailymotion_params[] = 'autoplay=1';
+                     }
+                     if ($options['muted'] === true) {
+                         $dailymotion_params[] = 'mute=1';
+                     }
+                                         if ($options['controls'] === false) {
+                         $dailymotion_params[] = 'controls=0';
+                     }
+                    
+                    $dailymotion_url = 'https://www.dailymotion.com/embed/video/' . $dailymotion_id;
+                    if (!empty($dailymotion_params)) {
+                        $dailymotion_url .= '?' . implode('&', $dailymotion_params);
+                    }
+                    
+                                         return sprintf(
+                         '<iframe width="%s" height="%s" src="%s" title="Dailymotion video" frameborder="0" allow="autoplay; fullscreen"%s%s></iframe>',
+                         esc_attr($options['width']),
+                         esc_attr($options['height']),
+                         esc_url($dailymotion_url),
+                         $class_attr,
+                         $style_attr
+                     );
+                }
+                break;
+                
+            case 'facebook':
+                $facebook_id = extract_facebook_video_id($video_url);
+                if ($facebook_id) {
+                    $facebook_url = 'https://www.facebook.com/plugins/video.php?href=https://www.facebook.com/video.php?v=' . $facebook_id . '&show_text=false&width=560&height=315&appId';
+                    
+                                         return sprintf(
+                         '<iframe width="%s" height="%s" src="%s" title="Facebook video" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"%s%s></iframe>',
+                         esc_attr($options['width']),
+                         esc_attr($options['height']),
+                         esc_url($facebook_url),
+                         $class_attr,
+                         $style_attr
+                     );
+                }
+                break;
+                
+            case 'twitch':
+                $twitch_id = extract_twitch_video_id($video_url);
+                if ($twitch_id) {
+                    $twitch_url = 'https://clips.twitch.tv/embed?clip=' . $twitch_id . '&parent=' . parse_url(home_url(), PHP_URL_HOST);
+                    
+                                         return sprintf(
+                         '<iframe width="%s" height="%s" src="%s" title="Twitch video" frameborder="0" allow="autoplay; fullscreen"%s%s></iframe>',
+                         esc_attr($options['width']),
+                         esc_attr($options['height']),
+                         esc_url($twitch_url),
+                         $class_attr,
+                         $style_attr
+                     );
+                }
+                break;
+                
+            case 'tiktok':
+                $tiktok_id = extract_tiktok_video_id($video_url);
+                if ($tiktok_id) {
+                    $tiktok_url = 'https://www.tiktok.com/embed/' . $tiktok_id;
+                    
+                                         return sprintf(
+                         '<iframe width="%s" height="%s" src="%s" title="TikTok video" frameborder="0" allow="autoplay; fullscreen"%s%s></iframe>',
+                         esc_attr($options['width']),
+                         esc_attr($options['height']),
+                         esc_url($tiktok_url),
+                         $class_attr,
+                         $style_attr
+                     );
+                }
+                break;
+                
+            case 'file':
+            default:
+                // For direct video files or other types, use HTML5 video tag
+                                 $controls_attr = ($options['controls'] === true) ? ' controls' : '';
+                 $autoplay_attr = ($options['autoplay'] === true) ? ' autoplay' : '';
+                 $muted_attr = ($options['autoplay'] === true || $options['muted'] === true) ? ' muted' : '';
+                 $loop_attr = ($options['loop'] === true) ? ' loop' : '';
+                $preload_attr = ' preload="' . esc_attr($options['preload']) . '"';
+                
+                                 $controls_list = '';
+                 if ($options['download'] === false) {
+                     $controls_list = ' controlsList="nodownload"';
+                 }
+                 
+                                 
+                
+                                 $additional_style = $style_attr;
+                
+                                 $output = sprintf(
+                     '<video width="%s" height="%s" data-field-name="%s"%s%s%s%s%s%s%s%s>',
+                     esc_attr($options['width']),
+                     esc_attr($options['height']),
+                     esc_attr($field_name),
+                     $controls_attr,
+                     $autoplay_attr,
+                     $muted_attr,
+                     $loop_attr,
+                     $preload_attr,
+                     $controls_list,
+                     $class_attr,
+                     $additional_style
+                 );
+                
+                // Add multiple source formats for better compatibility
+                $output .= '<source src="' . esc_url($video_url) . '" type="video/mp4">';
+                $output .= '<source src="' . esc_url($video_url) . '" type="video/webm">';
+                $output .= '<source src="' . esc_url($video_url) . '" type="video/ogg">';
+                $output .= 'Your browser does not support the video tag.';
+                $output .= '</video>';
+                
+                
+                
+                return $output;
+        }
+        
+                 // Fallback: return as iframe if we can't determine the type
+         return sprintf(
+             '<iframe width="%s" height="%s" src="%s" title="External video" frameborder="0" allow="autoplay; fullscreen; picture-in-picture"%s%s></iframe>',
+             esc_attr($options['width']),
+             esc_attr($options['height']),
+             esc_url($video_url),
+             $class_attr,
+             $style_attr
+         );
+    }
+}
+
+if (!function_exists('extract_youtube_id')) {
+    /**
+     * Extract YouTube video ID from URL
+     */
+    function extract_youtube_id($url) {
+        $pattern = '/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/';
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('extract_vimeo_id')) {
+    /**
+     * Extract Vimeo video ID from URL
+     */
+    function extract_vimeo_id($url) {
+        $pattern = '/vimeo\.com\/(?:video\/)?(\d+)/';
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('extract_dailymotion_id')) {
+    /**
+     * Extract Dailymotion video ID from URL
+     */
+    function extract_dailymotion_id($url) {
+        $pattern = '/dailymotion\.com\/video\/([a-zA-Z0-9]+)/';
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('extract_facebook_video_id')) {
+    /**
+     * Extract Facebook video ID from URL
+     */
+    function extract_facebook_video_id($url) {
+        $pattern = '/facebook\.com\/[^\/]+\/videos\/(\d+)/';
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('extract_twitch_video_id')) {
+    /**
+     * Extract Twitch video ID from URL
+     */
+    function extract_twitch_video_id($url) {
+        $pattern = '/twitch\.tv\/videos\/(\d+)/';
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+
+if (!function_exists('extract_tiktok_video_id')) {
+    /**
+     * Extract TikTok video ID from URL
+     */
+    function extract_tiktok_video_id($url) {
+        $pattern = '/tiktok\.com\/@[^\/]+\/video\/(\d+)/';
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    }
+}
+
 if (!function_exists('get_ccc_field')) {
     function get_ccc_field($field_name, $post_id = null, $component_id = null, $instance_id = null) {
         global $wpdb, $ccc_current_component, $ccc_current_post_id, $ccc_current_instance_id;
@@ -262,15 +748,13 @@ if (!function_exists('get_ccc_video_embed')) {
         ));
         
         $field_config = $field ? json_decode($field->config, true) : [];
-        $player_options = $custom_options ?: ($field_config['player_options'] ?? [
-            'controls' => true,
-            'autoplay' => false,
-            'muted' => false,
-            'loop' => false,
-            'download' => true,
-            'fullscreen' => true,
-            'pictureInPicture' => true
-        ]);
+                 $player_options = $custom_options ?: ($field_config['player_options'] ?? [
+             'controls' => true,
+             'autoplay' => false,
+             'muted' => false,
+             'loop' => false,
+             'download' => true
+         ]);
         
         // Build video attributes
         $video_attrs = [];
@@ -284,7 +768,7 @@ if (!function_exists('get_ccc_video_embed')) {
         }
         if ($player_options['loop']) $video_attrs[] = 'loop';
         if (!$player_options['download']) $video_attrs[] = 'controlslist="nodownload"';
-        if (!$player_options['pictureInPicture']) $video_attrs[] = 'disablepictureinpicture';
+        
         
         $video_attrs_str = implode(' ', $video_attrs);
         
@@ -300,7 +784,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     if ($player_options['muted']) $youtube_params[] = 'mute=1';
                     if ($player_options['loop']) $youtube_params[] = 'loop=1&playlist=' . $video_id;
                     if (!$player_options['controls']) $youtube_params[] = 'controls=0';
-                    if (!$player_options['fullscreen']) $youtube_params[] = 'fs=0';
+                    
                     
                     $youtube_url = 'https://www.youtube.com/embed/' . $video_id;
                     if (!empty($youtube_params)) {
@@ -308,7 +792,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     }
                     
                     return sprintf(
-                        '<iframe width="%s" height="%s" src="%s" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="border: none; display: block;"></iframe>',
+                                                 '<iframe width="%s" height="%s" src="%s" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" style="border: none; display: block;"></iframe>',
                         esc_attr($width),
                         esc_attr($height),
                         esc_url($youtube_url)
@@ -331,7 +815,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     }
                     if ($player_options['loop']) $vimeo_params[] = 'loop=1';
                     if (!$player_options['controls']) $vimeo_params[] = 'controls=0';
-                    if (!$player_options['fullscreen']) $vimeo_params[] = 'fullscreen=0';
+                    
                     
                     $vimeo_url = 'https://player.vimeo.com/video/' . $video_id;
                     if (!empty($vimeo_params)) {
@@ -339,7 +823,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     }
                     
                     return sprintf(
-                        '<iframe width="%s" height="%s" src="%s" title="Vimeo video" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen style="border: none; display: block;"></iframe>',
+                                                 '<iframe width="%s" height="%s" src="%s" title="Vimeo video" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" style="border: none; display: block;"></iframe>',
                         esc_attr($width),
                         esc_attr($height),
                         esc_url($vimeo_url)
@@ -364,7 +848,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     }
                     
                     return sprintf(
-                        '<iframe width="%s" height="%s" src="%s" title="Dailymotion video" frameborder="0" allow="autoplay; fullscreen" allowfullscreen style="border: none; display: block;"></iframe>',
+                                                 '<iframe width="%s" height="%s" src="%s" title="Dailymotion video" frameborder="0" allow="autoplay; fullscreen" style="border: none; display: block;"></iframe>',
                         esc_attr($width),
                         esc_attr($height),
                         esc_url($dailymotion_url)
@@ -381,7 +865,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     $facebook_url = 'https://www.facebook.com/plugins/video.php?href=https://www.facebook.com/video.php?v=' . $video_id . '&show_text=false&width=560&height=315&appId';
                     
                     return sprintf(
-                        '<iframe width="%s" height="%s" src="%s" title="Facebook video" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" allowfullscreen style="border: none; display: block;"></iframe>',
+                                                 '<iframe width="%s" height="%s" src="%s" title="Facebook video" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share" style="border: none; display: block;"></iframe>',
                         esc_attr($width),
                         esc_attr($height),
                         esc_url($facebook_url)
@@ -398,7 +882,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     $twitch_url = 'https://clips.twitch.tv/embed?clip=' . $video_id . '&parent=' . $_SERVER['HTTP_HOST'];
                     
                     return sprintf(
-                        '<iframe width="%s" height="%s" src="%s" title="Twitch video" frameborder="0" allow="autoplay; fullscreen" allowfullscreen style="border: none; display: block;"></iframe>',
+                                                 '<iframe width="%s" height="%s" src="%s" title="Twitch video" frameborder="0" allow="autoplay; fullscreen" style="border: none; display: block;"></iframe>',
                         esc_attr($width),
                         esc_attr($height),
                         esc_url($twitch_url)
@@ -415,7 +899,7 @@ if (!function_exists('get_ccc_video_embed')) {
                     $tiktok_url = 'https://www.tiktok.com/embed/' . $video_id;
                     
                     return sprintf(
-                        '<iframe width="%s" height="%s" src="%s" title="TikTok video" frameborder="0" allow="autoplay; fullscreen" allowfullscreen style="border: none; display: block;"></iframe>',
+                                                 '<iframe width="%s" height="%s" src="%s" title="TikTok video" frameborder="0" allow="autoplay; fullscreen" style="border: none; display: block;"></iframe>',
                         esc_attr($width),
                         esc_attr($height),
                         esc_url($tiktok_url)
@@ -1322,5 +1806,35 @@ if (!function_exists('get_ccc_oembed_url')) {
         }
         
         return esc_url($value);
+    }
+}
+
+// Test function to debug video field configuration
+if (!function_exists('ccc_test_video_field')) {
+    function ccc_test_video_field($field_name) {
+        echo "<h3>Testing Video Field: $field_name</h3>";
+        
+        // Debug the field configuration
+        ccc_debug_video_field_config($field_name);
+        
+        // Test the get_ccc_field_video function
+        echo "<h4>Video Output:</h4>";
+        echo get_ccc_field_video($field_name);
+        
+        // Test with custom options
+        echo "<h4>Video with Custom Options (autoplay=true, muted=true):</h4>";
+        echo get_ccc_field_video($field_name, [
+            'autoplay' => true,
+            'muted' => true,
+            'width' => '600px',
+            'height' => '400px'
+        ]);
+        
+        
+        
+        // Show raw field value
+        echo "<h4>Raw Field Value:</h4>";
+        $raw_value = get_ccc_field($field_name);
+        echo "<pre>" . esc_html(print_r($raw_value, true)) . "</pre>";
     }
 }

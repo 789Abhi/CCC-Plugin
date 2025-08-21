@@ -343,6 +343,17 @@ class MetaBoxManager {
             case 'radio':
                 return sanitize_text_field($value_to_save);
                 
+            case 'text':
+            case 'textarea':
+                return sanitize_textarea_field($value_to_save);
+                
+            case 'email':
+                return sanitize_email($value_to_save);
+                
+            case 'link':
+                // Link fields store JSON data, preserve it
+                return $value_to_save;
+                
             case 'wysiwyg':
                 return wp_kses_post($value_to_save);
                 
@@ -513,6 +524,30 @@ class MetaBoxManager {
                 }
                 return '';
                 
+            case 'user':
+                error_log("CCC DEBUG: MetaBoxManager user field received value: " . json_encode($value_to_save));
+                if (is_array($value_to_save)) {
+                    // Multiple user selection - sanitize each user ID
+                    $sanitized_user_ids = [];
+                    foreach ($value_to_save as $user_id) {
+                        $user_id = intval(trim($user_id));
+                        if ($user_id > 0 && get_user_by('ID', $user_id)) {
+                            $sanitized_user_ids[] = $user_id;
+                        }
+                    }
+                    error_log("CCC DEBUG: MetaBoxManager sanitized user field value: " . json_encode($sanitized_user_ids));
+                    return json_encode($sanitized_user_ids);
+                } else {
+                    // Single user selection - sanitize as single user ID
+                    $user_id = intval($value_to_save);
+                    if ($user_id > 0 && get_user_by('ID', $user_id)) {
+                        error_log("CCC DEBUG: MetaBoxManager sanitized single user field value: " . $user_id);
+                        return $user_id;
+                    }
+                    error_log("CCC DEBUG: MetaBoxManager invalid user ID: " . $value_to_save);
+                    return '';
+                }
+                
         default:
             return wp_kses_post($value_to_save);
         }
@@ -678,7 +713,7 @@ class MetaBoxManager {
                                 switch ($field_type) {
                                     case 'text':
                                     case 'textarea':
-                                        $sanitized_item[$field_name] = sanitize_text_field($value);
+                                        $sanitized_item[$field_name] = sanitize_textarea_field($value);
                                         break;
                                         
                                     case 'image':
@@ -933,6 +968,11 @@ class MetaBoxManager {
                         $value = $item[$field_name];
                         
                         switch ($field_type) {
+                            case 'text':
+                            case 'textarea':
+                                $sanitized_item[$field_name] = sanitize_textarea_field($value);
+                                break;
+                                
                             case 'image':
                                 $return_type = $nested_field_config['return_type'] ?? 'url';
                                 if ($return_type === 'url') {

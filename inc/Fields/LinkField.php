@@ -98,7 +98,7 @@ class LinkField extends BaseField {
             'type' => sanitize_text_field($value['type'] ?? 'external'),
             'url' => esc_url_raw($value['url'] ?? ''),
             'post_id' => intval($value['post_id'] ?? 0),
-            'title' => sanitize_text_field($value['title'] ?? ''),
+            'title' => sanitize_textarea_field($value['title'] ?? ''),
             'target' => sanitize_text_field($value['target'] ?? '_self')
         ];
         

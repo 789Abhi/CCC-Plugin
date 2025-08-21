@@ -19,12 +19,29 @@ class FieldValue {
         global $wpdb;
         $table_name = $wpdb->prefix . 'cc_field_values';
         
-        $value = $wpdb->get_var($wpdb->prepare(
+        error_log("CCC FieldValue::getValue - Looking for field_id: $field_id, post_id: $post_id, instance_id: $instance_id");
+        
+        $query = $wpdb->prepare(
             "SELECT value FROM {$table_name} WHERE field_id = %d AND post_id = %d AND instance_id = %s ORDER BY id DESC LIMIT 1",
             $field_id,
             $post_id,
             $instance_id
-        ));
+        );
+        
+        error_log("CCC FieldValue::getValue - SQL Query: $query");
+        
+        $value = $wpdb->get_var($query);
+        
+        error_log("CCC FieldValue::getValue - Query result: " . ($value ?: 'NULL/empty'));
+        
+        // Also check if there are any values at all for this field/post combination
+        $all_values = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$table_name} WHERE field_id = %d AND post_id = %d",
+            $field_id,
+            $post_id
+        ), ARRAY_A);
+        
+        error_log("CCC FieldValue::getValue - All values for field $field_id on post $post_id: " . json_encode($all_values));
         
         return $value ?: '';
     }
@@ -50,9 +67,10 @@ class FieldValue {
         
         error_log("CCC FieldValue::saveValue - Field ID: $field_id, Type: $field_type, Value: " . print_r($value, true));
 
-        // Handle array values (e.g., from checkboxes, repeaters) by JSON encoding them
+        // Handle array values (e.g., from checkboxes, repeaters, multiple user selections) by JSON encoding them
         if (is_array($value)) {
             $value = json_encode($value);
+            error_log("CCC FieldValue::saveValue - Array value JSON encoded: $value");
         } else {
             // For field types that store JSON data, preserve the JSON string
             $json_field_types = ['link', 'relationship', 'repeater', 'color', 'video'];
@@ -72,8 +90,19 @@ class FieldValue {
             } else {
                 // Sanitize scalar values for non-JSON field types
                 error_log("CCC FieldValue::saveValue - Non-JSON field type $field_type, sanitizing as text: $value");
-                $value = sanitize_text_field($value);
+                
+                // Use appropriate sanitization based on field type
+                if ($field_type === 'text' || $field_type === 'textarea') {
+                    $value = sanitize_textarea_field($value);
+                } else {
+                    $value = sanitize_text_field($value);
+                }
             }
+        }
+        
+        // Special handling for user fields
+        if ($field_type === 'user') {
+            error_log("CCC FieldValue::saveValue - User field detected, final value: $value");
         }
 
         // Check if a value already exists for this field, post, and instance
