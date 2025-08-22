@@ -33,6 +33,19 @@ class FieldService {
             throw new \Exception('Invalid component ID.');
         }
 
+        // Create field data array
+        $field_data = [
+            'component_id' => $component_id,
+            'label' => $label,
+            'name' => $name,
+            'type' => $type,
+            'required' => false,
+            'placeholder' => '',
+            'config' => $config,
+            'field_order' => 0
+        ];
+
+        // Create field instance for validation and rendering
         switch ($type) {
             case 'text':
                 $field = new TextField($label, $name, $component_id);
@@ -76,12 +89,12 @@ class FieldService {
             case 'number':
                 $field = new NumberField($label, $name, $component_id, false, '', $config);
                 break;
-                    case 'range':
-            $field = new RangeField($label, $name, $component_id, false, '', $config);
-            break;
-        case 'file':
-            $field = new FileField($label, $name, $component_id, false, '', $config);
-            break;
+            case 'range':
+                $field = new RangeField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'file':
+                $field = new FileField($label, $name, $component_id, false, '', $config);
+                break;
             case 'taxonomy_term':
                 $field = new TaxonomyTermField($label, $name, $component_id, false, '', $config);
                 break;
@@ -89,11 +102,23 @@ class FieldService {
                 throw new \Exception('Invalid field type.');
         }
 
-        if (!$field->save()) {
+        // Set the field ID after creation for future reference
+        $field->setId($field->getId());
+
+        // Create and save the field using the Field model
+        $field_model = new Field($field_data);
+        if (!$field_model->save()) {
             throw new \Exception('Failed to save field: Database error.');
         }
 
+        // Set the ID from the saved model back to the field instance
+        $field->setId($field_model->getId());
+
         return $field;
+    }
+
+    public function getField($field_id) {
+        return Field::find($field_id);
     }
 
     public function deleteField($field_id) {

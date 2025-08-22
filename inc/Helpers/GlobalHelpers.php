@@ -622,6 +622,20 @@ if (!function_exists('get_ccc_field')) {
                 // Return array of post IDs
                 $post_ids = is_array($value) ? $value : explode(',', $value);
                 return array_map('intval', array_filter($post_ids));
+            } elseif ($field_type === 'link') {
+                if (empty($value)) {
+                    return '';
+                }
+                // For link fields, try to extract URL from JSON data and store link data globally
+                $link_data = json_decode($value, true);
+                if ($link_data && is_array($link_data) && isset($link_data['url'])) {
+                    // Store link data globally for target handling
+                    global $ccc_current_link_data;
+                    $ccc_current_link_data = $link_data;
+                    return $link_data['url'];
+                }
+                // If not valid JSON or no URL found, return the original value
+                return $value;
             } elseif ($field_type === 'color') {
                 return $value ?: '';
             }
@@ -664,6 +678,85 @@ if (!function_exists('get_ccc_color_field')) {
     function get_ccc_color_field($field_name, $post_id = null, $instance_id = null) {
         $value = get_ccc_field($field_name, $post_id, null, $instance_id);
         return $value ?: '';
+    }
+}
+
+// Link field target helper functions
+
+if (!function_exists('get_ccc_field_target')) {
+    /**
+     * Get CCC link field URL and target attributes in one call
+     * 
+     * @param string $field_name The link field name
+     * @param int $post_id Optional post ID (defaults to current post)
+     * @param string $instance_id Optional instance ID for repeaters
+     * @return array Array with 'url' and 'target' keys
+     */
+    function get_ccc_field_target($field_name, $post_id = null, $instance_id = null) {
+        // Get the link data to trigger the global storage
+        $link_url = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        global $ccc_current_link_data;
+        
+        $target = '';
+        if ($ccc_current_link_data && is_array($ccc_current_link_data) && $ccc_current_link_data['target'] === '_blank') {
+            $target = ' target="_blank" rel="noopener noreferrer"';
+        }
+        
+        return [
+            'url' => $link_url,
+            'target' => $target
+        ];
+    }
+}
+
+if (!function_exists('get_ccc_link_with_target')) {
+    /**
+     * Get CCC link field URL and target attributes in one call
+     * 
+     * @param string $field_name The link field name
+     * @param int $post_id Optional post ID (defaults to current post)
+     * @param string $instance_id Optional instance ID for repeaters
+     * @return array Array with 'url' and 'target' keys
+     */
+    function get_ccc_link_with_target($field_name, $post_id = null, $instance_id = null) {
+        // Get the link data to trigger the global storage
+        $link_url = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        global $ccc_current_link_data;
+        
+        $target = '';
+        if ($ccc_current_link_data && is_array($ccc_current_link_data) && $ccc_current_link_data['target'] === '_blank') {
+            $target = ' target="_blank" rel="noopener noreferrer"';
+        }
+        
+        return [
+            'url' => $link_url,
+            'target' => $target
+        ];
+    }
+}
+
+if (!function_exists('get_ccc_field_target_value')) {
+    /**
+     * Get CCC link field target value (e.g., '_blank', '_self')
+     * 
+     * @param string $field_name The link field name
+     * @param int $post_id Optional post ID (defaults to current post)
+     * @param string $instance_id Optional instance ID for repeaters
+     * @return string Target value (e.g., '_blank', '_self', '_parent', '_top')
+     */
+    function get_ccc_field_target_value($field_name, $post_id = null, $instance_id = null) {
+        // First get the link data to trigger the global storage
+        $link_url = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        global $ccc_current_link_data;
+        
+        if ($ccc_current_link_data && is_array($ccc_current_link_data)) {
+            return $ccc_current_link_data['target'] ?? '_self';
+        }
+        
+        return '_self';
     }
 }
 
@@ -1836,5 +1929,138 @@ if (!function_exists('ccc_test_video_field')) {
         echo "<h4>Raw Field Value:</h4>";
         $raw_value = get_ccc_field($field_name);
         echo "<pre>" . esc_html(print_r($raw_value, true)) . "</pre>";
+    }
+}
+
+if (!function_exists('get_ccc_video_title')) {
+    /**
+     * Get video title from video field
+     */
+    function get_ccc_video_title($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        if (is_array($value) && isset($value['title'])) {
+            return $value['title'];
+        }
+        return '';
+    }
+}
+
+if (!function_exists('get_ccc_link_field')) {
+    /**
+     * Get link field value with options to extract different parts
+     */
+    function get_ccc_link_field($field_name, $format = 'url', $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (empty($value)) {
+            return '';
+        }
+        
+        // If it's already a string (URL), return as is
+        if (is_string($value) && !json_decode($value)) {
+            return $value;
+        }
+        
+        // Try to decode JSON
+        $link_data = json_decode($value, true);
+        if (!$link_data || !is_array($link_data)) {
+            return $value; // Return original if not valid JSON
+        }
+        
+        // Return different parts based on format
+        switch ($format) {
+            case 'url':
+                return $link_data['url'] ?? '';
+            case 'title':
+                return $link_data['title'] ?? '';
+            case 'target':
+                return $link_data['target'] ?? '_self';
+            case 'type':
+                return $link_data['type'] ?? 'external';
+            case 'post_id':
+                return $link_data['post_id'] ?? '';
+            case 'array':
+                return $link_data;
+            default:
+                return $link_data['url'] ?? '';
+        }
+    }
+}
+
+if (!function_exists('get_ccc_link_html')) {
+    /**
+     * Get link field as complete HTML link with proper target attribute
+     */
+    function get_ccc_link_html($field_name, $link_text = null, $post_id = null, $instance_id = null, $additional_attributes = []) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (empty($value)) {
+            return '';
+        }
+        
+        // Try to decode JSON
+        $link_data = json_decode($value, true);
+        if (!$link_data || !is_array($link_data)) {
+            // If not valid JSON, treat as simple URL
+            $url = $value;
+            $link_text = $link_text ?: $url;
+            $target = '_self';
+        } else {
+            // Extract data from JSON
+            $url = $link_data['url'] ?? '';
+            $link_text = $link_text ?: ($link_data['title'] ?: $url);
+            $target = $link_data['target'] ?? '_self';
+        }
+        
+        if (empty($url)) {
+            return '';
+        }
+        
+        // Build HTML attributes
+        $attributes = array_merge([
+            'href' => esc_url($url),
+            'target' => esc_attr($target)
+        ], $additional_attributes);
+        
+        // Add rel="noopener noreferrer" for external links that open in new tab
+        if ($target === '_blank') {
+            $attributes['rel'] = 'noopener noreferrer';
+        }
+        
+        // Convert attributes array to HTML string
+        $attr_string = '';
+        foreach ($attributes as $key => $value) {
+            $attr_string .= ' ' . esc_attr($key) . '="' . esc_attr($value) . '"';
+        }
+        
+        return '<a' . $attr_string . '>' . esc_html($link_text) . '</a>';
+    }
+}
+
+if (!function_exists('get_ccc_link_data')) {
+    /**
+     * Get raw link field data as array (includes url, title, target, type, post_id)
+     */
+    function get_ccc_link_data($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (empty($value)) {
+            return [];
+        }
+        
+        // Try to decode JSON
+        $link_data = json_decode($value, true);
+        if (!$link_data || !is_array($link_data)) {
+            // If not valid JSON, treat as simple URL
+            return [
+                'type' => 'external',
+                'url' => $value,
+                'title' => $value,
+                'target' => '_self',
+                'post_id' => ''
+            ];
+        }
+        
+        return $link_data;
     }
 }

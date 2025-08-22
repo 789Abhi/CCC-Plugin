@@ -243,9 +243,12 @@ class AjaxHandler {
                   $field_config = [];
               }
               $config = [
+                  'number_type' => sanitize_text_field($field_config['number_type'] ?? 'normal'),
                   'unique' => (bool)($field_config['unique'] ?? false),
                   'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : null,
                   'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : null,
+                  'min_length' => isset($field_config['min_length']) && $field_config['min_length'] !== '' ? intval($field_config['min_length']) : null,
+                  'max_length' => isset($field_config['max_length']) && $field_config['max_length'] !== '' ? intval($field_config['max_length']) : null,
                   'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
                   'append' => sanitize_text_field($field_config['append'] ?? '')
               ];
@@ -443,9 +446,12 @@ class AjaxHandler {
                   $field_config = [];
               }
               $config = [
+                  'number_type' => sanitize_text_field($field_config['number_type'] ?? 'normal'),
                   'unique' => (bool)($field_config['unique'] ?? false),
                   'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : null,
                   'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : null,
+                  'min_length' => isset($field_config['min_length']) && $field_config['min_length'] !== '' ? intval($field_config['min_length']) : null,
+                  'max_length' => isset($field_config['max_length']) && $field_config['max_length'] !== '' ? intval($field_config['max_length']) : null,
                   'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
                   'append' => sanitize_text_field($field_config['append'] ?? '')
               ];
@@ -1724,7 +1730,10 @@ class AjaxHandler {
       $post_id = intval($_POST['post_id'] ?? 0);
       $instance_id = sanitize_text_field($_POST['instance_id'] ?? '');
 
+      error_log("CCC DEBUG: checkNumberUniqueness called with number: $number, field_id: $field_id, post_id: $post_id, instance_id: $instance_id");
+
       if ($number <= 0 || $field_id <= 0) {
+          error_log("CCC DEBUG: checkNumberUniqueness - Invalid parameters");
           wp_send_json_error('Invalid parameters');
       }
 
@@ -1733,12 +1742,29 @@ class AjaxHandler {
           $field = $field_service->getField($field_id);
 
           if (!$field || $field->getType() !== 'number') {
+              error_log("CCC DEBUG: checkNumberUniqueness - Invalid field or not a number field");
               wp_send_json_error('Invalid field');
           }
 
-          $is_unique = $field->isUnique($number, $post_id, $instance_id);
+          error_log("CCC DEBUG: checkNumberUniqueness - Field found, checking uniqueness");
+          
+          // Create a NumberField instance to check uniqueness
+          $number_field = new \CCC\Fields\NumberField(
+              $field->getLabel(),
+              $field->getName(),
+              $field->getComponentId(),
+              $field->getRequired(),
+              '',
+              $field->getConfig()
+          );
+          $number_field->setId($field->getId());
+          
+          $is_unique = $number_field->isUnique($number, $post_id, $field_id, $instance_id);
+          error_log("CCC DEBUG: checkNumberUniqueness - Uniqueness result: " . ($is_unique ? 'true' : 'false'));
+          
           wp_send_json_success(['is_unique' => $is_unique]);
       } catch (Exception $e) {
+          error_log("CCC DEBUG: checkNumberUniqueness - Exception: " . $e->getMessage());
           wp_send_json_error('Error checking uniqueness: ' . $e->getMessage());
       }
   }

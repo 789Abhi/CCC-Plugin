@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 1.6
+ * Version: 1.7
  * Author: Abhishek
 */
 
@@ -49,13 +49,10 @@ use CCC\Core\Plugin;
 
 register_activation_hook(__FILE__, ['CCC\Core\Database', 'activate']);
 
-// Create revision table on activation
+// Create database tables on activation
 register_activation_hook(__FILE__, function() {
     // Create the main database tables
     \CCC\Core\Database::activate();
-    
-    // Create the revisions table
-    \CCC\Models\FieldValueRevision::createTable();
 });
 
 // Prevent data deletion on uninstall - comment out or remove the uninstall hook

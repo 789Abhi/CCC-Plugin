@@ -129,6 +129,9 @@ class MetaBoxManager {
             error_log("CCC DEBUG: MetaBoxManager no ccc_field_values in POST");
         }
 
+        // Track validation errors
+        $validation_errors = [];
+
         global $wpdb;
         $field_values_table = $wpdb->prefix . 'cc_field_values';
         
@@ -176,6 +179,49 @@ class MetaBoxManager {
 
                 $value_to_save = $this->sanitizeFieldValue($value, $field_obj);
                 error_log("CCC DEBUG: MetaBoxManager sanitized value for field_id: $field_id: " . $value_to_save);
+                
+                // Check uniqueness for number fields before saving
+                if ($field_obj->getType() === 'number' && !empty($value_to_save)) {
+                    $field_config = $field_obj->getConfig();
+                    if (is_string($field_config)) {
+                        try {
+                            $field_config = json_decode($field_config, true);
+                        } catch (Exception $e) {
+                            $field_config = [];
+                        }
+                    }
+                    
+                    // Check if uniqueness is required
+                    if (isset($field_config['unique']) && $field_config['unique'] === true) {
+                                                 // Create a temporary NumberField instance to check uniqueness
+                         $number_field = new \CCC\Fields\NumberField(
+                             $field_obj->getLabel(),
+                             $field_obj->getName(),
+                             $field_obj->getComponentId(),
+                             $field_obj->getRequired(),
+                             '',
+                             $field_obj->getConfig()
+                         );
+                        $number_field->setId($field_obj->getId());
+                        
+                        // Check if the value is unique
+                        $is_unique = $number_field->isUnique($value_to_save, $post_id, $field_obj->getId(), $instance_id);
+                        
+                        if (!$is_unique) {
+                            error_log("CCC DEBUG: MetaBoxManager uniqueness check failed for field $field_id with value $value_to_save");
+                            // Add validation error
+                            $validation_errors[] = sprintf(
+                                'The value "%s" for field "%s" must be unique. This value is already in use.',
+                                $value_to_save,
+                                $field_obj->getLabel()
+                            );
+                            // Skip saving this field value due to uniqueness violation
+                            continue;
+                        } else {
+                            error_log("CCC DEBUG: MetaBoxManager uniqueness check passed for field $field_id with value $value_to_save");
+                        }
+                    }
+                }
                 
                 // Save even if empty string or '[]', only skip if null or false
                 if ($value_to_save !== null && $value_to_save !== false) {
@@ -235,6 +281,34 @@ class MetaBoxManager {
         } else {
             // If no components left, delete all field values for this post
             $wpdb->delete($field_values_table, ['post_id' => $post_id]);
+        }
+
+        // If there are validation errors, set admin notice and prevent save
+        if (!empty($validation_errors)) {
+            // Store validation errors in a transient to display them
+            set_transient('ccc_validation_errors_' . $post_id, $validation_errors, 60);
+            
+            // Add admin notice
+            add_action('admin_notices', function() use ($validation_errors) {
+                echo '<div class="notice notice-error is-dismissible">';
+                echo '<p><strong>Custom Craft Component Validation Failed:</strong></p>';
+                echo '<ul>';
+                foreach ($validation_errors as $error) {
+                    echo '<li>' . esc_html($error) . '</li>';
+                }
+                echo '</ul>';
+                echo '</div>';
+            });
+            
+            // Prevent the post from being saved by setting an error
+            wp_die(
+                '<h1>Validation Failed</h1>' .
+                '<p>The following validation errors occurred:</p>' .
+                '<ul><li>' . implode('</li><li>', array_map('esc_html', $validation_errors)) . '</li></ul>' .
+                '<p><a href="javascript:history.back()">Go back and fix the errors</a></p>',
+                'Validation Failed',
+                ['response' => 400]
+            );
         }
     }
 
@@ -421,15 +495,31 @@ class MetaBoxManager {
                     }
                 }
                 
-                // Apply min/max constraints
-                if (isset($field_config['min_value']) && $field_config['min_value'] !== null && $num < $field_config['min_value']) {
-                    error_log("CCC DEBUG: MetaBoxManager number field value $num is below minimum {$field_config['min_value']}, adjusting");
-                    $num = $field_config['min_value'];
+                // Apply min/max constraints ONLY for normal number type
+                if (isset($field_config['number_type']) && $field_config['number_type'] === 'normal') {
+                    if (isset($field_config['min_value']) && $field_config['min_value'] !== null && $num < $field_config['min_value']) {
+                        error_log("CCC DEBUG: MetaBoxManager normal number field value $num is below minimum {$field_config['min_value']}, adjusting");
+                        $num = $field_config['min_value'];
+                    }
+                    
+                    if (isset($field_config['max_value']) && $field_config['max_value'] !== null && $num > $field_config['max_value']) {
+                        error_log("CCC DEBUG: MetaBoxManager normal number field value $num is above maximum {$field_config['max_value']}, adjusting");
+                        $num = $field_config['max_value'];
+                    }
                 }
                 
-                if (isset($field_config['max_value']) && $field_config['max_value'] !== null && $num > $field_config['max_value']) {
-                    error_log("CCC DEBUG: MetaBoxManager number field value $num is above maximum {$field_config['max_value']}, adjusting");
-                    $num = $field_config['max_value'];
+                // Apply character length constraints ONLY for phone number type
+                if (isset($field_config['number_type']) && $field_config['number_type'] === 'phone') {
+                    $value_str = (string)$num;
+                    if (isset($field_config['min_length']) && $field_config['min_length'] !== null && strlen($value_str) < $field_config['min_length']) {
+                        error_log("CCC DEBUG: MetaBoxManager phone number field value $num is below minimum length {$field_config['min_length']}, padding with zeros");
+                        $num = str_pad($num, $field_config['min_length'], '0', STR_PAD_LEFT);
+                    }
+                    
+                    if (isset($field_config['max_length']) && $field_config['max_length'] !== null && strlen($value_str) > $field_config['max_length']) {
+                        error_log("CCC DEBUG: MetaBoxManager phone number field value $num is above maximum length {$field_config['max_length']}, truncating");
+                        $num = substr($value_str, 0, $field_config['max_length']);
+                    }
                 }
                 
                 error_log("CCC DEBUG: MetaBoxManager sanitized number field value: " . $num);
@@ -469,6 +559,9 @@ class MetaBoxManager {
                     error_log("CCC DEBUG: MetaBoxManager range field value $num is above maximum {$field_config['max_value']}, adjusting");
                     $num = $field_config['max_value'];
                 }
+                
+                // Apply character length constraints ONLY for phone number type (range fields don't support this)
+                // Range fields only use min_value/max_value, not character length constraints
                 
                 error_log("CCC DEBUG: MetaBoxManager sanitized range field value: " . $num);
                 return $num;

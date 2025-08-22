@@ -141,7 +141,7 @@ class TemplateManager {
                 
 
                 
-                // Handle different formats
+                                // Handle different formats
                 if ($format === 'url' && is_numeric($value)) {
                     // Return image URL for image field
                     return wp_get_attachment_url($value);
@@ -164,6 +164,19 @@ class TemplateManager {
                         // For image fields, return URL by default
                         error_log("CCC DEBUG: get_ccc_field - Handling as image field");
                         return wp_get_attachment_url($value);
+                    } elseif ($field_type === 'link') {
+                        // For link fields, return the URL directly and store target for automatic HTML generation
+                        error_log("CCC DEBUG: get_ccc_field - Handling as link field");
+                        $link_data = json_decode($value, true);
+                        if (is_array($link_data) && !empty($link_data['url'])) {
+                            // Store link data globally for automatic target handling
+                            global $ccc_current_link_data;
+                            $ccc_current_link_data = $link_data;
+                            
+                            // Return just the URL for direct use
+                            return $link_data['url'];
+                        }
+                        return '';
                     } elseif ($field_type === 'repeater') {
                         error_log("CCC DEBUG: get_ccc_field - Handling as repeater field");
                         // For repeater fields, parse JSON and filter out hidden items
@@ -195,12 +208,12 @@ class TemplateManager {
                         }
                         error_log("CCC DEBUG: Items is not an array, returning empty array");
                         return [];
-                                         } else {
-                         // For other fields, return escaped value
-                         error_log("CCC DEBUG: get_ccc_field - Returning escaped value for non-repeater field");
-                         return esc_html($value);
-                     }
-                 }
+                    } else {
+                        // For other fields, return escaped value
+                        error_log("CCC DEBUG: get_ccc_field - Returning escaped value for non-repeater field");
+                        return esc_html($value);
+                    }
+                }
                  
                  error_log("CCC DEBUG: get_ccc_field FUNCTION END - returning empty string");
                  return '';
@@ -209,6 +222,109 @@ class TemplateManager {
         
         // Mark helper functions as loaded
         self::$helperFunctionsLoaded = true;
+        
+        // Make get_ccc_link function available globally for easier link handling
+        if (!function_exists('get_ccc_link')) {
+            /**
+             * Get CCC link field with URL and target attributes
+             * 
+             * @param string $field_name The link field name
+             * @param int $post_id Optional post ID (defaults to current post)
+             * @param string $instance_id Optional instance ID for repeaters
+             * @return array|string Link data array or empty string if not found
+             */
+            function get_ccc_link($field_name, $post_id = null, $instance_id = '') {
+                $link_data = get_ccc_field($field_name, null, $post_id, $instance_id);
+                
+                if (is_array($link_data) && isset($link_data['url'])) {
+                    return $link_data;
+                }
+                
+                return '';
+            }
+        }
+        
+        // Make get_ccc_link_html function available globally for automatic HTML generation
+        if (!function_exists('get_ccc_link_html')) {
+            /**
+             * Get CCC link field as complete HTML with automatic target handling
+             * 
+             * @param string $field_name The link field name
+             * @param string $link_text Optional custom link text (defaults to field title or URL)
+             * @param string $css_class Optional CSS class for the link
+             * @param int $post_id Optional post ID (defaults to current post)
+             * @param string $instance_id Optional instance ID for repeaters
+             * @return string Complete HTML link tag
+             */
+            function get_ccc_link_html($field_name, $link_text = '', $css_class = '', $post_id = null, $instance_id = '') {
+                // First get the link data to trigger the global storage
+                $link_url = get_ccc_field($field_name, null, $post_id, $instance_id);
+                
+                global $ccc_current_link_data;
+                
+                if ($link_url && $ccc_current_link_data && is_array($ccc_current_link_data)) {
+                    $target = $ccc_current_link_data['target'] === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : '';
+                    $class_attr = !empty($css_class) ? ' class="' . esc_attr($css_class) . '"' : '';
+                    
+                    // Use provided text, then field title, then URL as fallback
+                    if (empty($link_text)) {
+                        $link_text = !empty($ccc_current_link_data['title']) ? $ccc_current_link_data['title'] : $link_url;
+                    }
+                    
+                    return '<a href="' . esc_url($link_url) . '"' . $target . $class_attr . '>' . esc_html($link_text) . '</a>';
+                }
+                
+                return '';
+            }
+        }
+        
+        // Make get_ccc_field_target function available globally for getting link target
+        if (!function_exists('get_ccc_field_target')) {
+            /**
+             * Get CCC link field target attribute
+             * 
+             * @param string $field_name The link field name
+             * @param int $post_id Optional post ID (defaults to current post)
+             * @param string $instance_id Optional instance ID for repeaters
+             * @return string Target attribute string (e.g., ' target="_blank" rel="noopener noreferrer"')
+             */
+            function get_ccc_field_target($field_name, $post_id = null, $instance_id = '') {
+                // First get the link data to trigger the global storage
+                $link_url = get_ccc_field($field_name, null, $post_id, $instance_id);
+                
+                global $ccc_current_link_data;
+                
+                if ($ccc_current_link_data && is_array($ccc_current_link_data) && $ccc_current_link_data['target'] === '_blank') {
+                    return ' target="_blank" rel="noopener noreferrer"';
+                }
+                
+                return '';
+            }
+        }
+        
+        // Make get_ccc_field_target_value function available globally for getting just the target value
+        if (!function_exists('get_ccc_field_target_value')) {
+            /**
+             * Get CCC link field target value (e.g., '_blank', '_self')
+             * 
+             * @param string $field_name The link field name
+             * @param int $post_id Optional post ID (defaults to current post)
+             * @param string $instance_id Optional instance ID for repeaters
+             * @return string Target value (e.g., '_blank', '_self', '_parent', '_top')
+             */
+            function get_ccc_field_target_value($field_name, $post_id = null, $instance_id = '') {
+                // First get the link data to trigger the global storage
+                $link_url = get_ccc_field($field_name, null, $post_id, $instance_id);
+                
+                global $ccc_current_link_data;
+                
+                if ($ccc_current_link_data && is_array($ccc_current_link_data)) {
+                    return $ccc_current_link_data['target'] ?? '_self';
+                }
+                
+                return '_self';
+            }
+        }
         
         // Make get_ccc_fields function available globally
         if (!function_exists('get_ccc_fields')) {

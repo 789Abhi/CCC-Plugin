@@ -16,81 +16,22 @@ class Database {
     public static function activate() {
         global $wpdb;
         
+        // Ensure dbDelta function is available
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        
         $charset_collate = $wpdb->get_charset_collate();
         
         // Components table
         $components_table = $wpdb->prefix . 'cc_components';
-        $components_sql = "CREATE TABLE $components_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            name varchar(255) NOT NULL,
-            handle_name varchar(255) NOT NULL,
-            created_at datetime NOT NULL,
-            updated_at datetime NOT NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY handle_name (handle_name)
-        ) $charset_collate;";
+        self::createComponentsTable($components_table, $charset_collate);
         
         // Fields table
         $fields_table = $wpdb->prefix . 'cc_fields';
-        $fields_sql = "CREATE TABLE $fields_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            component_id bigint(20) NOT NULL,
-            label varchar(255) NOT NULL,
-            name varchar(255) NOT NULL,
-            type varchar(50) NOT NULL,
-            required tinyint(1) DEFAULT 0,
-            placeholder varchar(255) DEFAULT '',
-            config longtext,
-            field_order int(11) DEFAULT 0,
-            parent_id bigint(20) DEFAULT NULL,
-            created_at datetime NOT NULL,
-            updated_at datetime NOT NULL,
-            PRIMARY KEY (id),
-            KEY component_id (component_id),
-            KEY parent_id (parent_id),
-            FOREIGN KEY (component_id) REFERENCES $components_table(id) ON DELETE CASCADE,
-            FOREIGN KEY (parent_id) REFERENCES $fields_table(id) ON DELETE CASCADE
-        ) $charset_collate;";
+        self::createFieldsTable($fields_table, $components_table, $charset_collate);
         
         // Field values table
         $field_values_table = $wpdb->prefix . 'cc_field_values';
-        $field_values_sql = "CREATE TABLE $field_values_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            field_id bigint(20) NOT NULL,
-            post_id bigint(20) NOT NULL,
-            instance_id varchar(255) NOT NULL,
-            value longtext,
-            created_at datetime NOT NULL,
-            updated_at datetime NOT NULL,
-            PRIMARY KEY (id),
-            KEY field_id (field_id),
-            KEY post_id (post_id),
-            KEY instance_id (instance_id),
-            UNIQUE KEY unique_field_value (field_id, post_id, instance_id),
-            FOREIGN KEY (field_id) REFERENCES $fields_table(id) ON DELETE CASCADE
-        ) $charset_collate;";
-        
-        // Field value revisions table
-        $revisions_table = $wpdb->prefix . 'cc_field_value_revisions';
-        $revisions_sql = "CREATE TABLE $revisions_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            post_id bigint(20) NOT NULL,
-            revision_data longtext NOT NULL,
-            revision_note varchar(255) DEFAULT '',
-            created_at datetime NOT NULL,
-            created_by bigint(20) NOT NULL,
-            is_active tinyint(1) DEFAULT 0,
-            PRIMARY KEY (id),
-            KEY post_id (post_id),
-            KEY created_at (created_at)
-        ) $charset_collate;";
-        
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        
-        dbDelta($components_sql);
-        dbDelta($fields_sql);
-        dbDelta($field_values_sql);
-        dbDelta($revisions_sql);
+        self::createFieldValuesTable($field_values_table, $fields_table, $charset_collate);
         
         error_log("CCC Database: Tables created/updated successfully");
         
@@ -103,34 +44,6 @@ class Database {
         
         // Log activation
         error_log('CCC Plugin activated - Database version: ' . self::DB_VERSION);
-    }
-    
-    /**
-     * Manually create the revisions table if it doesn't exist
-     */
-    public static function createRevisionsTable() {
-        global $wpdb;
-        
-        $charset_collate = $wpdb->get_charset_collate();
-        $revisions_table = $wpdb->prefix . 'cc_field_value_revisions';
-        
-        $revisions_sql = "CREATE TABLE $revisions_table (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            post_id bigint(20) NOT NULL,
-            revision_data longtext NOT NULL,
-            revision_note varchar(255) DEFAULT '',
-            created_at datetime NOT NULL,
-            created_by bigint(20) NOT NULL,
-            is_active tinyint(1) DEFAULT 0,
-            PRIMARY KEY (id),
-            KEY post_id (post_id),
-            KEY created_at (created_at)
-        ) $charset_collate;";
-        
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($revisions_sql);
-        
-        error_log("CCC Database: Revisions table created/updated successfully");
     }
     
     /**
@@ -185,7 +98,7 @@ class Database {
         
         // Check if required columns exist
         $required_columns = [
-            $fields_table => ['placeholder'],
+            $fields_table => ['placeholder', 'parent_field_id'],
             $field_values_table => ['instance_id']
         ];
         
@@ -268,6 +181,53 @@ class Database {
             $wpdb->query("ALTER TABLE {$fields_table} ADD KEY handle_idx (handle)");
             error_log('CCC: Added handle column to fields table');
         }
+
+        // Migration to ensure config column can store JSON data properly
+        $column_info = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM {$fields_table} LIKE %s",
+                'config'
+            )
+        );
+        if (!empty($column_info)) {
+            $column_type = $column_info[0]->Type;
+            // Check if config column is longtext or text (which can store JSON)
+            if (strpos($column_type, 'text') === false && strpos($column_type, 'json') === false) {
+                $wpdb->query("ALTER TABLE {$fields_table} MODIFY COLUMN config LONGTEXT");
+                error_log('CCC: Modified config column to LONGTEXT for JSON storage');
+            }
+        }
+
+        // Migration for parent_field_id column in fields table
+        $column_exists = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM {$fields_table} LIKE %s",
+                'parent_field_id'
+            )
+        );
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE {$fields_table} ADD COLUMN parent_field_id BIGINT UNSIGNED DEFAULT NULL AFTER component_id");
+            $wpdb->query("ALTER TABLE {$fields_table} ADD KEY parent_field_id_idx (parent_field_id)");
+            // Note: Foreign key constraint might fail if table is empty, so we'll skip it for now
+            // $wpdb->query("ALTER TABLE {$fields_table} ADD CONSTRAINT fk_parent_field FOREIGN KEY (parent_field_id) REFERENCES {$fields_table}(id) ON DELETE CASCADE");
+            error_log('CCC: Added parent_field_id column to fields table');
+        }
+
+        // Migration to ensure config column can store JSON data properly
+        $column_info = $wpdb->get_results(
+            $wpdb->prepare(
+                "SHOW COLUMNS FROM {$fields_table} LIKE %s",
+                'config'
+            )
+        );
+        if (!empty($column_info)) {
+            $column_type = $column_info[0]->Type;
+            // Check if config column is longtext or text (which can store JSON)
+            if (strpos($column_type, 'text') === false && strpos($column_type, 'json') === false) {
+                $wpdb->query("ALTER TABLE {$fields_table} MODIFY COLUMN config LONGTEXT");
+                error_log('CCC: Modified config column to LONGTEXT for JSON storage');
+            }
+        }
     }
 
     /**
@@ -313,11 +273,12 @@ class Database {
             CREATE TABLE $table_name (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 component_id BIGINT UNSIGNED NOT NULL,
+                parent_field_id BIGINT UNSIGNED DEFAULT NULL,
                 label VARCHAR(255) NOT NULL,
                 name VARCHAR(255) NOT NULL,
                 handle VARCHAR(255) NOT NULL,
                 type VARCHAR(50) NOT NULL DEFAULT 'text',
-                config JSON,
+                config LONGTEXT,
                 field_order INT DEFAULT 0,
                 required BOOLEAN DEFAULT FALSE,
                 placeholder TEXT DEFAULT '', -- Added placeholder column
@@ -326,12 +287,14 @@ class Database {
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id),
                 KEY component_id_idx (component_id),
+                KEY parent_field_id_idx (parent_field_id),
                 KEY name_idx (name),
                 KEY handle_idx (handle),
                 KEY type_idx (type),
                 KEY field_order_idx (field_order),
                 KEY required_idx (required),
-                FOREIGN KEY (component_id) REFERENCES $components_table(id) ON DELETE CASCADE
+                FOREIGN KEY (component_id) REFERENCES $components_table(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_field_id) REFERENCES $table_name(id) ON DELETE CASCADE
             ) $charset_collate;
         ";
         
@@ -377,6 +340,8 @@ class Database {
             error_log("CCC: Successfully created/updated $table_name");
         }
     }
+
+
 
     /**
      * Create templates directory in theme
