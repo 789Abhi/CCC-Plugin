@@ -36,9 +36,8 @@ class FileField extends BaseField
         // Ensure all config values are properly set
         $config = array_merge([
             'allowed_types' => ['image', 'video', 'document', 'audio', 'archive'],
-            'max_file_size' => 10, // MB
+            'max_file_size' => null, // No default restriction
             'return_type' => 'url', // url, id, array
-            'multiple' => false,
             'show_preview' => true,
             'show_download' => true,
             'show_delete' => true
@@ -71,16 +70,7 @@ class FileField extends BaseField
             return '';
         }
         
-        // If it's an array (multiple files), sanitize each one
-        if (is_array($value)) {
-            $sanitized = [];
-            foreach ($value as $file) {
-                $sanitized[] = $this->sanitizeSingleFile($file);
-            }
-            return array_filter($sanitized); // Remove empty values
-        }
-        
-        // Single file
+        // Always treat as single file
         return $this->sanitizeSingleFile($value);
     }
     
@@ -200,21 +190,7 @@ class FileField extends BaseField
             }
         }
         
-        // If it's an array (multiple files), process each one
-        if (is_array($value)) {
-            error_log("CCC DEBUG: FileField processing array of files, count: " . count($value));
-            $processed_files = [];
-            foreach ($value as $file) {
-                $file_info = $this->getFileInfoFromValue($file);
-                if ($file_info) {
-                    $processed_files[] = $file_info;
-                }
-            }
-            error_log("CCC DEBUG: FileField processed files result: " . json_encode($processed_files));
-            return $processed_files;
-        }
-        
-        // Single file
+        // Always treat as single file
         error_log("CCC DEBUG: FileField processing single file");
         $result = $this->getFileInfoFromValue($value);
         error_log("CCC DEBUG: FileField single file result: " . json_encode($result));

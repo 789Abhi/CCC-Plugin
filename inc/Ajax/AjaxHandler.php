@@ -258,8 +258,8 @@ class AjaxHandler {
                   $field_config = [];
               }
               $config = [
-                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : 0,
-                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : 100,
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' && $field_config['min_value'] !== null ? floatval($field_config['min_value']) : null,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' && $field_config['max_value'] !== null ? floatval($field_config['max_value']) : null,
                   'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
                   'append' => sanitize_text_field($field_config['append'] ?? '')
               ];
@@ -286,9 +286,8 @@ class AjaxHandler {
               }
               $config = [
                   'allowed_types' => isset($field_config['allowed_types']) && is_array($field_config['allowed_types']) ? array_map('sanitize_text_field', $field_config['allowed_types']) : ['image', 'video', 'document', 'audio', 'archive'],
-                  'max_file_size' => isset($field_config['max_file_size']) ? intval($field_config['max_file_size']) : 10,
+                  'max_file_size' => isset($field_config['max_file_size']) && $field_config['max_file_size'] !== null && $field_config['max_file_size'] !== '' ? intval($field_config['max_file_size']) : null,
                   'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
-                  'multiple' => (bool)($field_config['multiple'] ?? false),
                   'show_preview' => (bool)($field_config['show_preview'] ?? true),
                   'show_download' => (bool)($field_config['show_download'] ?? true),
                   'show_delete' => (bool)($field_config['show_delete'] ?? true)
@@ -461,8 +460,8 @@ class AjaxHandler {
                   $field_config = [];
               }
               $config = [
-                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : 0,
-                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : 100,
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' && $field_config['min_value'] !== null ? floatval($field_config['min_value']) : null,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' && $field_config['max_value'] !== null ? floatval($field_config['max_value']) : null,
                   'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
                   'append' => sanitize_text_field($field_config['append'] ?? '')
               ];
@@ -489,9 +488,8 @@ class AjaxHandler {
               }
               $config = [
                   'allowed_types' => isset($field_config['allowed_types']) && is_array($field_config['allowed_types']) ? array_map('sanitize_text_field', $field_config['allowed_types']) : ['image', 'video', 'document', 'audio', 'archive'],
-                  'max_file_size' => isset($field_config['max_file_size']) ? intval($field_config['max_file_size']) : 10,
+                  'max_file_size' => isset($field_config['max_file_size']) && $field_config['max_file_size'] !== null && $field_config['max_file_size'] !== '' ? intval($field_config['max_file_size']) : null,
                   'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
-                  'multiple' => (bool)($field_config['multiple'] ?? false),
                   'show_preview' => (bool)($field_config['show_preview'] ?? true),
                   'show_download' => (bool)($field_config['show_download'] ?? true),
                   'show_delete' => (bool)($field_config['show_delete'] ?? true)

@@ -553,6 +553,10 @@ if (!function_exists('get_ccc_field')) {
         
         // Process value based on field type
         if ($field_type === 'repeater') {
+            // Handle null values safely
+            if ($value === null) {
+                return [];
+            }
             $decoded_value = json_decode($value, true) ?: [];
             // Check if this is the new format with data and state
             if (is_array($decoded_value) && isset($decoded_value['data']) && isset($decoded_value['state'])) {
@@ -580,6 +584,10 @@ if (!function_exists('get_ccc_field')) {
             return [];
         } elseif ($field_type === 'image') {
             $return_type = $field_config['return_type'] ?? 'url';
+            // Handle null values safely
+            if ($value === null) {
+                return '';
+            }
             $decoded_value = json_decode($value, true);
             if ($return_type === 'array' && is_array($decoded_value)) {
                 return $decoded_value;
@@ -589,6 +597,10 @@ if (!function_exists('get_ccc_field')) {
             return $value ?: '';
         } elseif ($field_type === 'video') {
             $return_type = $field_config['return_type'] ?? 'url';
+            // Handle null values safely
+            if ($value === null) {
+                return '';
+            }
             $decoded_value = json_decode($value, true);
             if ($return_type === 'array' && is_array($decoded_value)) {
                 return $decoded_value;
@@ -596,49 +608,101 @@ if (!function_exists('get_ccc_field')) {
                 return $decoded_value['url'];
             }
             return $value ?: '';
+        } elseif ($field_type === 'file') {
+            $return_type = $field_config['return_type'] ?? 'url';
+            // Handle null values safely
+            if ($value === null) {
+                return '';
+            }
+            $decoded_value = json_decode($value, true);
+            
+            // Handle multiple files
+            if (is_array($decoded_value) && isset($decoded_value[0])) {
+                if ($return_type === 'array') {
+                    return $decoded_value; // Return full array
+                } else {
+                    // Return just the first file's URL
+                    return isset($decoded_value[0]['url']) ? $decoded_value[0]['url'] : '';
+                }
+            }
+            
+            // Handle single file
+            if (is_array($decoded_value) && isset($decoded_value['url'])) {
+                if ($return_type === 'array') {
+                    return $decoded_value; // Return full object
+                } else {
+                    return $decoded_value['url']; // Return just the URL
+                }
+            }
+            
+            return $value ?: '';
         } elseif ($field_type === 'checkbox') {
+            // Handle null values safely
+            if ($value === null) {
+                return [];
+            }
             return $value ? explode(',', $value) : [];
         } elseif ($field_type === 'select') {
             $config = $field_config ?: [];
             $multiple = isset($config['multiple']) && $config['multiple'];
             if ($multiple) {
+                // Handle null values safely
+                if ($value === null) {
+                    return [];
+                }
                 return $value ? explode(',', $value) : [];
+            }
+            // Handle null values safely
+            if ($value === null) {
+                return '';
             }
             return $value ?: '';
         } elseif ($field_type === 'radio') {
+            // Handle null values safely
+            if ($value === null) {
+                return '';
+            }
             return $value ?: '';
         } elseif ($field_type === 'wysiwyg') {
-            return wp_kses_post($value);
-                    } elseif ($field_type === 'oembed') {
-                if (empty($value)) {
-                    return '';
-                }
-                // Return the iframe code directly since it's already HTML
-                return $value;
-            } elseif ($field_type === 'relationship') {
-                if (empty($value)) {
-                    return [];
-                }
-                // Return array of post IDs
-                $post_ids = is_array($value) ? $value : explode(',', $value);
-                return array_map('intval', array_filter($post_ids));
-            } elseif ($field_type === 'link') {
-                if (empty($value)) {
-                    return '';
-                }
-                // For link fields, try to extract URL from JSON data and store link data globally
-                $link_data = json_decode($value, true);
-                if ($link_data && is_array($link_data) && isset($link_data['url'])) {
-                    // Store link data globally for target handling
-                    global $ccc_current_link_data;
-                    $ccc_current_link_data = $link_data;
-                    return $link_data['url'];
-                }
-                // If not valid JSON or no URL found, return the original value
-                return $value;
-            } elseif ($field_type === 'color') {
-                return $value ?: '';
+            // Handle null values safely
+            if ($value === null) {
+                return '';
             }
+            return wp_kses_post($value);
+        } elseif ($field_type === 'oembed') {
+            if (empty($value)) {
+                return '';
+            }
+            // Return the iframe code directly since it's already HTML
+            return $value;
+        } elseif ($field_type === 'relationship') {
+            if (empty($value)) {
+                return [];
+            }
+            // Return array of post IDs
+            $post_ids = is_array($value) ? $value : explode(',', $value);
+            return array_map('intval', array_filter($post_ids));
+        } elseif ($field_type === 'link') {
+            if (empty($value)) {
+                return '';
+            }
+            // For link fields, try to extract URL from JSON data and store link data globally
+            $link_data = json_decode($value, true);
+            if ($link_data && is_array($link_data) && isset($link_data['url'])) {
+                // Store link data globally for target handling
+                global $ccc_current_link_data;
+                $ccc_current_link_data = $link_data;
+                return $link_data['url'];
+            }
+            // If not valid JSON or no URL found, return the original value
+            return $value;
+        } elseif ($field_type === 'color') {
+            // Handle null values safely
+            if ($value === null) {
+                return '';
+            }
+            return $value ?: '';
+        }
         
         error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
         
@@ -677,6 +741,113 @@ if (!function_exists('get_ccc_wysiwyg_field')) {
 if (!function_exists('get_ccc_color_field')) {
     function get_ccc_color_field($field_name, $post_id = null, $instance_id = null) {
         $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        return $value ?: '';
+    }
+}
+
+if (!function_exists('get_ccc_file_field')) {
+    /**
+     * Get CCC file field value with options for return type
+     * 
+     * @param string $field_name The file field name
+     * @param string $return_type 'url' for just the URL, 'array' for full file data
+     * @param int $post_id Optional post ID (defaults to current post)
+     * @param int $component_id Optional component ID
+     * @param string $instance_id Optional instance ID for repeaters
+     * @return string|array File URL or full file data array
+     */
+    function get_ccc_file_field($field_name, $return_type = 'url', $post_id = null, $component_id = null, $instance_id = null) {
+        global $wpdb, $ccc_current_component, $ccc_current_post_id, $ccc_current_instance_id;
+        
+        // Use global context if available
+        if (!$post_id) {
+            $post_id = $ccc_current_post_id ?: get_the_ID();
+        }
+        
+        if (!$component_id && isset($ccc_current_component['id'])) {
+            $component_id = $ccc_current_component['id'];
+        }
+        
+        if (!$instance_id && isset($ccc_current_instance_id)) {
+            $instance_id = $ccc_current_instance_id;
+        }
+        
+        if (!$post_id) {
+            error_log("CCC: No post ID available for get_ccc_file_field('$field_name')");
+            return '';
+        }
+        
+        $fields_table = $wpdb->prefix . 'cc_fields';
+        $values_table = $wpdb->prefix . 'cc_field_values';
+        
+        // Get field config from the fields table
+        $field_info_query = $wpdb->prepare(
+            "SELECT id, config FROM $fields_table WHERE name = %s",
+            $field_name
+        );
+        $field_info = $wpdb->get_row($field_info_query);
+        if (!$field_info) {
+            error_log("CCC: File field '$field_name' not found in database.");
+            return '';
+        }
+
+        $field_db_id = $field_info->id;
+        $field_config = json_decode($field_info->config, true);
+        
+        // Override return type if specified in function call
+        if ($return_type !== 'url' && $return_type !== 'array') {
+            $return_type = $field_config['return_type'] ?? 'url';
+        }
+
+        // Base query to get the field value
+        $query = "
+            SELECT fv.value 
+            FROM $values_table fv
+            WHERE fv.post_id = %d 
+            AND fv.field_id = %d
+        ";
+        
+        $params = [$post_id, $field_db_id];
+        
+        // If instance_id is specified, add it to the query
+        if ($instance_id) {
+            $query .= " AND fv.instance_id = %s";
+            $params[] = $instance_id;
+        }
+        
+        $query .= " ORDER BY fv.id DESC LIMIT 1"; // Get the latest value
+        $value = $wpdb->get_var($wpdb->prepare($query, $params));
+        
+        if (empty($value)) {
+            return '';
+        }
+        
+        // Handle null values safely
+        if ($value === null) {
+            return '';
+        }
+        
+        $decoded_value = json_decode($value, true);
+        
+        // Handle multiple files
+        if (is_array($decoded_value) && isset($decoded_value[0])) {
+            if ($return_type === 'array') {
+                return $decoded_value; // Return full array
+            } else {
+                // Return just the first file's URL
+                return isset($decoded_value[0]['url']) ? $decoded_value[0]['url'] : '';
+            }
+        }
+        
+        // Handle single file
+        if (is_array($decoded_value) && isset($decoded_value['url'])) {
+            if ($return_type === 'array') {
+                return $decoded_value; // Return full object
+            } else {
+                return $decoded_value['url']; // Return just the URL
+            }
+        }
+        
         return $value ?: '';
     }
 }

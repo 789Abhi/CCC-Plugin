@@ -139,7 +139,11 @@ class TemplateManager {
                 error_log("CCC DEBUG: get_ccc_field - Field: $field_name, Type: $field_type, Value length: " . strlen($value));
                 error_log("CCC DEBUG: get_ccc_field - Field type check: " . ($field_type === 'repeater' ? 'IS REPEATER' : 'NOT REPEATER'));
                 
-
+                // Handle null values safely at the beginning
+                if ($value === null) {
+                    error_log("CCC DEBUG: get_ccc_field - Value is null, returning empty string");
+                    return '';
+                }
                 
                                 // Handle different formats
                 if ($format === 'url' && is_numeric($value)) {
@@ -153,6 +157,7 @@ class TemplateManager {
                     return wp_get_attachment_image_src($value, 'full');
                 } elseif ($format === 'html') {
                     // Return safe HTML
+                    // Value is already checked for null above, so this is safe
                     return wp_kses_post($value);
                 } elseif ($format === 'raw') {
                     // Return raw value
@@ -167,6 +172,12 @@ class TemplateManager {
                     } elseif ($field_type === 'link') {
                         // For link fields, return the URL directly and store target for automatic HTML generation
                         error_log("CCC DEBUG: get_ccc_field - Handling as link field");
+                        
+                        // Handle null values safely
+                        if ($value === null) {
+                            return '';
+                        }
+                        
                         $link_data = json_decode($value, true);
                         if (is_array($link_data) && !empty($link_data['url'])) {
                             // Store link data globally for automatic target handling
@@ -177,10 +188,43 @@ class TemplateManager {
                             return $link_data['url'];
                         }
                         return '';
+                    } elseif ($field_type === 'file') {
+                        // For file fields, return URL by default or full data if format is 'array'
+                        error_log("CCC DEBUG: get_ccc_field - Handling as file field");
+                        
+                        // Handle null values safely
+                        if ($value === null) {
+                            return '';
+                        }
+                        
+                        $file_data = json_decode($value, true);
+                        
+                        if ($format === 'array') {
+                            return $file_data; // Return full file data
+                        }
+                        
+                        // Handle multiple files - return first file's URL
+                        if (is_array($file_data) && isset($file_data[0])) {
+                            return isset($file_data[0]['url']) ? $file_data[0]['url'] : '';
+                        }
+                        
+                        // Handle single file - return URL
+                        if (is_array($file_data) && isset($file_data['url'])) {
+                            return $file_data['url'];
+                        }
+                        
+                        return '';
                     } elseif ($field_type === 'repeater') {
                         error_log("CCC DEBUG: get_ccc_field - Handling as repeater field");
                         // For repeater fields, parse JSON and filter out hidden items
                         error_log("CCC DEBUG: get_ccc_field processing repeater field: $field_name");
+                        
+                        // Handle null values safely
+                        if ($value === null) {
+                            error_log("CCC DEBUG: Value is null, returning empty array");
+                            return [];
+                        }
+                        
                         error_log("CCC DEBUG: Raw value: " . substr($value, 0, 200) . "...");
                         
                         $items = json_decode($value, true);
@@ -211,6 +255,7 @@ class TemplateManager {
                     } else {
                         // For other fields, return escaped value
                         error_log("CCC DEBUG: get_ccc_field - Returning escaped value for non-repeater field");
+                        // Value is already checked for null above, so this is safe
                         return esc_html($value);
                     }
                 }
@@ -241,6 +286,22 @@ class TemplateManager {
                 }
                 
                 return '';
+            }
+        }
+        
+        // Make get_ccc_file function available globally for easier file handling
+        if (!function_exists('get_ccc_file')) {
+            /**
+             * Get CCC file field with options for return type
+             * 
+             * @param string $field_name The file field name
+             * @param string $format 'url' for just the URL, 'array' for full file data
+             * @param int $post_id Optional post ID (defaults to current post)
+             * @param string $instance_id Optional instance ID for repeaters
+             * @return string|array File URL or full file data array
+             */
+            function get_ccc_file($field_name, $format = 'url', $post_id = null, $instance_id = '') {
+                return get_ccc_field($field_name, $format, $post_id, $instance_id);
             }
         }
         

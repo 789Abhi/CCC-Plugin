@@ -31,8 +31,8 @@ class RangeField extends BaseField
         
         // Ensure all config values are properly set
         $config = array_merge([
-            'min_value' => 0,
-            'max_value' => 100,
+            'min_value' => null,
+            'max_value' => null,
             'prepend' => '',
             'append' => ''
         ], $config);
