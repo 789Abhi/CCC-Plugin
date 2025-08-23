@@ -645,18 +645,38 @@ if (!function_exists('get_ccc_field')) {
         } elseif ($field_type === 'select') {
             $config = $field_config ?: [];
             $multiple = isset($config['multiple']) && $config['multiple'];
-            if ($multiple) {
-                // Handle null values safely
-                if ($value === null) {
-                    return [];
-                }
-                return $value ? explode(',', $value) : [];
-            }
+            
             // Handle null values safely
             if ($value === null) {
-                return '';
+                return $multiple ? [] : '';
             }
-            return $value ?: '';
+            
+            if ($multiple) {
+                // Multiple select field - handle various input formats
+                if (is_array($value)) {
+                    // Already an array, return as is
+                    return $value;
+                } elseif (is_string($value)) {
+                    // Check if it's JSON encoded
+                    if (strpos($value, '[') === 0) {
+                        $decoded = json_decode($value, true);
+                        if (is_array($decoded)) {
+                            return $decoded;
+                        }
+                    }
+                    // Fallback to comma-separated string
+                    return $value ? explode(',', $value) : [];
+                } else {
+                    return [];
+                }
+            } else {
+                // Single select field - ensure it's a string
+                if (is_array($value)) {
+                    return count($value) > 0 ? strval($value[0]) : '';
+                } else {
+                    return strval($value);
+                }
+            }
         } elseif ($field_type === 'radio') {
             // Handle null values safely
             if ($value === null) {
@@ -702,6 +722,12 @@ if (!function_exists('get_ccc_field')) {
                 return '';
             }
             return $value ?: '';
+        } elseif ($field_type === 'toggle') {
+            // Handle null values safely
+            if ($value === null) {
+                return false;
+            }
+            return filter_var($value, FILTER_VALIDATE_BOOLEAN);
         }
         
         error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
@@ -728,6 +754,13 @@ if (!function_exists('get_ccc_checkbox_field')) {
 if (!function_exists('get_ccc_radio_field')) {
     function get_ccc_radio_field($field_name, $post_id = null, $instance_id = null) {
         return get_ccc_field($field_name, $post_id, null, $instance_id);
+    }
+}
+
+if (!function_exists('get_ccc_toggle_field')) {
+    function get_ccc_toggle_field($field_name, $post_id = null, $instance_id = null) {
+        $value = get_ccc_field($field_name, $post_id, null, $instance_id);
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
     }
 }
 
@@ -1512,16 +1545,60 @@ if (!function_exists('get_ccc_select_values')) {
     function get_ccc_select_values($field_name, $post_id = null, $instance_id = null, $format = 'array') {
         $values = get_ccc_field($field_name, $post_id, null, $instance_id);
         
+        // Enhanced debug logging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("CCC Select Debug - Field: $field_name, Raw values: " . print_r($values, true) . ", Format: $format, Type: " . gettype($values));
+            if (is_array($values)) {
+                error_log("CCC Select Debug - Array count: " . count($values) . ", Keys: " . implode(', ', array_keys($values)));
+            }
+        }
+        
+        // Handle null/empty values
+        if ($values === null || $values === '') {
+            switch ($format) {
+                case 'array':
+                    return [];
+                case 'string':
+                    return '';
+                case 'list':
+                    return '<ul></ul>';
+                case 'options':
+                    return '';
+                default:
+                    return $format === 'array' ? [] : '';
+            }
+        }
+        
         // Handle both single and multiple select fields
         if (is_array($values)) {
             // Multiple select field
             if (empty($values)) {
-                return $format === 'array' ? [] : '';
+                switch ($format) {
+                    case 'array':
+                        return [];
+                    case 'string':
+                        return '';
+                    case 'list':
+                        return '<ul></ul>';
+                    case 'options':
+                        return '';
+                    default:
+                        return [];
+                }
             }
+            
+            // Filter out empty values
+            $values = array_filter($values, function($value) {
+                return $value !== null && $value !== '';
+            });
             
             switch ($format) {
                 case 'array':
-                    return $values;
+                    $result = array_values($values); // Re-index array
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log("CCC Select Debug - Returning array format: " . print_r($result, true) . ", Type: " . gettype($result));
+                    }
+                    return $result;
                 case 'string':
                     return implode(', ', $values);
                 case 'list':
@@ -1529,17 +1606,32 @@ if (!function_exists('get_ccc_select_values')) {
                 case 'options':
                     return implode(' | ', array_map('esc_html', $values));
                 default:
-                    return $values;
+                    return array_values($values);
             }
         } else {
             // Single select field
             if (empty($values)) {
-                return $format === 'array' ? [] : '';
+                switch ($format) {
+                    case 'array':
+                        return [];
+                    case 'string':
+                        return '';
+                    case 'list':
+                        return '<ul></ul>';
+                    case 'options':
+                        return '';
+                    default:
+                        return $format === 'array' ? [] : '';
+                }
             }
             
             switch ($format) {
                 case 'array':
-                    return [$values];
+                    $result = [$values];
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log("CCC Select Debug - Single select returning array format: " . print_r($result, true) . ", Type: " . gettype($result));
+                    }
+                    return $result;
                 case 'string':
                     return $values;
                 case 'list':
@@ -1549,40 +1641,6 @@ if (!function_exists('get_ccc_select_values')) {
                 default:
                     return $values;
             }
-        }
-    }
-
-    // Relationship field helper functions
-    if (!function_exists('get_ccc_relationship_posts')) {
-        function get_ccc_relationship_posts($field_name, $post_id = null, $component_id = null, $instance_id = null) {
-            $post_ids = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
-            if (empty($post_ids)) {
-                return [];
-            }
-            
-            $posts = [];
-            foreach ($post_ids as $post_id) {
-                $post = get_post($post_id);
-                if ($post) {
-                    $posts[] = $post;
-                }
-            }
-            return $posts;
-        }
-    }
-
-    if (!function_exists('get_ccc_relationship_post_ids')) {
-        function get_ccc_relationship_post_ids($field_name, $post_id = null, $component_id = null, $instance_id = null) {
-            return get_ccc_field($field_name, $post_id, $component_id, $instance_id);
-        }
-    }
-
-    if (!function_exists('get_ccc_relationship_post_titles')) {
-        function get_ccc_relationship_post_titles($field_name, $post_id = null, $component_id = null, $instance_id = null) {
-            $posts = get_ccc_relationship_posts($field_name, $post_id, $component_id, $instance_id);
-            return array_map(function($post) {
-                return $post->post_title;
-            }, $posts);
         }
     }
 }
@@ -2233,5 +2291,149 @@ if (!function_exists('get_ccc_link_data')) {
         }
         
         return $link_data;
+    }
+}
+
+// New color field helper functions for specific color values
+if (!function_exists('get_ccc_field_color')) {
+    /**
+     * Get the main color value from a color field
+     * 
+     * @param string $field_name The name of the color field
+     * @param int|null $post_id Optional post ID (defaults to current post)
+     * @param string|null $instance_id Optional instance ID for repeaters
+     * @return string The main color value (hex code)
+     */
+    function get_ccc_field_color($field_name, $post_id = null, $instance_id = null) {
+        $colors = get_ccc_color_enhanced($field_name, $post_id, $instance_id);
+        return $colors['main'] ?: '';
+    }
+}
+
+if (!function_exists('get_ccc_field_hover_color')) {
+    /**
+     * Get the hover color value from a color field
+     * 
+     * @param string $field_name The name of the color field
+     * @param int|null $post_id Optional post ID (defaults to current post)
+     * @param string|null $instance_id Optional instance ID for repeaters
+     * @return string The hover color value (hex code)
+     */
+    function get_ccc_field_hover_color($field_name, $post_id = null, $instance_id = null) {
+        $colors = get_ccc_color_enhanced($field_name, $post_id, $instance_id);
+        return $colors['hover'] ?: '';
+    }
+}
+
+if (!function_exists('get_ccc_field_adjusted_color')) {
+    /**
+     * Get the adjusted color value from a color field
+     * 
+     * @param string $field_name The name of the color field
+     * @param int|null $post_id Optional post ID (defaults to current post)
+     * @param string|null $instance_id Optional instance ID for repeaters
+     * @return string The adjusted color value (hex code)
+     */
+    function get_ccc_field_adjusted_color($field_name, $post_id = null, $instance_id = null) {
+        $colors = get_ccc_color_enhanced($field_name, $post_id, $instance_id);
+        return $colors['adjusted'] ?: '';
+    }
+}
+
+// Relationship field helper functions
+if (!function_exists('get_ccc_relationship_posts')) {
+    function get_ccc_relationship_posts($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+        $post_ids = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+        if (empty($post_ids)) {
+            return [];
+        }
+        
+        $posts = [];
+        foreach ($post_ids as $post_id) {
+            $post = get_post($post_id);
+            if ($post) {
+                $posts[] = $post;
+            }
+        }
+        return $posts;
+    }
+}
+
+if (!function_exists('get_ccc_relationship_post_ids')) {
+    function get_ccc_relationship_post_ids($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+        return get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+    }
+}
+
+if (!function_exists('get_ccc_relationship_post_titles')) {
+    function get_ccc_relationship_post_titles($field_name, $post_id = null, $component_id = null, $instance_id = null) {
+        $posts = get_ccc_relationship_posts($field_name, $post_id, $component_id, $instance_id);
+        return array_map(function($post) {
+            return $post->post_title;
+        }, $posts);
+    }
+}
+
+// Additional select field helper functions
+if (!function_exists('get_ccc_select_array')) {
+    function get_ccc_select_array($field_name, $post_id = null, $instance_id = null) {
+        return get_ccc_select_values($field_name, $post_id, $instance_id, 'array');
+    }
+}
+
+if (!function_exists('get_ccc_select_string')) {
+    function get_ccc_select_string($field_name, $post_id = null, $instance_id = null) {
+        return get_ccc_select_values($field_name, $post_id, $instance_id, 'string');
+    }
+}
+
+if (!function_exists('get_ccc_select_list')) {
+    function get_ccc_select_list($field_name, $post_id = null, $instance_id = null) {
+        return get_ccc_select_values($field_name, $post_id, $instance_id, 'list');
+    }
+}
+
+if (!function_exists('get_ccc_select_options')) {
+    function get_ccc_select_options($field_name, $post_id = null, $instance_id = null) {
+        return get_ccc_select_values($field_name, $post_id, $instance_id, 'options');
+    }
+}
+
+if (!function_exists('get_ccc_select_first')) {
+    function get_ccc_select_first($field_name, $post_id = null, $instance_id = null) {
+        $values = get_ccc_select_values($field_name, $post_id, $instance_id, 'array');
+        return is_array($values) && !empty($values) ? $values[0] : '';
+    }
+}
+
+if (!function_exists('get_ccc_select_count')) {
+    function get_ccc_select_count($field_name, $post_id = null, $instance_id = null) {
+        $values = get_ccc_select_values($field_name, $post_id, $instance_id, 'array');
+        return is_array($values) ? count($values) : 0;
+    }
+}
+
+// Debug function for select field values
+if (!function_exists('debug_ccc_select_values')) {
+    function debug_ccc_select_values($field_name, $post_id = null, $instance_id = null) {
+        $values = get_ccc_field($field_name, $post_id, null, $instance_id);
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("CCC Select Debug - Field: $field_name, Raw values: " . print_r($values, true));
+        }
+        
+        $select_array = get_ccc_select_values($field_name, $post_id, $instance_id, 'array');
+        
+        return [
+            'raw_values' => $values,
+            'raw_type' => gettype($values),
+            'is_array' => is_array($values),
+            'array_count' => is_array($values) ? count($values) : 0,
+            'select_array' => $select_array,
+            'select_array_type' => gettype($select_array),
+            'select_array_is_array' => is_array($select_array),
+            'select_string' => get_ccc_select_values($field_name, $post_id, $instance_id, 'string'),
+            'select_list' => get_ccc_select_values($field_name, $post_id, $instance_id, 'list')
+        ];
     }
 }

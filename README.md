@@ -374,4 +374,227 @@ Method 1: Global CSS Variables (Recommended)
 
 <h2 class="text_color">Hello</h2>
 
+## Color Field Helper Functions
+
+For color fields with enhanced color data (main, hover, adjusted), you can use these specific helper functions:
+
+### Method 2: Individual Color Values
+
+```php
+// Get individual color values
+$main_color = get_ccc_field_color('color');           // Returns: #b92222
+$hover_color = get_ccc_field_hover_color('color');    // Returns: #21c48e
+$adjusted_color = get_ccc_field_adjusted_color('color'); // Returns: #b92222
+
+// Use in inline styles
+echo '<div style="color: ' . esc_attr($main_color) . ';">Main color text</div>';
+echo '<div style="color: ' . esc_attr($hover_color) . ';">Hover color text</div>';
+echo '<div style="color: ' . esc_attr($adjusted_color) . ';">Adjusted color text</div>';
+```
+
+### Method 3: Combined Approach (Recommended)
+
+```php
+<style>
+<?php echo get_ccc_color_css_variables_root('color'); ?>
+
+.custom-button {
+    color: var(--ccc-color-main);
+    background-color: var(--ccc-color-adjusted);
+    transition: all 0.3s ease;
+}
+
+.custom-button:hover {
+    color: var(--ccc-color-hover);
+    background-color: var(--ccc-color-main);
+}
+</style>
+
+<button class="custom-button">Hover me!</button>
+```
+
+### Color Field JSON Structure
+
+The color field stores data in this format:
+```json
+{
+    "main": "#b92222",
+    "adjusted": "#b92222", 
+    "hover": "#21c48e"
+}
+```
+
+### Available Color Functions
+
+- `get_ccc_field_color($field_name)` - Get main color value
+- `get_ccc_field_hover_color($field_name)` - Get hover color value  
+- `get_ccc_field_adjusted_color($field_name)` - Get adjusted color value
+- `get_ccc_color_css_variables_root($field_name)` - Generate CSS variables (existing function)
+
+All functions support optional `$post_id` and `$instance_id` parameters for flexibility.
+
+## Select Field Helper Functions
+
+For select fields with single or multiple selection options, you can use these comprehensive helper functions:
+
+**⚠️ Important Note:** If you're getting the string "Array" instead of an actual PHP array when using `get_ccc_select_values()` with the 'array' format, this usually means you're trying to output the array directly with `echo` or similar functions. Always check if the result is an array before outputting it.
+
+### Method 1: Main Function with Format Options
+
+```php
+// Get select field values in different formats
+$select_array = get_ccc_select_values('select', null, null, 'array');    // Returns: ['abhi', 'nachi']
+$select_string = get_ccc_select_values('select', null, null, 'string');  // Returns: "abhi, nachi"
+$select_list = get_ccc_select_values('select', null, null, 'list');      // Returns: "<ul><li>abhi</li><li>nachi</li></ul>"
+$select_options = get_ccc_select_values('select', null, null, 'options'); // Returns: "abhi | nachi"
+```
+
+### Method 2: Individual Helper Functions
+
+```php
+// Get select field values using specific functions
+$select_array = get_ccc_select_array('select');      // Returns: ['abhi', 'nachi']
+$select_string = get_ccc_select_string('select');    // Returns: "abhi, nachi"
+$select_list = get_ccc_select_list('select');        // Returns: "<ul><li>abhi</li><li>nachi</li></ul>"
+$select_options = get_ccc_select_options('select');  // Returns: "abhi | nachi"
+
+// Additional utility functions
+$first_option = get_ccc_select_first('select');      // Returns: "abhi" (first selected option)
+$option_count = get_ccc_select_count('select');      // Returns: 2 (number of selected options)
+```
+
+### Method 3: Practical Usage Examples
+
+```php
+// Display selected options as a list
+$selected_options = get_ccc_select_array('select');
+if (!empty($selected_options)): ?>
+    <h3>Selected Options:</h3>
+    <ul>
+        <?php foreach ($selected_options as $option): ?>
+            <li><?php echo esc_html($option); ?></li>
+        <?php endforeach; ?>
+    </ul>
+<?php else: ?>
+    <p>No options selected</p>
+<?php endif; ?>
+
+// Display as comma-separated string
+<p><strong>Selected:</strong> <?php echo esc_html(get_ccc_select_string('select')); ?></p>
+
+// Display as HTML list
+<?php echo get_ccc_select_list('select'); ?>
+
+// Display as options with separators
+<p><strong>Options:</strong> <?php echo esc_html(get_ccc_select_options('select')); ?></p>
+
+// Get first selected option
+<?php 
+$first = get_ccc_select_first('select');
+if ($first): ?>
+    <p><strong>Primary Option:</strong> <?php echo esc_html($first); ?></p>
+<?php endif; ?>
+
+// Count selected options
+<p><strong>Total Selected:</strong> <?php echo esc_html(get_ccc_select_count('select')); ?> options</p>
+```
+
+### Method 4: Advanced Usage with Post/Instance Context
+
+```php
+// Get select values for specific post
+$post_select_array = get_ccc_select_array('select', 123);
+
+// Get select values for specific component instance
+$instance_select_array = get_ccc_select_array('select', null, 'instance_123');
+
+// Get select values for specific post and instance
+$specific_select_array = get_ccc_select_array('select', 123, 'instance_123');
+```
+
+### Method 5: Conditional Logic
+
+```php
+// Check if specific option is selected
+$selected_options = get_ccc_select_array('select');
+if (in_array('abhi', $selected_options)) {
+    echo '<p>Abhi is selected!</p>';
+}
+
+// Check if multiple options are selected
+if (get_ccc_select_count('select') > 1) {
+    echo '<p>Multiple options selected</p>';
+}
+
+// Check if any options are selected
+if (!empty(get_ccc_select_array('select'))) {
+    echo '<p>At least one option is selected</p>';
+} else {
+    echo '<p>No options selected</p>';
+}
+```
+
+### Available Format Options
+
+| Format | Description | Return Type | Example Output |
+|--------|-------------|-------------|----------------|
+| `array` | Array of selected values | `array` | `['abhi', 'nachi']` |
+| `string` | Comma-separated string | `string` | `"abhi, nachi"` |
+| `list` | HTML unordered list | `string` | `<ul><li>abhi</li><li>nachi</li></ul>` |
+| `options` | Pipe-separated options | `string` | `"abhi \| nachi"` |
+
+### Function Parameters
+
+All select field functions accept these parameters:
+
+```php
+get_ccc_select_values($field_name, $post_id, $instance_id, $format)
+get_ccc_select_array($field_name, $post_id, $instance_id)
+get_ccc_select_string($field_name, $post_id, $instance_id)
+get_ccc_select_list($field_name, $post_id, $instance_id)
+get_ccc_select_options($field_name, $post_id, $instance_id)
+get_ccc_select_first($field_name, $post_id, $instance_id)
+get_ccc_select_count($field_name, $post_id, $instance_id)
+```
+
+- **`$field_name`** (required): The name of your select field
+- **`$post_id`** (optional): Specific post ID, defaults to current post
+- **`$instance_id`** (optional): Component instance ID for repeaters
+- **`$format`** (optional): Output format for `get_ccc_select_values()`
+
+### Debugging Select Fields
+
+If you're having issues with select fields, use the debug function:
+
+```php
+// Debug select field values
+debug_ccc_select_values('select', null, null, 'array');
+
+// Or use the test shortcode
+[ccc_select_test]
+```
+
+This will show you exactly what data is being retrieved and processed.
+
+### Troubleshooting Common Issues
+
+**1. Getting "Array" string instead of actual array:**
+- This usually happens when you try to `echo` or output an array directly
+- Always check if the result is an array before outputting: `if (is_array($select_array)) { ... }`
+- Use `var_export()`, `print_r()`, or `json_encode()` for debugging output
+
+**2. Function returns empty array:**
+- Check if the field name is correct
+- Verify the field has values saved
+- Check if you're using the correct post_id and instance_id
+
+**3. Multiple select not working:**
+- Ensure the field is configured with `multiple: true` in the admin
+- Check if the field values are properly saved as arrays
+
+**Debug Tools:**
+- Use `debug_ccc_select_values($field_name)` to get detailed information
+- Access `/wp-content/plugins/custom-craft-component/test-select-array.php` for comprehensive testing
+- Check WordPress debug logs for detailed error information
+
     

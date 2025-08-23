@@ -465,6 +465,16 @@ class AjaxHandler {
                   'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
                   'append' => sanitize_text_field($field_config['append'] ?? '')
               ];
+          } elseif ($type === 'toggle') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (!is_array($field_config)) {
+                  $field_config = [];
+              }
+              $config = [
+                  'default_value' => (bool)($field_config['default_value'] ?? false),
+                  'ui_style' => sanitize_text_field($field_config['ui_style'] ?? 'switch'),
+                  'conditional_logic' => isset($field_config['conditional_logic']) && is_array($field_config['conditional_logic']) ? $field_config['conditional_logic'] : []
+              ];
           } elseif ($type === 'color') {
               $config = [];
           } elseif ($type === 'link') {
