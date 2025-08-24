@@ -326,6 +326,23 @@ class AjaxHandler {
                   'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
               ];
               error_log("CCC DEBUG: AjaxHandler user config final: " . json_encode($config));
+          } else {
+              // For all other field types that don't have specific config handling above,
+              // still process conditional logic if present
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (is_array($field_config)) {
+                  $config = $field_config;
+              }
+          }
+
+          // Add conditional logic to all field types (except toggle which handles it separately)
+          if ($type !== 'toggle') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (is_array($field_config)) {
+                  $config['field_condition'] = sanitize_text_field($field_config['field_condition'] ?? 'always_show');
+                  $config['conditional_logic'] = isset($field_config['conditional_logic']) && is_array($field_config['conditional_logic']) ? $field_config['conditional_logic'] : [];
+                  $config['logic_operator'] = sanitize_text_field($field_config['logic_operator'] ?? 'AND');
+              }
           }
 
           // Calculate the next field order
@@ -538,6 +555,33 @@ class AjaxHandler {
                   'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
               ];
               error_log("CCC AjaxHandler updateFieldCallback user config final: " . json_encode($config));
+          } else {
+              // For all other field types that don't have specific config handling above,
+              // preserve existing config and add any new conditional logic
+              $existing_config = json_decode($field->getConfig(), true) ?: [];
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              if (is_array($field_config)) {
+                  $config = array_merge($existing_config, $field_config);
+              } else {
+                  $config = $existing_config;
+              }
+          }
+
+          // Add conditional logic to all field types (except toggle which handles it separately)
+          if ($type !== 'toggle') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              error_log("CCC AjaxHandler updateFieldCallback - Raw field_config POST: " . ($_POST['field_config'] ?? 'NOT SET'));
+              error_log("CCC AjaxHandler updateFieldCallback - Decoded field_config: " . json_encode($field_config));
+              
+              if (is_array($field_config)) {
+                  $config['field_condition'] = sanitize_text_field($field_config['field_condition'] ?? 'always_show');
+                  $config['conditional_logic'] = isset($field_config['conditional_logic']) && is_array($field_config['conditional_logic']) ? $field_config['conditional_logic'] : [];
+                  $config['logic_operator'] = sanitize_text_field($field_config['logic_operator'] ?? 'AND');
+                  
+                  error_log("CCC AjaxHandler updateFieldCallback - Final conditional logic config: field_condition=" . $config['field_condition'] . ", logic_operator=" . $config['logic_operator'] . ", conditional_logic=" . json_encode($config['conditional_logic']));
+              } else {
+                  error_log("CCC AjaxHandler updateFieldCallback - field_config is not an array: " . gettype($field_config));
+              }
           }
 
           $data = [
@@ -548,6 +592,8 @@ class AjaxHandler {
               'placeholder' => $placeholder,
               'config' => json_encode($config)
           ];
+          
+          error_log("CCC AjaxHandler updateFieldCallback - Final data config: " . json_encode($data['config']));
 
           $this->field_service->updateField($field_id, $data);
 
