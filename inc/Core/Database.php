@@ -44,6 +44,12 @@ class Database {
         
         // Log activation
         error_log('CCC Plugin activated - Database version: ' . self::DB_VERSION);
+        
+        // Add hook to check database on every page load
+        add_action('init', [self::class, 'checkAndUpdateSchema']);
+        
+        // Also run immediately to ensure tables are created
+        self::checkAndUpdateSchema();
     }
     
     /**
@@ -60,25 +66,76 @@ class Database {
 
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-        self::createComponentsTable($components_table, $charset_collate);
+                self::createComponentsTable($components_table, $charset_collate);
         self::createFieldsTable($fields_table, $components_table, $charset_collate);
         self::createFieldValuesTable($field_values_table, $fields_table, $charset_collate);
-    }
+        
+        // Table for user accounts
+        $table_users = $wpdb->prefix . 'ccc_users';
+        $sql_users = "CREATE TABLE $table_users (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            email varchar(255) NOT NULL,
+            phone varchar(50) NOT NULL,
+            password varchar(255) NOT NULL,
+            role varchar(50) DEFAULT 'user',
+            status varchar(50) DEFAULT 'pending',
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY email (email)
+        ) $charset_collate;";
+        
+        // Table for tracking plugin installations
+        $table_installations = $wpdb->prefix . 'ccc_plugin_installations';
+        $sql_installations = "CREATE TABLE $table_installations (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            domain varchar(255) NOT NULL,
+            email varchar(255) NOT NULL,
+            user_id bigint(20) DEFAULT NULL,
+            license_key varchar(255) DEFAULT NULL,
+            proxy_api_key varchar(255) DEFAULT NULL,
+            status varchar(50) DEFAULT 'free',
+            installation_date datetime DEFAULT CURRENT_TIMESTAMP,
+            last_activity datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY domain (domain)
+        ) $charset_collate;";
+        
+        // Table for license management
+        $table_licenses = $wpdb->prefix . 'ccc_licenses';
+        $sql_licenses = "CREATE TABLE $table_licenses (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            installation_id mediumint(9) NOT NULL,
+            license_key varchar(255) NOT NULL,
+            proxy_api_key varchar(255) NOT NULL,
+            status varchar(50) DEFAULT 'pending',
+            created_date datetime DEFAULT CURRENT_TIMESTAMP,
+            activated_date datetime DEFAULT NULL,
+            expires_date datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY license_key (license_key),
+            FOREIGN KEY (installation_id) REFERENCES $table_installations(id)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql_users);
+        dbDelta($sql_installations);
+        dbDelta($sql_licenses);
+        
+        // Add default options
+        add_option('ccc_license_server_url', home_url());
+        // Note: No default admin email is set - must be configured manually
+      }
     
     /**
      * Check and update database schema if needed
-     * This now runs on every admin page load to catch new columns automatically
+     * This now runs on every page load to catch new tables and columns automatically
      */
     public static function checkAndUpdateSchema() {
-        // Only run in admin to avoid performance issues on frontend
-        if (!is_admin()) {
-            return;
-        }
-        
         $current_version = get_option('ccc_db_version', '0.0.0');
         
         // Always check for schema updates, not just version changes
-        if (version_compare($current_version, self::DB_VERSION, '<') || self::needsSchemaUpdate()) {
+        if (version_compare($current_version, self::DB_VERSION, '<') || self::needsSchemaUpdate() || self::needsNewTables()) {
             self::createTables(); // This will run dbDelta and update existing tables
             self::migrateData($current_version); // Run specific migrations
             update_option('ccc_db_version', self::DB_VERSION);
@@ -115,6 +172,29 @@ class Database {
                     error_log("CCC: Missing column {$column} in table {$table}");
                     return true;
                 }
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Check if new tables need to be created
+     */
+    private static function needsNewTables() {
+        global $wpdb;
+        
+        $required_tables = [
+            $wpdb->prefix . 'ccc_users',
+            $wpdb->prefix . 'ccc_plugin_installations',
+            $wpdb->prefix . 'ccc_licenses'
+        ];
+        
+        foreach ($required_tables as $table) {
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table'");
+            if (!$table_exists) {
+                error_log("CCC: Missing table {$table}");
+                return true;
             }
         }
         
@@ -559,5 +639,82 @@ class Database {
                 }
             }
         }
+    }
+    
+
+    
+    /**
+     * Force create new tables (can be called manually if needed)
+     */
+    public static function forceCreateNewTables() {
+        global $wpdb;
+        
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        // Table for user accounts
+        $table_users = $wpdb->prefix . 'ccc_users';
+        $sql_users = "CREATE TABLE IF NOT EXISTS $table_users (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            email varchar(255) NOT NULL,
+            phone varchar(50) NOT NULL,
+            password varchar(255) NOT NULL,
+            role varchar(50) DEFAULT 'user',
+            status varchar(50) DEFAULT 'pending',
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY email (email)
+        ) $charset_collate;";
+        
+        // Table for tracking plugin installations
+        $table_installations = $wpdb->prefix . 'ccc_plugin_installations';
+        $sql_installations = "CREATE TABLE IF NOT EXISTS $table_installations (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            domain varchar(255) NOT NULL,
+            email varchar(255) NOT NULL,
+            user_id bigint(20) DEFAULT NULL,
+            license_key varchar(255) DEFAULT NULL,
+            proxy_api_key varchar(255) DEFAULT NULL,
+            status varchar(50) DEFAULT 'free',
+            installation_date datetime DEFAULT CURRENT_TIMESTAMP,
+            last_activity datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY domain (domain)
+        ) $charset_collate;";
+        
+        // Table for license management
+        $table_licenses = $wpdb->prefix . 'ccc_licenses';
+        $sql_licenses = "CREATE TABLE IF NOT EXISTS $table_licenses (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            installation_id mediumint(9) NOT NULL,
+            license_key varchar(255) NOT NULL,
+            proxy_api_key varchar(255) NOT NULL,
+            status varchar(50) DEFAULT 'pending',
+            created_date datetime DEFAULT CURRENT_TIMESTAMP,
+            activated_date datetime DEFAULT NULL,
+            expires_date datetime DEFAULT NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY license_key (license_key),
+            FOREIGN KEY (installation_id) REFERENCES $table_installations(id)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        
+        $result1 = dbDelta($sql_users);
+        $result2 = dbDelta($sql_installations);
+        $result3 = dbDelta($sql_licenses);
+        
+        // Add default options if they don't exist
+        if (get_option('ccc_license_server_url') === false) {
+            add_option('ccc_license_server_url', home_url());
+        }
+        // Note: No default admin email is set - must be configured manually
+        // Note: No default admin users are created - must be created manually
+        
+        error_log("CCC: Force created new tables - Users: " . ($result1 ? 'OK' : 'Failed') . 
+                  ", Installations: " . ($result2 ? 'OK' : 'Failed') . 
+                  ", Licenses: " . ($result3 ? 'OK' : 'Failed'));
+        
+        return true;
     }
 }

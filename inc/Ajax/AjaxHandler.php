@@ -6,16 +6,56 @@ use CCC\Services\FieldService;
 use CCC\Models\Component;
 use CCC\Models\FieldValue;
 use CCC\Models\Field;
+use CCC\Services\AIService;
 
 defined('ABSPATH') || exit;
 
 class AjaxHandler {
   private $component_service;
   private $field_service;
+  private $ai_service;
 
   public function __construct() {
       $this->component_service = new ComponentService();
       $this->field_service = new FieldService();
+      $this->ai_service = new AIService();
+      
+      // Existing AJAX actions
+      add_action('wp_ajax_ccc_create_component', [$this, 'handleCreateComponent']);
+      add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']);
+      add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
+      add_action('wp_ajax_ccc_get_components', [$this, 'getComponents']);
+      add_action('wp_ajax_ccc_add_field', [$this, 'addFieldCallback']);
+      add_action('wp_ajax_ccc_update_field', [$this, 'updateFieldCallback']);
+      add_action('ajax_ccc_delete_field', [$this, 'deleteFieldCallback']);
+      add_action('wp_ajax_ccc_get_fields', [$this, 'getFieldsCallback']);
+      add_action('wp_ajax_ccc_update_component_fields', [$this, 'updateComponentFields']);
+      add_action('wp_ajax_ccc_update_field_from_hierarchy', [$this, 'updateFieldFromHierarchy']);
+      add_action('wp_ajax_ccc_search_posts', [$this, 'searchPosts']);
+      add_action('wp_ajax_ccc_get_posts_by_ids', [$this, 'getPostsByIds']);
+      add_action('wp_ajax_ccc_get_available_post_types', [$this, 'getAvailablePostTypes']);
+      add_action('wp_ajax_ccc_get_available_taxonomies', [$this, 'getAvailableTaxonomies']);
+      add_action('wp_ajax_ccc_get_taxonomies_for_post_type', [$this, 'getTaxonomiesForPostType']);
+      add_action('wp_ajax_ccc_check_number_uniqueness', [$this, 'checkNumberUniqueness']);
+      add_action('wp_ajax_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
+      add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
+      add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
+      add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
+      
+      // New AI-related AJAX actions
+      add_action('wp_ajax_ccc_generate_component_ai', [$this, 'generateComponentAI']);
+      add_action('wp_ajax_ccc_get_ai_api_info', [$this, 'getAiApiInfo']);
+      add_action('wp_ajax_ccc_update_ai_rate_limit', [$this, 'updateAiRateLimit']);
+      add_action('wp_ajax_ccc_get_ai_rate_limit_settings', [$this, 'getAiRateLimitSettings']);
+      add_action('wp_ajax_ccc_test_ai_connection', [$this, 'testAiConnection']);
+      add_action('wp_ajax_ccc_remove_ai_config', [$this, 'removeAiConfig']);
+      
+      // CSS Library AJAX actions
+      add_action('wp_ajax_ccc_get_css_library', [$this, 'getCssLibrary']);
+      add_action('wp_ajax_ccc_set_css_library', [$this, 'setCssLibrary']);
+      add_action('wp_ajax_ccc_get_css_library_info', [$this, 'getCssLibraryInfo']);
+      add_action('wp_ajax_ccc_get_css_library_warning', [$this, 'getCssLibraryWarning']);
+      add_action('wp_ajax_ccc_regenerate_templates', [$this, 'regenerateTemplates']);
   }
 
   public function init() {
@@ -1947,6 +1987,318 @@ class AjaxHandler {
           wp_send_json_success(['data' => $formatted_users]);
       } catch (Exception $e) {
           wp_send_json_error('Error getting users: ' . $e->getMessage());
+      }
+  }
+
+  /**
+   * Generate component using AI
+   */
+  public function generateComponentAI() {
+      // Security checks
+      if (!current_user_can('manage_options')) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+      }
+
+      // Verify nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_nonce')) {
+          wp_send_json_error(['message' => 'Security check failed']);
+      }
+
+      // Rate limiting check (additional security)
+      $user_ip = $this->getUserIP();
+      if ($this->isUserBlocked($user_ip)) {
+          wp_send_json_error(['message' => 'Too many requests from this IP. Please try again later.']);
+      }
+
+      $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+      $proxy_key = sanitize_text_field($_POST['proxy_key'] ?? '');
+      
+      if (empty($prompt)) {
+          wp_send_json_error(['message' => 'Prompt is required']);
+      }
+      
+      if (empty($proxy_key)) {
+          wp_send_json_error(['message' => 'Proxy key is required']);
+      }
+
+      // Additional input validation
+      if (strlen($prompt) > 1000) {
+          wp_send_json_error(['message' => 'Prompt too long. Maximum 1000 characters allowed.']);
+      }
+      
+      // Validate proxy key
+      if (!\CCC\Admin\AdminSettings::validateProxyKey($proxy_key)) {
+          wp_send_json_error(['message' => 'Invalid proxy key']);
+      }
+
+      try {
+          $result = $this->ai_service->generate_component_from_chatgpt($prompt, $proxy_key);
+          
+          if ($result['success']) {
+              wp_send_json_success([
+                  'message' => $result['message'],
+                  'component_id' => $result['component_id'],
+                  'fields_created' => $result['fields_created'],
+                  'component' => $result['component'],
+                  'fields' => $result['fields']
+              ]);
+          } else {
+              wp_send_json_error([
+                  'message' => $result['message'],
+                  'rate_limited' => $result['rate_limited'] ?? false,
+                  'reset_time' => $result['reset_time'] ?? null
+              ]);
+          }
+      } catch (Exception $e) {
+          wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get user IP address for security checks
+   */
+  private function getUserIP() {
+      $ip_keys = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'];
+      
+      foreach ($ip_keys as $key) {
+          if (array_key_exists($key, $_SERVER) === true) {
+              foreach (explode(',', $_SERVER[$key]) as $ip) {
+                  $ip = trim($ip);
+                  if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false) {
+                      return $ip;
+                  }
+              }
+          }
+      }
+      
+      return 'unknown';
+  }
+
+  /**
+   * Check if user IP is blocked due to excessive requests
+   */
+  private function isUserBlocked($user_ip) {
+      $block_key = 'ccc_ai_blocked_ips';
+      $blocked_ips = get_option($block_key, []);
+      
+      // Clean old blocked IPs (older than 1 hour)
+      $blocked_ips = array_filter($blocked_ips, function($block_data) {
+          return $block_data['blocked_until'] > time();
+      });
+      
+      update_option($block_key, $blocked_ips);
+      
+      return isset($blocked_ips[$user_ip]);
+  }
+
+  /**
+   * Get AI API information
+   */
+  public function getAiApiInfo() {
+      if (!current_user_can('manage_options')) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+      }
+
+      try {
+          $ai_service = new \CCC\Services\AIService();
+          $info = $ai_service->get_api_info();
+          
+          // Add configuration status
+          $info['configured'] = \CCC\Admin\AdminSettings::isAiReady();
+          
+          wp_send_json_success($info);
+      } catch (Exception $e) {
+          wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Update AI rate limit
+   */
+  public function updateAiRateLimit() {
+      if (!current_user_can('manage_options')) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+      }
+
+      $max_requests = intval($_POST['max_requests_per_hour'] ?? 50);
+      
+      if ($max_requests < 1 || $max_requests > 1000) {
+          wp_send_json_error(['message' => 'Rate limit must be between 1 and 1000 requests per hour']);
+      }
+
+      try {
+          $result = $this->ai_service->update_rate_limit($max_requests);
+          if ($result) {
+              wp_send_json_success(['message' => 'Rate limit updated successfully']);
+          } else {
+              wp_send_json_error(['message' => 'Failed to update rate limit']);
+          }
+      } catch (Exception $e) {
+          wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get AI rate limit settings
+   */
+  public function getAiRateLimitSettings() {
+      if (!current_user_can('manage_options')) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+      }
+
+      try {
+          $settings = $this->ai_service->get_rate_limit_settings();
+          wp_send_json_success($settings);
+      } catch (Exception $e) {
+          wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Test AI connection
+   */
+  public function testAiConnection() {
+      // Security checks
+      if (!current_user_can('manage_options')) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+      }
+
+      // Verify nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_ai_settings_nonce')) {
+          wp_send_json_error(['message' => 'Security check failed']);
+      }
+
+      $proxy_key = sanitize_text_field($_POST['proxy_key'] ?? '');
+      $api_key = sanitize_text_field($_POST['api_key'] ?? '');
+      
+      if (empty($proxy_key)) {
+          wp_send_json_error(['message' => 'Proxy key is required']);
+      }
+      
+      if (empty($api_key)) {
+          wp_send_json_error(['message' => 'API key is required']);
+      }
+
+      // Validate API key format
+      if (!$this->isValidApiKey($api_key)) {
+          wp_send_json_error(['message' => 'Invalid API key format']);
+      }
+
+      try {
+          // Test with a simple prompt
+          $test_prompt = "Generate a simple JSON for a contact form component with name, email, and message fields.";
+          
+          $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+              'headers' => [
+                  'Authorization' => 'Bearer ' . $api_key,
+                  'Content-Type' => 'application/json',
+                  'OpenAI-Beta' => 'assistants=v1'
+              ],
+              'body' => json_encode([
+                  'model' => 'gpt-4o-mini',
+                  'messages' => [
+                      [
+                          'role' => 'system',
+                          'content' => 'You are a helpful assistant that generates JSON for WordPress components. Only respond with valid JSON, no explanations.'
+                      ],
+                      [
+                          'role' => 'user',
+                          'content' => $test_prompt
+                      ]
+                  ],
+                  'max_tokens' => 200,
+                  'temperature' => 0.3
+              ]),
+              'timeout' => 30
+          ]);
+
+          if (is_wp_error($response)) {
+              wp_send_json_error(['message' => 'Network error: ' . $response->get_error_message()]);
+          }
+
+          $status_code = wp_remote_retrieve_response_code($response);
+          $body = wp_remote_retrieve_body($response);
+          $data = json_decode($body, true);
+
+          if ($status_code !== 200) {
+              $error_message = 'API Error';
+              if (isset($data['error']['message'])) {
+                  $error_message = $data['error']['message'];
+              } elseif (isset($data['error']['type'])) {
+                  $error_message = $data['error']['type'];
+              }
+              
+              wp_send_json_error(['message' => $error_message]);
+          }
+
+          // Check if response contains valid JSON
+          if (isset($data['choices'][0]['message']['content'])) {
+              $content = $data['choices'][0]['message']['content'];
+              
+              // Try to parse as JSON to verify it's valid
+              $json_data = json_decode($content, true);
+              if (json_last_error() === JSON_ERROR_NONE) {
+                  wp_send_json_success([
+                      'message' => 'Connection successful! API key is working correctly.',
+                      'response_preview' => substr($content, 0, 100) . '...'
+                  ]);
+              } else {
+                  wp_send_json_error(['message' => 'API responded but with invalid JSON format']);
+              }
+          } else {
+              wp_send_json_error(['message' => 'Unexpected API response format']);
+          }
+
+      } catch (Exception $e) {
+          wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Validate API key format
+   */
+  private function isValidApiKey($api_key) {
+      if (empty($api_key)) {
+          return false;
+      }
+      
+      // OpenAI API keys start with 'sk-' and are typically 51 characters long
+      if (strlen($api_key) < 20 || strlen($api_key) > 100) {
+          return false;
+      }
+      
+      // Check if it starts with 'sk-' (OpenAI format)
+      if (!preg_match('/^sk-[a-zA-Z0-9]{20,}$/', $api_key)) {
+          return false;
+      }
+      
+      return true;
+  }
+
+  /**
+   * Remove AI configuration
+   */
+  public function removeAiConfig() {
+      // Security checks
+      if (!current_user_can('manage_options')) {
+          wp_send_json_error(['message' => 'Insufficient permissions']);
+      }
+
+      // Verify nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_ai_settings_nonce')) {
+          wp_send_json_error(['message' => 'Security check failed']);
+      }
+
+      try {
+          $result = \CCC\Admin\AdminSettings::removeConfiguration();
+          
+          if ($result) {
+              wp_send_json_success(['message' => 'AI configuration removed successfully']);
+          } else {
+              wp_send_json_error(['message' => 'Failed to remove configuration']);
+          }
+      } catch (Exception $e) {
+          wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
       }
   }
 }

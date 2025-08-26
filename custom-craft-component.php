@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 2.0
+ * Version: 2.1
  * Author: Abhishek
 */
 
@@ -11,6 +11,11 @@ defined('ABSPATH') || exit;
 // Define plugin constants
 define('CCC_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CCC_PLUGIN_URL', plugin_dir_url(__FILE__));
+
+// Define constants for environment variables
+if (!defined('CCC_OPENAI_API_KEY')) {
+    define('CCC_OPENAI_API_KEY', getenv('CCC_OPENAI_API_KEY') ?: '');
+}
 
 // Load GLOBAL helper functions FIRST - before anything else
 $global_helpers_file = CCC_PLUGIN_PATH . 'inc/Helpers/GlobalHelpers.php';
@@ -79,12 +84,37 @@ function ccc_load_helpers() {
 // Initialize plugin very early
 add_action('plugins_loaded', 'custom_craft_component_init', 1);
 
+// Initialize Admin Login Manager
+add_action('plugins_loaded', function() {
+    if (class_exists('CCC\\Admin\\AdminLoginManager')) {
+        new \CCC\Admin\AdminLoginManager();
+    }
+    if (class_exists('CCC\\Admin\\MasterPasswordSettings')) {
+        new \CCC\Admin\MasterPasswordSettings();
+    }
+}, 2);
+
+// Force database check to ensure all tables exist
+add_action('plugins_loaded', function() {
+    if (class_exists('CCC\Core\Database')) {
+        \CCC\Core\Database::checkAndUpdateSchema();
+    }
+}, 2);
+
 function custom_craft_component_init() {
   // Ensure helper functions are loaded
   ccc_load_helpers();
   
   $plugin = new Plugin();
   $plugin->init();
+
+  // Initialize admin settings
+  if (is_admin()) {
+    new \CCC\Admin\AdminSettings();
+  }
+  
+  // Initialize REST API
+  new \CCC\Rest\RestController();
 
   if (is_admin()) {
       PucFactory::buildUpdateChecker(
@@ -111,4 +141,22 @@ add_action('admin_enqueue_scripts', function() {
     if (is_admin()) {
         wp_enqueue_editor();
     }
+});
+
+// Add manual database check endpoint (for debugging)
+add_action('wp_ajax_ccc_force_db_check', function() {
+    if (class_exists('CCC\Core\Database')) {
+        \CCC\Core\Database::forceCreateNewTables();
+        wp_die('Database tables created/updated successfully!');
+    }
+    wp_die('Database class not found!');
+});
+
+// Add manual database check endpoint for non-logged-in users (for debugging)
+add_action('wp_ajax_nopriv_ccc_force_db_check', function() {
+    if (class_exists('CCC\Core\Database')) {
+        \CCC\Core\Database::forceCreateNewTables();
+        wp_die('Database tables created/updated successfully!');
+    }
+    wp_die('Database class not found!');
 });
