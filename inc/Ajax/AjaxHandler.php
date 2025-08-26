@@ -14,8 +14,22 @@ class AjaxHandler {
   private $field_service;
 
   public function __construct() {
-      $this->component_service = new ComponentService();
-      $this->field_service = new FieldService();
+      try {
+          $this->component_service = new ComponentService();
+          $this->field_service = new FieldService();
+          error_log("CCC: AjaxHandler constructed successfully");
+      } catch (\Exception $e) {
+          error_log("CCC: Error constructing AjaxHandler: " . $e->getMessage());
+          error_log("CCC: Stack trace: " . $e->getTraceAsString());
+      }
+  }
+  
+  /**
+   * Simple test endpoint for debugging
+   */
+  public function testEndpoint() {
+      error_log("CCC: Test endpoint called successfully");
+      wp_send_json_success(['message' => 'Test endpoint working', 'timestamp' => current_time('mysql')]);
   }
 
   public function init() {
@@ -48,6 +62,9 @@ class AjaxHandler {
       add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
       add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
       add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
+      
+      // Add test endpoint for debugging
+      add_action('wp_ajax_ccc_test', [$this, 'testEndpoint']);
   }
 
   public function handleCreateComponent() {
@@ -1107,6 +1124,13 @@ class AjaxHandler {
 
   public function getPostsWithComponents() {
       try {
+          // Check if services are available
+          if (!$this->component_service || !$this->field_service) {
+              error_log("CCC AjaxHandler: Services not available");
+              wp_send_json_error(['message' => 'Plugin services not initialized properly.']);
+              return;
+          }
+          
           check_ajax_referer('ccc_nonce', 'nonce');
 
           // Check if we're requesting a specific post
@@ -1144,6 +1168,22 @@ class AjaxHandler {
           
           // Add error logging
           error_log("CCC AjaxHandler: getPostsWithComponents called for post_type: " . $post_type);
+          
+          // Check if database tables exist
+          global $wpdb;
+          $components_table = $wpdb->prefix . 'cc_components';
+          $fields_table = $wpdb->prefix . 'cc_fields';
+          $field_values_table = $wpdb->prefix . 'cc_field_values';
+          
+          $tables_exist = $wpdb->get_var("SHOW TABLES LIKE '{$components_table}'") == $components_table &&
+                         $wpdb->get_var("SHOW TABLES LIKE '{$fields_table}'") == $fields_table &&
+                         $wpdb->get_var("SHOW TABLES LIKE '{$field_values_table}'") == $field_values_table;
+          
+          if (!$tables_exist) {
+              error_log("CCC AjaxHandler: Required database tables don't exist");
+              wp_send_json_error(['message' => 'Database tables not found. Please reactivate the plugin.']);
+              return;
+          }
           
           $posts = get_posts([
               'post_type' => $post_type,

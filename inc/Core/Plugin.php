@@ -43,10 +43,11 @@ class Plugin {
        }
        
        // Check and update database schema on every admin page load for auto-updates
-       add_action('admin_init', ['\CCC\Core\Database', 'checkAndUpdateSchema'], 1);
+       // Temporarily disabled to debug AJAX issues
+       // add_action('admin_init', ['\CCC\Core\Database', 'checkAndUpdateSchema'], 1);
        
        // Also check on plugin init for safety
-       add_action('init', ['\CCC\Core\Database', 'checkAndUpdateSchema'], 1);
+       // add_action('init', ['\CCC\Core\Database', 'checkAndUpdateSchema'], 1);
        
        
        
