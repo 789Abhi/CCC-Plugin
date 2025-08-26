@@ -100,6 +100,13 @@ class RestController {
             $user_manager->trackInstallation($_SERVER['HTTP_HOST'], $email);
         }
         
+        // Report to central server
+        do_action('ccc_user_registered', $user_id, [
+            'email' => $email,
+            'phone' => $phone,
+            'role' => 'user'
+        ]);
+        
         // Set session
         if (!session_id()) {
             session_start();
@@ -251,90 +258,90 @@ class RestController {
 /**
  * Get all plugin installations (ADMIN/SUPER_ADMIN ONLY)
  */
-public function getAllInstallations($request) {
-    if (!session_id()) {
-        session_start();
+    public function getAllInstallations($request) {
+        if (!session_id()) {
+            session_start();
+        }
+        
+        if (!isset($_SESSION['ccc_user_id'])) {
+            return new \WP_Error('not_authenticated', 'Not authenticated', ['status' => 401]);
+        }
+        
+        $user_id = $_SESSION['ccc_user_id'];
+        
+        global $wpdb;
+        $table = $wpdb->prefix . 'ccc_users';
+        
+        $user = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE id = %d",
+            $user_id
+        ));
+        
+        if (!$user) {
+            return new \WP_Error('user_not_found', 'User not found', ['status' => 404]);
+        }
+        
+        // Check if user has admin privileges - ONLY admin and super_admin can see all installations
+        if (!in_array($user->role, ['admin', 'super_admin'])) {
+            return new \WP_Error('insufficient_permissions', 'Access denied. Only administrators can view installation data.', ['status' => 403]);
+        }
+        
+        $user_manager = new \CCC\Services\UserManager();
+        $installations = $user_manager->getAllInstallations($user->role);
+        
+        if ($installations === false) {
+            return new \WP_Error('access_denied', 'Access denied', ['status' => 403]);
+        }
+        
+        return [
+            'success' => true,
+            'installations' => $installations
+        ];
     }
-    
-    if (!isset($_SESSION['ccc_user_id'])) {
-        return new \WP_Error('not_authenticated', 'Not authenticated', ['status' => 401]);
-    }
-    
-    $user_id = $_SESSION['ccc_user_id'];
-    
-    global $wpdb;
-    $table = $wpdb->prefix . 'ccc_users';
-    
-    $user = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM $table WHERE id = %d",
-        $user_id
-    ));
-    
-    if (!$user) {
-        return new \WP_Error('user_not_found', 'User not found', ['status' => 404]);
-    }
-    
-    // Check if user has admin privileges
-    if (!in_array($user->role, ['admin', 'super_admin'])) {
-        return new \WP_Error('insufficient_permissions', 'Insufficient permissions to view all installations', ['status' => 403]);
-    }
-    
-    $user_manager = new \CCC\Services\UserManager();
-    $installations = $user_manager->getAllInstallations($user->role);
-    
-    if ($installations === false) {
-        return new \WP_Error('access_denied', 'Access denied', ['status' => 403]);
-    }
-    
-    return [
-        'success' => true,
-        'installations' => $installations
-    ];
-}
 
 /**
  * Get installation statistics (ADMIN/SUPER_ADMIN ONLY)
  */
-public function getInstallationStats($request) {
-    if (!session_id()) {
-        session_start();
+    public function getInstallationStats($request) {
+        if (!session_id()) {
+            session_start();
+        }
+        
+        if (!isset($_SESSION['ccc_user_id'])) {
+            return new \WP_Error('not_authenticated', 'Not authenticated', ['status' => 401]);
+        }
+        
+        $user_id = $_SESSION['ccc_user_id'];
+        
+        global $wpdb;
+        $table = $wpdb->prefix . 'ccc_users';
+        
+        $user = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table WHERE id = %d",
+            $user_id
+        ));
+        
+        if (!$user) {
+            return new \WP_Error('user_not_found', 'User not found', ['status' => 404]);
+        }
+        
+        // Check if user has admin privileges - ONLY admin and super_admin can see installation statistics
+        if (!in_array($user->role, ['admin', 'super_admin'])) {
+            return new \WP_Error('insufficient_permissions', 'Access denied. Only administrators can view installation statistics.', ['status' => 403]);
+        }
+        
+        $user_manager = new \CCC\Services\UserManager();
+        $stats = $user_manager->getInstallationStats($user->role);
+        
+        if ($stats === false) {
+            return new \WP_Error('access_denied', 'Access denied', ['status' => 403]);
+        }
+        
+        return [
+            'success' => true,
+            'stats' => $stats
+        ];
     }
-    
-    if (!isset($_SESSION['ccc_user_id'])) {
-        return new \WP_Error('not_authenticated', 'Not authenticated', ['status' => 401]);
-    }
-    
-    $user_id = $_SESSION['ccc_user_id'];
-    
-    global $wpdb;
-    $table = $wpdb->prefix . 'ccc_users';
-    
-    $user = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM $table WHERE id = %d",
-        $user_id
-    ));
-    
-    if (!$user) {
-        return new \WP_Error('user_not_found', 'User not found', ['status' => 404]);
-    }
-    
-    // Check if user has admin privileges
-    if (!in_array($user->role, ['admin', 'super_admin'])) {
-        return new \WP_Error('insufficient_permissions', 'Insufficient permissions to view installation statistics', ['status' => 403]);
-    }
-    
-    $user_manager = new \CCC\Services\UserManager();
-    $stats = $user_manager->getInstallationStats($user->role);
-    
-    if ($stats === false) {
-        return new \WP_Error('access_denied', 'Access denied', ['status' => 403]);
-    }
-    
-    return [
-        'success' => true,
-        'stats' => $stats
-    ];
-}
     
     private function getUserLicense($user_id) {
         global $wpdb;

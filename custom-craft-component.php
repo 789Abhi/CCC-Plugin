@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 2.1
+ * Version: 2.1.1
  * Author: Abhishek
 */
 
@@ -91,6 +91,9 @@ add_action('plugins_loaded', function() {
     }
     if (class_exists('CCC\\Admin\\MasterPasswordSettings')) {
         new \CCC\Admin\MasterPasswordSettings();
+    }
+    if (class_exists('CCC\\Services\\CentralLicenseServer')) {
+        new \CCC\Services\CentralLicenseServer();
     }
 }, 2);
 

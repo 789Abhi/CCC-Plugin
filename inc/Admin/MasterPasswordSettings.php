@@ -14,20 +14,26 @@ class MasterPasswordSettings {
         add_action('admin_init', [$this, 'registerSettings']);
         add_action('wp_ajax_ccc_create_initial_installation', [$this, 'createInitialInstallation']);
         add_action('wp_ajax_ccc_update_tracking_setting', [$this, 'updateTrackingSetting']);
+        add_action('wp_ajax_ccc_update_license_server_url', [$this, 'updateLicenseServerUrl']);
+        add_action('wp_ajax_ccc_update_central_reporting', [$this, 'updateCentralReporting']);
+        add_action('wp_ajax_ccc_test_central_connection', [$this, 'testCentralConnection']);
     }
     
     /**
      * Add settings page to admin menu
      */
     public function addSettingsPage() {
-        add_submenu_page(
-            'custom-craft-settings',
-            'Master Password Settings',
-            'Master Password',
-            'manage_options',
-            'custom-craft-settings-master-password',
-            [$this, 'renderSettingsPage']
-        );
+        // Only show to users with manage_options capability (admin/super_admin)
+        if (current_user_can('manage_options')) {
+            add_submenu_page(
+                'custom-craft-settings',
+                'Master Password Settings',
+                'Master Password',
+                'manage_options',
+                'custom-craft-settings-master-password',
+                [$this, 'renderSettingsPage']
+            );
+        }
     }
     
     /**
@@ -60,6 +66,10 @@ class MasterPasswordSettings {
      * Render the settings page
      */
     public function renderSettingsPage() {
+        // Double-check user permissions
+        if (!current_user_can('manage_options')) {
+            wp_die('Access denied. You do not have permission to view this page.');
+        }
         ?>
         <div class="wrap">
             <h1>🔐 Master Password Settings</h1>
@@ -138,6 +148,43 @@ class MasterPasswordSettings {
             </div>
             
             <div class="card" style="max-width: 600px; margin-top: 20px;">
+                <h3>🌍 Central Server Configuration</h3>
+                
+                <div class="form-table">
+                    <div class="form-field">
+                        <label for="license_server_url">Central License Server URL:</label>
+                        <input type="url" 
+                               id="license_server_url" 
+                               name="license_server_url" 
+                               class="regular-text" 
+                               placeholder="https://your-domain.com"
+                               value="<?php echo esc_attr(get_option('ccc_license_server_url', 'https://custom-craft-component-extended.local')); ?>">
+                        <p class="description">URL of your central license server where all installations report to.</p>
+                    </div>
+                    
+                    <div class="form-field">
+                        <button type="button" 
+                                id="test-connection" 
+                                class="button button-secondary">
+                            Test Connection
+                        </button>
+                        <p class="description">Test connection to the central license server.</p>
+                    </div>
+                    
+                    <div class="form-field">
+                        <label>
+                            <input type="checkbox" 
+                                   id="enable_central_reporting" 
+                                   name="enable_central_reporting" 
+                                   <?php checked(get_option('ccc_enable_central_reporting', true)); ?>>
+                            Enable central server reporting
+                        </label>
+                        <p class="description">When enabled, this installation will report to your central server.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card" style="max-width: 600px; margin-top: 20px;">
                 <h3>⚠️ Important Notes:</h3>
                 <ul>
                     <li><strong>Keep it secure:</strong> Don't share the master password with unauthorized users</li>
@@ -190,6 +237,61 @@ class MasterPasswordSettings {
                     } else {
                         console.error('Error updating tracking setting');
                     }
+                });
+            });
+            
+            // Handle license server URL change
+            $('#license_server_url').on('change', function() {
+                var url = $(this).val();
+                
+                $.post(ajaxurl, {
+                    action: 'ccc_update_license_server_url',
+                    url: url,
+                    nonce: '<?php echo wp_create_nonce('ccc_update_license_server_url'); ?>'
+                }, function(response) {
+                    if (response.success) {
+                        console.log('License server URL updated');
+                    } else {
+                        console.error('Error updating license server URL');
+                    }
+                });
+            });
+            
+            // Handle central reporting toggle
+            $('#enable_central_reporting').on('change', function() {
+                var enabled = $(this).is(':checked');
+                
+                $.post(ajaxurl, {
+                    action: 'ccc_update_central_reporting',
+                    enabled: enabled,
+                    nonce: '<?php echo wp_create_nonce('ccc_update_central_reporting'); ?>'
+                }, function(response) {
+                    if (response.success) {
+                        console.log('Central reporting setting updated');
+                    } else {
+                        console.error('Error updating central reporting setting');
+                    }
+                });
+            });
+            
+            // Handle test connection
+            $('#test-connection').on('click', function() {
+                var button = $(this);
+                var originalText = button.text();
+                
+                button.text('Testing...').prop('disabled', true);
+                
+                $.post(ajaxurl, {
+                    action: 'ccc_test_central_connection',
+                    nonce: '<?php echo wp_create_nonce('ccc_test_central_connection'); ?>'
+                }, function(response) {
+                    if (response.success) {
+                        alert('✅ Connection successful!\n\n' + response.data.message);
+                    } else {
+                        alert('❌ Connection failed!\n\n' + response.data.message);
+                    }
+                }).always(function() {
+                    button.text(originalText).prop('disabled', false);
                 });
             });
         });
@@ -285,5 +387,63 @@ class MasterPasswordSettings {
         $user_manager->setInstallationTracking($enabled);
         
         wp_send_json_success(['message' => 'Tracking setting updated successfully']);
+    }
+    
+    /**
+     * AJAX: Update license server URL
+     */
+    public function updateLicenseServerUrl() {
+        check_ajax_referer('ccc_update_license_server_url', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+        
+        $url = esc_url_raw($_POST['url']);
+        
+        if (empty($url)) {
+            wp_send_json_error(['message' => 'URL cannot be empty']);
+        }
+        
+        update_option('ccc_license_server_url', $url);
+        
+        wp_send_json_success(['message' => 'License server URL updated successfully']);
+    }
+    
+    /**
+     * AJAX: Update central reporting setting
+     */
+    public function updateCentralReporting() {
+        check_ajax_referer('ccc_update_central_reporting', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+        
+        $enabled = isset($_POST['enabled']) && $_POST['enabled'] === 'true';
+        
+        update_option('ccc_enable_central_reporting', $enabled);
+        
+        wp_send_json_success(['message' => 'Central reporting setting updated successfully']);
+    }
+    
+    /**
+     * AJAX: Test connection to central server
+     */
+    public function testCentralConnection() {
+        check_ajax_referer('ccc_test_central_connection', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => 'Insufficient permissions']);
+        }
+        
+        $central_server = new \CCC\Services\CentralLicenseServer();
+        $result = $central_server->testConnection();
+        
+        if ($result['success']) {
+            wp_send_json_success(['message' => $result['message']]);
+        } else {
+            wp_send_json_error(['message' => $result['message']]);
+        }
     }
 }
