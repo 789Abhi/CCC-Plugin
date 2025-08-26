@@ -616,27 +616,60 @@ class AjaxHandler {
   }
 
   public function getPosts() {
-      check_ajax_referer('ccc_nonce', 'nonce');
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
 
-      $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
-      $posts = get_posts([
-          'post_type' => $post_type,
-          'post_status' => 'publish',
-          'numberposts' => -1,
-          'orderby' => 'title',
-          'order' => 'ASC'
-      ]);
+          $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
+          
+          // Add error logging
+          error_log("CCC AjaxHandler: getPosts called for post_type: " . $post_type);
+          
+          $posts = get_posts([
+              'post_type' => $post_type,
+              'post_status' => 'publish',
+              'numberposts' => -1,
+              'orderby' => 'title',
+              'order' => 'ASC'
+          ]);
 
-      $post_list = array_map(function ($post) {
-          $components = get_post_meta($post->ID, '_ccc_components', true);
-          return [
-              'id' => $post->ID,
-              'title' => $post->post_title,
-              'has_components' => !empty($components)
-          ];
-      }, $posts);
+          if (is_wp_error($posts)) {
+              error_log("CCC AjaxHandler: get_posts() returned WP_Error: " . $posts->get_error_message());
+              wp_send_json_error(['message' => 'Failed to retrieve posts: ' . $posts->get_error_message()]);
+              return;
+          }
 
-      wp_send_json_success(['posts' => $post_list]);
+          if (!is_array($posts)) {
+              error_log("CCC AjaxHandler: get_posts() returned non-array: " . gettype($posts));
+              wp_send_json_error(['message' => 'Invalid posts data received']);
+              return;
+          }
+
+          $post_list = array_map(function ($post) {
+              try {
+                  $components = get_post_meta($post->ID, '_ccc_components', true);
+                  return [
+                      'id' => $post->ID,
+                      'title' => $post->post_title,
+                      'has_components' => !empty($components)
+                  ];
+              } catch (\Exception $e) {
+                  error_log("CCC AjaxHandler: Error processing post {$post->ID}: " . $e->getMessage());
+                  return [
+                      'id' => $post->ID,
+                      'title' => $post->post_title,
+                      'has_components' => false
+                  ];
+              }
+          }, $posts);
+
+          error_log("CCC AjaxHandler: getPosts successful, returning " . count($post_list) . " posts");
+          wp_send_json_success(['posts' => $post_list]);
+
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getPosts: " . $e->getMessage());
+          error_log("CCC AjaxHandler: Exception trace: " . $e->getTraceAsString());
+          wp_send_json_error(['message' => 'An error occurred while retrieving posts: ' . $e->getMessage()]);
+      }
   }
 
   public function deleteComponent() {
@@ -1000,127 +1033,188 @@ class AjaxHandler {
   }
 
   private function getFieldValuesForPost($post_id) {
-      global $wpdb;
-      $field_values_table = $wpdb->prefix . 'cc_field_values';
-      $fields_table = $wpdb->prefix . 'cc_fields';
-      
-      $values = $wpdb->get_results(
-          $wpdb->prepare(
-              "SELECT field_id, instance_id, value FROM $field_values_table WHERE post_id = %d",
-              $post_id
-          ),
-          ARRAY_A
-      );
-      
-      $field_values = [];
-      foreach ($values as $value) {
-          $instance_id = $value['instance_id'] ?: 'default';
-          $field_id = $value['field_id'];
-          $raw_value = $value['value'];
+      try {
+          global $wpdb;
+          $field_values_table = $wpdb->prefix . 'cc_field_values';
+          $fields_table = $wpdb->prefix . 'cc_fields';
           
-          // Fetch field type and config
-          $field = \CCC\Models\Field::find($field_id);
-          if ($field) {
-              $field_type = $field->getType();
-              if ($field_type === 'select') {
-                  $config = $field->getConfig();
-                  if (is_string($config)) {
-                      $config = json_decode($config, true);
-                  }
-                  $multiple = isset($config['multiple']) && $config['multiple'];
-                  if ($multiple) {
-                      $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+          // Check if tables exist before querying
+          $field_values_exists = $wpdb->get_var("SHOW TABLES LIKE '$field_values_table'") == $field_values_table;
+          $fields_exists = $wpdb->get_var("SHOW TABLES LIKE '$fields_table'") == $fields_table;
+          
+          if (!$field_values_exists || !$fields_exists) {
+              error_log("CCC AjaxHandler: Required tables don't exist for getFieldValuesForPost");
+              return [];
+          }
+          
+          $values = $wpdb->get_results(
+              $wpdb->prepare(
+                  "SELECT field_id, instance_id, value FROM $field_values_table WHERE post_id = %d",
+                  $post_id
+              ),
+              ARRAY_A
+          );
+          
+          if (is_wp_error($values)) {
+              error_log("CCC AjaxHandler: Database error in getFieldValuesForPost: " . $values->get_error_message());
+              return [];
+          }
+          
+          $field_values = [];
+          foreach ($values as $value) {
+              try {
+                  $instance_id = $value['instance_id'] ?: 'default';
+                  $field_id = $value['field_id'];
+                  $raw_value = $value['value'];
+                  
+                  // Fetch field type and config
+                  $field = \CCC\Models\Field::find($field_id);
+                  if ($field) {
+                      $field_type = $field->getType();
+                      if ($field_type === 'select') {
+                          $config = $field->getConfig();
+                          if (is_string($config)) {
+                              $config = json_decode($config, true);
+                          }
+                          $multiple = isset($config['multiple']) && $config['multiple'];
+                          if ($multiple) {
+                              $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+                          } else {
+                              $field_values[$instance_id][$field_id] = $raw_value;
+                          }
+                      } elseif ($field_type === 'checkbox') {
+                          // Checkbox fields are always multiple by default
+                          $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
+                      } else {
+                          $field_values[$instance_id][$field_id] = $raw_value;
+                      }
                   } else {
                       $field_values[$instance_id][$field_id] = $raw_value;
                   }
-              } elseif ($field_type === 'checkbox') {
-                  // Checkbox fields are always multiple by default
-                  $field_values[$instance_id][$field_id] = $raw_value ? explode(',', $raw_value) : [];
-              } else {
-                  $field_values[$instance_id][$field_id] = $raw_value;
+              } catch (\Exception $e) {
+                  error_log("CCC AjaxHandler: Error processing field value: " . $e->getMessage());
+                  // Continue with other values
               }
-          } else {
-              $field_values[$instance_id][$field_id] = $raw_value;
           }
+          
+          return $field_values;
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getFieldValuesForPost: " . $e->getMessage());
+          return [];
       }
-      
-      return $field_values;
   }
 
   public function getPostsWithComponents() {
-      check_ajax_referer('ccc_nonce', 'nonce');
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
 
-      // Check if we're requesting a specific post
-      $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
-      
-      if ($post_id) {
-          // Return components for a specific post
-          $post = get_post($post_id);
-          if (!$post) {
-              wp_send_json_error(['message' => 'Post not found']);
+          // Check if we're requesting a specific post
+          $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
+          
+          if ($post_id) {
+              // Return components for a specific post
+              $post = get_post($post_id);
+              if (!$post) {
+                  wp_send_json_error(['message' => 'Post not found']);
+                  return;
+              }
+              $components = get_post_meta($post_id, '_ccc_components', true);
+              if (!is_array($components)) {
+                  $components = [];
+              }
+              
+              // Get field values for this post with proper instance_id handling
+              $field_values = $this->getFieldValuesForPost($post_id);
+              
+              // Sort components by 'order' property before returning
+              usort($components, function($a, $b) {
+                  return ($a['order'] ?? 0) - ($b['order'] ?? 0);
+              });
+              
+              wp_send_json_success([
+                  'components' => $components,
+                  'field_values' => $field_values
+              ]);
               return;
           }
-          $components = get_post_meta($post_id, '_ccc_components', true);
-          if (!is_array($components)) {
-              $components = [];
-          }
+
+          // Return list of posts with components (original functionality)
+          $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
           
-          // Get field values for this post with proper instance_id handling
-          $field_values = $this->getFieldValuesForPost($post_id);
+          // Add error logging
+          error_log("CCC AjaxHandler: getPostsWithComponents called for post_type: " . $post_type);
           
-          // Sort components by 'order' property before returning
-          usort($components, function($a, $b) {
-              return ($a['order'] ?? 0) - ($b['order'] ?? 0);
-          });
-          
-          wp_send_json_success([
-              'components' => $components,
-              'field_values' => $field_values
+          $posts = get_posts([
+              'post_type' => $post_type,
+              'post_status' => 'publish',
+              'numberposts' => -1,
+              'orderby' => 'title',
+              'order' => 'ASC'
           ]);
-          return;
-      }
 
-      // Return list of posts with components (original functionality)
-      $post_type = sanitize_text_field($_POST['post_type'] ?? 'page');
-      $posts = get_posts([
-          'post_type' => $post_type,
-          'post_status' => 'publish',
-          'numberposts' => -1,
-          'orderby' => 'title',
-          'order' => 'ASC'
-      ]);
-
-      $post_list = array_map(function ($post) {
-          $components = get_post_meta($post->ID, '_ccc_components', true);
-          $assigned_components = [];
-          $assigned_via_main_interface = get_post_meta($post->ID, '_ccc_assigned_via_main_interface', true);
-          
-          if (is_array($components)) {
-              $assigned_components = array_map(function($comp) {
-                  return intval($comp['id']);
-              }, $components);
+          if (is_wp_error($posts)) {
+              error_log("CCC AjaxHandler: get_posts() returned WP_Error: " . $posts->get_error_message());
+              wp_send_json_error(['message' => 'Failed to retrieve posts: ' . $posts->get_error_message()]);
+              return;
           }
-          
-          $result = [
-              'id' => $post->ID,
-              'title' => $post->post_title,
-              'status' => $post->post_status,
-              'has_components' => !empty($components),
-              'assigned_components' => array_unique($assigned_components),
-              'assigned_via_main_interface' => !empty($assigned_via_main_interface)
-          ];
-          
-          // DEBUG: Log the decision making for each post
-          error_log("CCC DEBUG getPostsWithComponents - Post {$post->ID} ({$post->post_title}):");
-          error_log("  - Has components: " . ($result['has_components'] ? 'YES' : 'NO'));
-          error_log("  - Assigned via main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO'));
-          error_log("  - Will be selected in main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO')); // Changed: only depends on main interface flag
-          error_log("  - Component count: " . count($components));
-          
-          return $result;
-      }, $posts);
 
-      wp_send_json_success(['posts' => $post_list]);
+          if (!is_array($posts)) {
+              error_log("CCC AjaxHandler: get_posts() returned non-array: " . gettype($posts));
+              wp_send_json_error(['message' => 'Invalid posts data received']);
+              return;
+          }
+
+          $post_list = array_map(function ($post) {
+              try {
+                  $components = get_post_meta($post->ID, '_ccc_components', true);
+                  $assigned_components = [];
+                  $assigned_via_main_interface = get_post_meta($post->ID, '_ccc_assigned_via_main_interface', true);
+                  
+                  if (is_array($components)) {
+                      $assigned_components = array_map(function($comp) {
+                          return intval($comp['id']);
+                      }, $components);
+                  }
+                  
+                  $result = [
+                      'id' => $post->ID,
+                      'title' => $post->post_title,
+                      'status' => $post->post_status,
+                      'has_components' => !empty($components),
+                      'assigned_components' => array_unique($assigned_components),
+                      'assigned_via_main_interface' => !empty($assigned_via_main_interface)
+                  ];
+                  
+                  // DEBUG: Log the decision making for each post
+                  error_log("CCC DEBUG getPostsWithComponents - Post {$post->ID} ({$post->post_title}):");
+                  error_log("  - Has components: " . ($result['has_components'] ? 'YES' : 'NO'));
+                  error_log("  - Assigned via main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO'));
+                  error_log("  - Will be selected in main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO')); // Changed: only depends on main interface flag
+                  error_log("  - Component count: " . count($components));
+                  
+                  return $result;
+              } catch (\Exception $e) {
+                  error_log("CCC AjaxHandler: Error processing post {$post->ID}: " . $e->getMessage());
+                  return [
+                      'id' => $post->ID,
+                      'title' => $post->post_title,
+                      'status' => $post->post_status,
+                      'has_components' => false,
+                      'assigned_components' => [],
+                      'assigned_via_main_interface' => false
+                  ];
+              }
+          }, $posts);
+
+          error_log("CCC AjaxHandler: getPostsWithComponents successful, returning " . count($post_list) . " posts");
+          wp_send_json_success(['posts' => $post_list]);
+
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getPostsWithComponents: " . $e->getMessage());
+          error_log("CCC AjaxHandler: Exception trace: " . $e->getTraceAsString());
+          wp_send_json_error(['message' => 'An error occurred while retrieving posts: ' . $e->getMessage()]);
+      }
   }
 
   public function saveComponentAssignments() {

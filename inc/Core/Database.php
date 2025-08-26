@@ -96,6 +96,15 @@ class Database {
         $fields_table = $wpdb->prefix . 'cc_fields';
         $field_values_table = $wpdb->prefix . 'cc_field_values';
         
+        // First check if tables exist
+        $tables_exist = $wpdb->get_var("SHOW TABLES LIKE '{$fields_table}'") == $fields_table &&
+                       $wpdb->get_var("SHOW TABLES LIKE '{$field_values_table}'") == $field_values_table;
+        
+        if (!$tables_exist) {
+            error_log("CCC: Required tables don't exist, schema update needed");
+            return true;
+        }
+        
         // Check if required columns exist
         $required_columns = [
             $fields_table => ['placeholder', 'parent_field_id'],
@@ -104,15 +113,20 @@ class Database {
         
         foreach ($required_columns as $table => $columns) {
             foreach ($columns as $column) {
-                $column_exists = $wpdb->get_results(
-                    $wpdb->prepare(
-                        "SHOW COLUMNS FROM {$table} LIKE %s",
-                        $column
-                    )
-                );
-                
-                if (empty($column_exists)) {
-                    error_log("CCC: Missing column {$column} in table {$table}");
+                try {
+                    $column_exists = $wpdb->get_results(
+                        $wpdb->prepare(
+                            "SHOW COLUMNS FROM {$table} LIKE %s",
+                            $column
+                        )
+                    );
+                    
+                    if (empty($column_exists)) {
+                        error_log("CCC: Missing column {$column} in table {$table}");
+                        return true;
+                    }
+                } catch (Exception $e) {
+                    error_log("CCC: Error checking column {$column} in table {$table}: " . $e->getMessage());
                     return true;
                 }
             }

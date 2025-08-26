@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 2.5
+ * Version: 2.6
  * Author: Abhishek
 */
 
@@ -46,8 +46,6 @@ require_once CCC_PLUGIN_PATH . 'plugin-update-checker/plugin-update-checker.php'
 
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 use CCC\Core\Plugin;
-
-register_activation_hook(__FILE__, ['CCC\Core\Database', 'activate']);
 
 // Create database tables on activation
 register_activation_hook(__FILE__, function() {
