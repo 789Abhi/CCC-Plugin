@@ -50,6 +50,7 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_get_components', [$this, 'getComponents']);
       add_action('wp_ajax_ccc_get_component_fields', [$this, 'getComponentFields']);
       add_action('wp_ajax_ccc_add_field', [$this, 'addFieldCallback']);
+      add_action('wp_ajax_ccc_create_field', [$this, 'createFieldCallback']);
       add_action('wp_ajax_ccc_update_field', [$this, 'updateFieldCallback']);
       add_action('wp_ajax_ccc_get_posts', [$this, 'getPosts']);
       add_action('wp_ajax_ccc_get_posts_with_components', [$this, 'getPostsWithComponents']);
@@ -760,6 +761,71 @@ class AjaxHandler {
 
       } catch (\Exception $e) {
           error_log("Exception in addFieldCallback: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Create field callback for import functionality
+   */
+  public function createFieldCallback() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $label = sanitize_text_field($_POST['label'] ?? '');
+          $name = sanitize_text_field($_POST['name'] ?? '');
+          $type = sanitize_text_field($_POST['type'] ?? '');
+          $component_id = intval($_POST['component_id'] ?? 0);
+          $required = isset($_POST['required']) ? (bool) $_POST['required'] : false;
+          $children = isset($_POST['children']) ? json_decode(wp_unslash($_POST['children']), true) : null;
+
+          if (empty($label) || empty($name) || empty($type) || empty($component_id)) {
+              wp_send_json_error(['message' => 'Missing required fields.']);
+              return;
+          }
+
+          // Calculate the next field order
+          global $wpdb;
+          $fields_table = $wpdb->prefix . 'cc_fields';
+          $max_order = $wpdb->get_var($wpdb->prepare(
+              "SELECT MAX(field_order) FROM $fields_table WHERE component_id = %d",
+              $component_id
+          ));
+          $next_order = ($max_order !== null) ? intval($max_order) + 1 : 0;
+
+          $config = [];
+          if ($type === 'repeater' && $children && is_array($children)) {
+              $config = [
+                  'max_sets' => 0,
+                  'children' => $children
+              ];
+          }
+
+          $field = new \CCC\Models\Field([
+              'component_id' => $component_id,
+              'label' => $label,
+              'name' => $name,
+              'type' => $type,
+              'config' => json_encode($config),
+              'field_order' => $next_order,
+              'required' => $required
+          ]);
+
+          if ($field->save()) {
+              // If repeater, save nested fields as real DB rows
+              if ($type === 'repeater' && $children && is_array($children)) {
+                  \CCC\Core\Database::migrateNestedFieldsToRowsRecursive($component_id, $field->getId(), $children);
+              }
+              
+              wp_send_json_success(['message' => 'Field created successfully.']);
+          } else {
+              global $wpdb;
+              error_log('CCC AjaxHandler: Failed to create field. DB error: ' . $wpdb->last_error);
+              wp_send_json_error(['message' => 'Failed to create field.']);
+          }
+
+      } catch (\Exception $e) {
+          error_log("Exception in createFieldCallback: " . $e->getMessage());
           wp_send_json_error(['message' => $e->getMessage()]);
       }
   }
