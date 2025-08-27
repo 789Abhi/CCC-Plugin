@@ -74,6 +74,9 @@ class Component {
             unlink($template_file);
         }
 
+        // Mark this component as deleted in all posts that have it assigned
+        $this->markComponentAsDeletedInPosts();
+
         return $result !== false;
     }
     
@@ -102,6 +105,55 @@ class Component {
                 "DELETE FROM {$wpdb->prefix}cc_field_values WHERE field_id IN ($placeholders)",
                 ...$field_ids
             ));
+        }
+    }
+
+    /**
+     * Mark this component as deleted in all posts that have it assigned
+     */
+    private function markComponentAsDeletedInPosts() {
+        // Get all posts that have this component assigned
+        $posts = get_posts([
+            'post_type' => ['post', 'page'],
+            'post_status' => 'any',
+            'numberposts' => -1,
+            'meta_query' => [
+                [
+                    'key' => '_ccc_components',
+                    'value' => $this->id,
+                    'compare' => 'LIKE'
+                ]
+            ]
+        ]);
+
+        foreach ($posts as $post) {
+            $components = get_post_meta($post->ID, '_ccc_components', true);
+            if (is_array($components)) {
+                // Find and mark this component as deleted
+                foreach ($components as &$component) {
+                    if (is_array($component) && isset($component['id']) && $component['id'] == $this->id) {
+                        $component['isDeleted'] = true;
+                        $component['deleted_at'] = current_time('mysql');
+                        // Don't break here - we want to mark ALL instances of this component
+                    }
+                }
+                
+                // Update the post meta
+                update_post_meta($post->ID, '_ccc_components', $components);
+                
+                // Also update component details
+                $component_details = get_post_meta($post->ID, '_ccc_component_details', true);
+                if (is_array($component_details)) {
+                    foreach ($component_details as &$detail) {
+                        if (isset($detail['id']) && $detail['id'] == $this->id) {
+                            $detail['isDeleted'] = true;
+                            $detail['deleted_at'] = current_time('mysql');
+                            // Don't break here - we want to mark ALL instances of this component
+                        }
+                    }
+                    update_post_meta($post->ID, '_ccc_component_details', $component_details);
+                }
+            }
         }
     }
 

@@ -67,7 +67,7 @@ class AjaxHandler {
       add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
       add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
       add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
-      add_action('wp_ajax_ccc_fix_handle_mismatches', [$this, 'fixHandleMismatches']);
+      
       
       // Add test endpoint for debugging
       add_action('wp_ajax_ccc_test', [$this, 'testEndpoint']);
@@ -223,11 +223,36 @@ class AjaxHandler {
                           'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false
                       ];
                       error_log("CCC DEBUG: Updated component {$component_id} with database data");
-                  } else {
-                      // Component not found in database, keep stored data
-                      error_log("CCC DEBUG: Component {$component_id} not found in database, keeping stored data");
-                      $updated_components[] = $component;
-                  }
+                                        } else {
+                          // Component not found in database - check if we have stored data
+                          if (isset($component['name']) && isset($component['handle_name'])) {
+                              error_log("CCC DEBUG: Component {$component_id} not found in database, but has stored data - marking as deleted");
+                              // We have stored component data, but since the component is not in the database,
+                              // it could be either renamed or deleted. For now, we'll mark it as deleted
+                              // to ensure it shows with the red background. If it's actually renamed,
+                              // the updateComponentAssignments method should have updated the post meta.
+                              $updated_components[] = [
+                                  'id' => $component_id,
+                                  'name' => $component['name'],
+                                  'handle_name' => $component['handle_name'],
+                                  'order' => intval($component['order'] ?? 0),
+                                  'instance_id' => $component['instance_id'] ?? '',
+                                  'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                  'isDeleted' => true
+                              ];
+                          } else {
+                              error_log("CCC DEBUG: Component {$component_id} not found in database and no stored data - marking as deleted");
+                              // No stored data, mark as deleted
+                              $updated_components[] = [
+                                  'id' => $component_id,
+                                  'name' => $component['name'] ?? 'Deleted Component',
+                                  'handle_name' => $component['handle_name'] ?? 'deleted_component',
+                                  'instance_id' => $component['instance_id'] ?? '',
+                                  'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                  'isDeleted' => true
+                              ];
+                          }
+                      }
               } elseif (is_numeric($component)) {
                   // Legacy format: just the ID, convert to new format
                   $component_id = $component;
@@ -250,7 +275,8 @@ class AjaxHandler {
                           'handle_name' => 'deleted_component',
                           'order' => 0,
                           'instance_id' => '',
-                          'isHidden' => false
+                          'isHidden' => false,
+                          'isDeleted' => true
                       ];
                       error_log("CCC DEBUG: Component {$component_id} not found, marking as deleted");
                   }
@@ -350,9 +376,40 @@ class AjaxHandler {
                           ];
                           error_log("CCC DEBUG: Updated component {$component_id} with database data");
                       } else {
-                          // Component not found in database, keep stored data
-                          error_log("CCC DEBUG: Component {$component_id} not found in database, keeping stored data");
-                          $updated_components[] = $component;
+                          // Component not found in database - check if we have stored data
+                          if (isset($component['name']) && isset($component['handle_name'])) {
+                              error_log("CCC DEBUG: Component {$component_id} not found in database, but has stored data");
+                              
+                              // Check if the component is marked as deleted in post meta
+                              if (isset($component['isDeleted']) && $component['isDeleted']) {
+                                  error_log("CCC DEBUG: Component {$component_id} is marked as deleted in post meta");
+                                  $updated_components[] = [
+                                      'id' => $component_id,
+                                      'name' => $component['name'],
+                                      'handle_name' => $component['handle_name'],
+                                      'order' => intval($component['order'] ?? 0),
+                                      'instance_id' => $component['instance_id'] ?? '',
+                                      'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                      'isDeleted' => true
+                                  ];
+                              } else {
+                                  error_log("CCC DEBUG: Component {$component_id} has stored data but not marked as deleted - treating as renamed");
+                                  // We have stored component data, use it (component might be renamed)
+                                  $updated_components[] = $component;
+                              }
+                          } else {
+                              error_log("CCC DEBUG: Component {$component_id} not found in database and no stored data - marking as deleted");
+                              // No stored data, mark as deleted
+                              $updated_components[] = [
+                                  'id' => $component_id,
+                                  'name' => $component['name'] ?? 'Deleted Component',
+                                  'handle_name' => $component['handle_name'] ?? 'deleted_component',
+                                  'order' => intval($component['order'] ?? 0),
+                                  'instance_id' => $component['instance_id'] ?? '',
+                                  'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                  'isDeleted' => true
+                              ];
+                          }
                       }
                   } elseif (is_numeric($component)) {
                       // Legacy format: just the ID, convert to new format
@@ -376,7 +433,8 @@ class AjaxHandler {
                               'handle_name' => 'deleted_component',
                               'order' => 0,
                               'instance_id' => '',
-                              'isHidden' => false
+                              'isHidden' => false,
+                              'isDeleted' => true
                           ];
                           error_log("CCC DEBUG: Component {$component_id} not found, marking as deleted");
                       }
@@ -1476,16 +1534,32 @@ class AjaxHandler {
                           if (isset($component['name']) && isset($component['handle_name'])) {
                               error_log("CCC DEBUG: Using stored component data for component {$component_id}");
                               error_log("CCC DEBUG: Stored data - Name: {$component['name']}, Handle: {$component['handle_name']}");
-                              // We have stored component data, use it (component might be renamed)
-                              $processed_components[] = [
-                                  'id' => $component_id,
-                                  'name' => $component['name'],
-                                  'handle_name' => $component['handle_name'],
-                                  'order' => intval($component['order'] ?? 0),
-                                  'instance_id' => $component['instance_id'] ?? '',
-                                  'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
-                                  'isDeleted' => false // Not deleted, just not found in DB lookup
-                              ];
+                              
+                              // Check if the component is marked as deleted in post meta
+                              if (isset($component['isDeleted']) && $component['isDeleted']) {
+                                  error_log("CCC DEBUG: Component {$component_id} is marked as deleted in post meta");
+                                  $processed_components[] = [
+                                      'id' => $component_id,
+                                      'name' => $component['name'],
+                                      'handle_name' => $component['handle_name'],
+                                      'order' => intval($component['order'] ?? 0),
+                                      'instance_id' => $component['instance_id'] ?? '',
+                                      'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                      'isDeleted' => true
+                                  ];
+                              } else {
+                                  error_log("CCC DEBUG: Component {$component_id} has stored data but not marked as deleted - treating as renamed");
+                                  // We have stored component data, use it (component might be renamed)
+                                  $processed_components[] = [
+                                      'id' => $component_id,
+                                      'name' => $component['name'],
+                                      'handle_name' => $component['handle_name'],
+                                      'order' => intval($component['order'] ?? 0),
+                                      'instance_id' => $component['instance_id'] ?? '',
+                                      'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                      'isDeleted' => false // Not deleted, just not found in DB lookup
+                                  ];
+                              }
                           } else {
                               error_log("CCC DEBUG: No stored data for component {$component_id}, marking as deleted");
                               error_log("CCC DEBUG: Component entry structure: " . print_r($component, true));
@@ -2444,31 +2518,5 @@ class AjaxHandler {
       }
   }
   
-  /**
-   * Fix handle mismatches between database and template files
-   */
-  public function fixHandleMismatches() {
-      try {
-          check_ajax_referer('ccc_nonce', 'nonce');
-          
-          $result = $this->component_service->fixHandleMismatches();
-          
-          if ($result['fixed'] > 0) {
-              wp_send_json_success([
-                  'message' => $result['message'],
-                  'fixed_count' => $result['fixed'],
-                  'errors' => $result['errors']
-              ]);
-          } else {
-              wp_send_json_success([
-                  'message' => 'No handle mismatches found',
-                  'fixed_count' => 0
-              ]);
-          }
-          
-      } catch (\Exception $e) {
-          error_log("Exception in fixHandleMismatches: " . $e->getMessage());
-          wp_send_json_error(['message' => $e->getMessage()]);
-      }
-  }
+
 }

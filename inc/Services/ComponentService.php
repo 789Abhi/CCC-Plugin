@@ -561,54 +561,5 @@ class ComponentService {
         return count($posts);
     }
     
-    /**
-     * Fix handle mismatches between database and template files
-     * This method will update component handles in the database to match actual template files
-     */
-    public function fixHandleMismatches() {
-        $theme_dir = get_stylesheet_directory();
-        $templates_dir = $theme_dir . '/ccc-templates';
-        
-        if (!is_dir($templates_dir)) {
-            return ['fixed' => 0, 'message' => 'Template directory not found'];
-        }
-        
-        $template_files = glob($templates_dir . '/*.php');
-        $components = Component::all();
-        $fixed_count = 0;
-        $errors = [];
-        
-        foreach ($components as $component) {
-            $current_handle = $component->getHandleName();
-            $template_file = $templates_dir . '/' . $current_handle . '.php';
-            
-            // If template file doesn't exist with current handle, check if it exists with a different name
-            if (!file_exists($template_file)) {
-                foreach ($template_files as $file) {
-                    $filename = basename($file, '.php');
-                    if ($filename !== $current_handle) {
-                        // Found a potential match, update the handle
-                        try {
-                            $component->setHandleName($filename);
-                            if ($component->save()) {
-                                $fixed_count++;
-                                error_log("CCC ComponentService: Fixed handle mismatch for component {$component->getId()}: {$current_handle} → {$filename}");
-                            } else {
-                                $errors[] = "Failed to save component {$component->getId()}";
-                            }
-                        } catch (\Exception $e) {
-                            $errors[] = "Error updating component {$component->getId()}: " . $e->getMessage();
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        
-        return [
-            'fixed' => $fixed_count,
-            'errors' => $errors,
-            'message' => "Fixed {$fixed_count} handle mismatches"
-        ];
-    }
+
 }
