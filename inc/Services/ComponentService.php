@@ -33,7 +33,7 @@ class ComponentService {
 
     public function createComponent($name, $handle) {
         if (Component::handleExists($handle)) {
-            throw new \Exception('Handle already exists. Please choose a different one.');
+            throw new \Exception("A component with the handle '{$handle}' already exists. Please choose a different name or handle.");
         }
 
         $component = new Component([
@@ -67,7 +67,7 @@ class ComponentService {
         // Check if the new handle already exists (excluding this component)
         if (Component::handleExistsExcluding($handle, $component_id)) {
             error_log("CCC ComponentService: Handle {$handle} already exists for another component");
-            throw new \Exception('Handle already exists. Please choose a different one.');
+            throw new \Exception("A component with the handle '{$handle}' already exists. Please choose a different name or handle.");
         }
 
         $old_handle = $component->getHandleName();

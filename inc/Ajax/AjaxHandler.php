@@ -30,7 +30,16 @@ class AjaxHandler {
    */
   public function testEndpoint() {
       error_log("CCC: Test endpoint called successfully");
-      wp_send_json_success(['message' => 'Test endpoint working', 'timestamp' => current_time('mysql')]);
+      wp_send_json_success([
+          'message' => 'Test endpoint working', 
+          'timestamp' => current_time('mysql'),
+          'test_data' => [
+              'posts' => [
+                  ['id' => 1, 'title' => 'Test Post 1'],
+                  ['id' => 2, 'title' => 'Test Post 2']
+              ]
+          ]
+      ]);
   }
 
   public function init() {
@@ -44,6 +53,7 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_update_field', [$this, 'updateFieldCallback']);
       add_action('wp_ajax_ccc_get_posts', [$this, 'getPosts']);
       add_action('wp_ajax_ccc_get_posts_with_components', [$this, 'getPostsWithComponents']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_get_posts_with_components");
       add_action('wp_ajax_ccc_save_component_assignments', [$this, 'saveComponentAssignments']);
       add_action('wp_ajax_ccc_save_metabox_components', [$this, 'saveMetaboxComponents']);
       add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
@@ -1474,6 +1484,9 @@ class AjaxHandler {
   public function getPostsWithComponents() {
       error_log("CCC DEBUG: getPostsWithComponents method called");
       error_log("CCC DEBUG: POST data: " . print_r($_POST, true));
+      error_log("CCC DEBUG: Request method: " . $_SERVER['REQUEST_METHOD']);
+      error_log("CCC DEBUG: Request URI: " . $_SERVER['REQUEST_URI']);
+      error_log("CCC DEBUG: User agent: " . $_SERVER['HTTP_USER_AGENT']);
       
       try {
           // Check if services are available
@@ -1484,6 +1497,8 @@ class AjaxHandler {
           }
           
           error_log("CCC DEBUG: About to check nonce");
+          error_log("CCC DEBUG: Nonce from POST: " . ($_POST['nonce'] ?? 'NOT_SET'));
+          error_log("CCC DEBUG: Expected nonce name: ccc_nonce");
           check_ajax_referer('ccc_nonce', 'nonce');
           error_log("CCC DEBUG: Nonce check passed");
 
@@ -1603,6 +1618,15 @@ class AjaxHandler {
           // Add error logging
           error_log("CCC AjaxHandler: getPostsWithComponents called for post_type: " . $post_type);
           
+          // Validate post type
+          $available_post_types = get_post_types(['public' => true], 'names');
+          if (!in_array($post_type, $available_post_types)) {
+              error_log("CCC AjaxHandler: Invalid post type requested: " . $post_type);
+              error_log("CCC AjaxHandler: Available post types: " . implode(', ', $available_post_types));
+              wp_send_json_error(['message' => 'Invalid post type: ' . $post_type]);
+              return;
+          }
+          
           // Check if database tables exist
           global $wpdb;
           $components_table = $wpdb->prefix . 'cc_components';
@@ -1619,6 +1643,7 @@ class AjaxHandler {
               return;
           }
           
+          // Get posts with better error handling
           $posts = get_posts([
               'post_type' => $post_type,
               'post_status' => 'publish',
@@ -1635,12 +1660,25 @@ class AjaxHandler {
 
           if (!is_array($posts)) {
               error_log("CCC AjaxHandler: get_posts() returned non-array: " . gettype($posts));
-              wp_send_json_error(['message' => 'Invalid posts data received']);
+              wp_send_json_error(['message' => 'Failed to retrieve posts: Invalid data type returned']);
+              return;
+          }
+          
+          // Handle case where no posts exist for this post type
+          if (empty($posts)) {
+              error_log("CCC AjaxHandler: No posts found for post type: " . $post_type);
+              wp_send_json_success(['posts' => []]);
               return;
           }
 
-          $post_list = array_map(function ($post) {
+          $post_list = [];
+          foreach ($posts as $post) {
               try {
+                  if (!$post || !is_object($post) || !isset($post->ID)) {
+                      error_log("CCC AjaxHandler: Invalid post object encountered: " . print_r($post, true));
+                      continue;
+                  }
+                  
                   $components = get_post_meta($post->ID, '_ccc_components', true);
                   $assigned_components = [];
                   $assigned_via_main_interface = get_post_meta($post->ID, '_ccc_assigned_via_main_interface', true);
@@ -1664,30 +1702,40 @@ class AjaxHandler {
                   error_log("CCC DEBUG getPostsWithComponents - Post {$post->ID} ({$post->post_title}):");
                   error_log("  - Has components: " . ($result['has_components'] ? 'YES' : 'NO'));
                   error_log("  - Assigned via main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO'));
-                  error_log("  - Will be selected in main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO')); // Changed: only depends on main interface flag
-                  error_log("  - Component count: " . count($components));
+                  error_log("  - Will be selected in main interface: " . ($result['assigned_via_main_interface'] ? 'YES' : 'NO'));
+                  error_log("  - Component count: " . (is_array($components) ? count($components) : 0));
                   
-                  return $result;
+                  $post_list[] = $result;
               } catch (\Exception $e) {
                   error_log("CCC AjaxHandler: Error processing post {$post->ID}: " . $e->getMessage());
-                  return [
+                  // Continue processing other posts instead of failing completely
+                  $post_list[] = [
                       'id' => $post->ID,
-                      'title' => $post->post_title,
-                      'status' => $post->post_status,
+                      'title' => $post->post_title ?? 'Unknown Title',
+                      'status' => $post->post_status ?? 'unknown',
                       'has_components' => false,
                       'assigned_components' => [],
                       'assigned_via_main_interface' => false
                   ];
               }
-          }, $posts);
+          }
 
           error_log("CCC AjaxHandler: getPostsWithComponents successful, returning " . count($post_list) . " posts");
-          wp_send_json_success(['posts' => $post_list]);
+          error_log("CCC AjaxHandler: Response structure: " . json_encode(['posts' => $post_list]));
+          wp_send_json_success([
+              'posts' => $post_list,
+              'timestamp' => current_time('mysql'),
+              'debug_info' => 'Response from getPostsWithComponents method'
+          ]);
 
       } catch (\Exception $e) {
           error_log("CCC AjaxHandler: Exception in getPostsWithComponents: " . $e->getMessage());
           error_log("CCC AjaxHandler: Exception trace: " . $e->getTraceAsString());
           wp_send_json_error(['message' => 'An error occurred while retrieving posts: ' . $e->getMessage()]);
+      } catch (\Error $e) {
+          error_log("CCC AjaxHandler: Fatal Error in getPostsWithComponents: " . $e->getMessage());
+          error_log("CCC AjaxHandler: Error trace: " . $e->getTraceAsString());
+          wp_send_json_error(['message' => 'A fatal error occurred while retrieving posts. Please check the server logs.']);
       }
   }
 
