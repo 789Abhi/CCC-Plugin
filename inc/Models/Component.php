@@ -53,6 +53,14 @@ class Component {
         }
 
         global $wpdb;
+        
+        // NOTE: We no longer remove component assignments when deleting
+        // This allows deleted components to still appear in metaboxes with red background
+        // Users can manually remove them if needed
+        
+        // Delete all fields associated with this component
+        $this->deleteComponentFields();
+        
         $result = $wpdb->delete(
             $wpdb->prefix . 'cc_components',
             ['id' => $this->id],
@@ -67,6 +75,34 @@ class Component {
         }
 
         return $result !== false;
+    }
+    
+    /**
+     * Delete all fields associated with this component
+     */
+    private function deleteComponentFields() {
+        global $wpdb;
+        
+        // Delete all fields for this component
+        $wpdb->delete(
+            $wpdb->prefix . 'cc_fields',
+            ['component_id' => $this->id],
+            ['%d']
+        );
+        
+        // Delete all field values for this component's fields
+        $field_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}cc_fields WHERE component_id = %d",
+            $this->id
+        ));
+        
+        if (!empty($field_ids)) {
+            $placeholders = implode(',', array_fill(0, count($field_ids), '%d'));
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$wpdb->prefix}cc_field_values WHERE field_id IN ($placeholders)",
+                ...$field_ids
+            ));
+        }
     }
 
     public static function find($id) {
@@ -98,6 +134,18 @@ class Component {
         
         return $wpdb->get_var(
             $wpdb->prepare("SELECT id FROM $table WHERE handle_name = %s", $handle)
+        ) !== null;
+    }
+
+    /**
+     * Check if a handle exists excluding a specific component ID
+     */
+    public static function handleExistsExcluding($handle, $exclude_id) {
+        global $wpdb;
+        $table = $wpdb->prefix . 'cc_components';
+        
+        return $wpdb->get_var(
+            $wpdb->prepare("SELECT id FROM $table WHERE handle_name = %s AND id != %d", $handle, $exclude_id)
         ) !== null;
     }
 

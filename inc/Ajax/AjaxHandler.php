@@ -14,6 +14,7 @@ class AjaxHandler {
   private $field_service;
 
   public function __construct() {
+      error_log("CCC DEBUG: AjaxHandler constructor called");
       try {
           $this->component_service = new ComponentService();
           $this->field_service = new FieldService();
@@ -33,6 +34,9 @@ class AjaxHandler {
   }
 
   public function init() {
+      error_log("CCC DEBUG: AjaxHandler init method called");
+      error_log("CCC DEBUG: Registering AJAX actions");
+      
       add_action('wp_ajax_ccc_create_component', [$this, 'handleCreateComponent']);
       add_action('wp_ajax_ccc_get_components', [$this, 'getComponents']);
       add_action('wp_ajax_ccc_get_component_fields', [$this, 'getComponentFields']);
@@ -48,10 +52,11 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_save_field_values', [$this, 'saveFieldValues']);
       add_action('wp_ajax_nopriv_ccc_save_field_values', [$this, 'saveFieldValues']);
       add_action('wp_ajax_ccc_update_component_name', [$this, 'updateComponentName']);
+      add_action('wp_ajax_ccc_check_template_content', [$this, 'checkTemplateContent']);
+      add_action('wp_ajax_ccc_refresh_metabox_data', [$this, 'refreshMetaboxData']);
       add_action('wp_ajax_ccc_update_field_order', [$this, 'updateFieldOrder']);
       add_action('wp_ajax_ccc_update_component_fields', [$this, 'updateComponentFields']);
       add_action('wp_ajax_ccc_update_field_from_hierarchy', [$this, 'updateFieldFromHierarchy']);
-      add_action('wp_ajax_ccc_search_posts', [$this, 'searchPosts']);
       add_action('wp_ajax_ccc_get_posts_by_ids', [$this, 'getPostsByIds']);
       add_action('wp_ajax_ccc_get_available_post_types', [$this, 'getAvailablePostTypes']);
       add_action('wp_ajax_ccc_get_available_taxonomies', [$this, 'getAvailableTaxonomies']);
@@ -65,6 +70,8 @@ class AjaxHandler {
       
       // Add test endpoint for debugging
       add_action('wp_ajax_ccc_test', [$this, 'testEndpoint']);
+      
+      error_log("CCC DEBUG: All AJAX actions registered");
   }
 
   public function handleCreateComponent() {
@@ -72,7 +79,7 @@ class AjaxHandler {
           check_ajax_referer('ccc_nonce', 'nonce');
 
           $name = sanitize_text_field($_POST['name'] ?? '');
-          $handle = sanitize_title($_POST['handle'] ?? '');
+          $handle = $this->component_service->sanitizeHandle($_POST['handle'] ?? '');
 
           if (empty($name) || empty($handle)) {
               wp_send_json_error(['message' => 'Missing required fields']);
@@ -94,7 +101,7 @@ class AjaxHandler {
 
           $component_id = intval($_POST['component_id'] ?? 0);
           $name = sanitize_text_field($_POST['name'] ?? '');
-          $handle = sanitize_title($_POST['handle'] ?? '');
+          $handle = $this->component_service->sanitizeHandle($_POST['handle'] ?? '');
 
           if (!$component_id || empty($name) || empty($handle)) {
               wp_send_json_error(['message' => 'Missing required fields']);
@@ -102,6 +109,10 @@ class AjaxHandler {
           }
 
           $this->component_service->updateComponent($component_id, $name, $handle);
+          
+          // Automatically refresh all metaboxes that have this component assigned
+          $this->refreshAllMetaboxesWithComponent($component_id);
+          
           wp_send_json_success(['message' => 'Component updated successfully']);
 
       } catch (\Exception $e) {
@@ -109,6 +120,184 @@ class AjaxHandler {
           wp_send_json_error(['message' => $e->getMessage()]);
       }
   }
+
+  /**
+   * Check if a component template has custom content that would be affected by name/handle changes
+   */
+  public function checkTemplateContent() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $component_id = intval($_POST['component_id'] ?? 0);
+          $new_handle = $this->component_service->sanitizeHandle($_POST['new_handle'] ?? '');
+
+          if (!$component_id || empty($new_handle)) {
+              wp_send_json_error(['message' => 'Missing required fields']);
+              return;
+          }
+
+          // Get the component to check its current handle
+          $component = \CCC\Models\Component::find($component_id);
+          if (!$component) {
+              wp_send_json_error(['message' => 'Component not found']);
+              return;
+          }
+
+          $current_handle = $component->getHandleName();
+          
+          // Only check if the handle is actually changing
+          if ($current_handle === $new_handle) {
+              wp_send_json_success([
+                  'has_custom_content' => false,
+                  'message' => 'No changes needed'
+              ]);
+              return;
+          }
+
+          // Check if the current template has custom content
+          $has_custom_content = $this->component_service->hasCustomTemplateContent($current_handle);
+          
+          if ($has_custom_content) {
+              // Get the existing template content to show in the warning
+              $existing_content = $this->component_service->getTemplateContent($current_handle);
+              
+              wp_send_json_success([
+                  'has_custom_content' => true,
+                  'current_handle' => $current_handle,
+                  'new_handle' => $new_handle,
+                  'existing_content' => $existing_content,
+                  'message' => 'Template file has custom content that will be preserved'
+              ]);
+          } else {
+              wp_send_json_success([
+                  'has_custom_content' => false,
+                  'message' => 'Template file has no custom content'
+              ]);
+          }
+
+      } catch (\Exception $e) {
+          error_log("Exception in checkTemplateContent: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Refresh metabox data for a specific post when component names change
+   */
+  public function refreshMetaboxData() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $post_id = intval($_POST['post_id'] ?? 0);
+          if (!$post_id) {
+              wp_send_json_error(['message' => 'Invalid post ID']);
+              return;
+          }
+
+          // Get the current component assignments
+          $components = get_post_meta($post_id, '_ccc_components', true);
+          if (!is_array($components) || empty($components)) {
+              wp_send_json_success(['message' => 'No components assigned to this post']);
+              return;
+          }
+
+          // Get updated component data
+          $updated_components = [];
+          foreach ($components as $component_id) {
+              $component = \CCC\Models\Component::find($component_id);
+              if ($component) {
+                  $updated_components[] = [
+                      'id' => $component->getId(),
+                      'name' => $component->getName(),
+                      'handle_name' => $component->getHandleName()
+                  ];
+               }
+          }
+
+          // Update the post meta with fresh component data
+          update_post_meta($post_id, '_ccc_components', array_column($updated_components, 'id'));
+          
+          // Also store the component details for easy access
+          update_post_meta($post_id, '_ccc_component_details', $updated_components);
+
+          wp_send_json_success([
+              'message' => 'Metabox data refreshed successfully',
+              'components' => $updated_components
+          ]);
+
+      } catch (\Exception $e) {
+          error_log("Exception in refreshMetaboxData: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+      /**
+       * Refresh all metaboxes that have a specific component assigned
+       */
+      private function refreshAllMetaboxesWithComponent($component_id) {
+          try {
+              // Get all posts that have this component assigned
+              $posts = get_posts([
+                  'post_type' => ['post', 'page'],
+                  'post_status' => 'any',
+                  'numberposts' => -1,
+                  'meta_query' => [
+                      [
+                          'key' => '_ccc_components',
+                          'value' => $component_id,
+                          'compare' => 'LIKE'
+                      ]
+                  ]
+              ]);
+
+              $refreshed_count = 0;
+              foreach ($posts as $post) {
+                  // Call the refresh method for each post
+                  $this->refreshMetaboxDataForPost($post->ID);
+                  $refreshed_count++;
+              }
+
+              error_log("CCC AjaxHandler: Refreshed {$refreshed_count} metaboxes for component {$component_id}");
+
+          } catch (\Exception $e) {
+              error_log("Exception in refreshAllMetaboxesWithComponent: " . $e->getMessage());
+          }
+      }
+
+      /**
+       * Refresh metabox data for a specific post
+       */
+      private function refreshMetaboxDataForPost($post_id) {
+          try {
+              // Get the current component assignments
+              $components = get_post_meta($post_id, '_ccc_components', true);
+              if (!is_array($components) || empty($components)) {
+                  return;
+              }
+
+              // Get updated component data
+              $updated_components = [];
+              foreach ($components as $component_id) {
+                  $component = \CCC\Models\Component::find($component_id);
+                  if ($component) {
+                      $updated_components[] = [
+                          'id' => $component->getId(),
+                          'name' => $component->getName(),
+                          'handle_name' => $component->getHandleName()
+                      ];
+                   }
+              }
+
+              // Update the post meta with fresh component data
+              update_post_meta($post_id, '_ccc_components', array_column($updated_components, 'id'));
+              
+              // Also store the component details for easy access
+              update_post_meta($post_id, '_ccc_component_details', $updated_components);
+
+          } catch (\Exception $e) {
+              error_log("Exception in refreshMetaboxDataForPost: " . $e->getMessage());
+          }
+      }
 
   public function getComponents() {
       try {
@@ -1123,6 +1312,9 @@ class AjaxHandler {
   }
 
   public function getPostsWithComponents() {
+      error_log("CCC DEBUG: getPostsWithComponents method called");
+      error_log("CCC DEBUG: POST data: " . print_r($_POST, true));
+      
       try {
           // Check if services are available
           if (!$this->component_service || !$this->field_service) {
@@ -1131,7 +1323,9 @@ class AjaxHandler {
               return;
           }
           
+          error_log("CCC DEBUG: About to check nonce");
           check_ajax_referer('ccc_nonce', 'nonce');
+          error_log("CCC DEBUG: Nonce check passed");
 
           // Check if we're requesting a specific post
           $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
@@ -1148,16 +1342,48 @@ class AjaxHandler {
                   $components = [];
               }
               
+              // Process components to check if they still exist and mark deleted ones
+              $processed_components = [];
+              foreach ($components as $component) {
+                  $component_id = intval($component['id'] ?? 0);
+                  if ($component_id) {
+                      $component_obj = \CCC\Models\Component::find($component_id);
+                      if ($component_obj) {
+                          // Component still exists
+                          $processed_components[] = [
+                              'id' => $component_obj->getId(),
+                              'name' => $component_obj->getName(),
+                              'handle_name' => $component_obj->getHandleName(),
+                              'order' => intval($component['order'] ?? 0),
+                              'instance_id' => $component['instance_id'] ?? '',
+                              'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                              'isDeleted' => false
+                          ];
+                      } else {
+                          // Component was deleted from the plugin
+                          $processed_components[] = [
+                              'id' => $component_id,
+                              'name' => $component['name'] ?? 'Deleted Component',
+                              'handle_name' => $component['handle_name'] ?? 'deleted_component',
+                              'order' => intval($component['order'] ?? 0),
+                              'instance_id' => $component['instance_id'] ?? '',
+                              'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                              'isDeleted' => true
+                          ];
+                      }
+                  }
+              }
+              
               // Get field values for this post with proper instance_id handling
               $field_values = $this->getFieldValuesForPost($post_id);
               
               // Sort components by 'order' property before returning
-              usort($components, function($a, $b) {
+              usort($processed_components, function($a, $b) {
                   return ($a['order'] ?? 0) - ($b['order'] ?? 0);
               });
               
               wp_send_json_success([
-                  'components' => $components,
+                  'components' => $processed_components,
                   'field_values' => $field_values
               ]);
               return;
