@@ -67,6 +67,7 @@ class AjaxHandler {
       add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
       add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
       add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
+      add_action('wp_ajax_ccc_fix_handle_mismatches', [$this, 'fixHandleMismatches']);
       
       // Add test endpoint for debugging
       add_action('wp_ajax_ccc_test', [$this, 'testEndpoint']);
@@ -110,8 +111,8 @@ class AjaxHandler {
 
           $this->component_service->updateComponent($component_id, $name, $handle);
           
-          // Automatically refresh all metaboxes that have this component assigned
-          $this->refreshAllMetaboxesWithComponent($component_id);
+          // Note: Component assignments are automatically updated by the ComponentService
+          // No need to manually refresh metaboxes as this can interfere with the update process
           
           wp_send_json_success(['message' => 'Component updated successfully']);
 
@@ -187,10 +188,10 @@ class AjaxHandler {
   public function refreshMetaboxData() {
       try {
           check_ajax_referer('ccc_nonce', 'nonce');
-
-          $post_id = intval($_POST['post_id'] ?? 0);
+          
+          $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
           if (!$post_id) {
-              wp_send_json_error(['message' => 'Invalid post ID']);
+              wp_send_json_error(['message' => 'Post ID is required']);
               return;
           }
 
@@ -201,21 +202,68 @@ class AjaxHandler {
               return;
           }
 
-          // Get updated component data
+          error_log("CCC DEBUG: refreshMetaboxData - Processing post {$post_id}");
+          error_log("CCC DEBUG: Current components data: " . print_r($components, true));
+
+          // Get updated component data while preserving existing structure
           $updated_components = [];
-          foreach ($components as $component_id) {
-              $component = \CCC\Models\Component::find($component_id);
-              if ($component) {
-                  $updated_components[] = [
-                      'id' => $component->getId(),
-                      'name' => $component->getName(),
-                      'handle_name' => $component->getHandleName()
-                  ];
-               }
+          foreach ($components as $component) {
+              if (is_array($component) && isset($component['id'])) {
+                  // Component is already in new format, just verify it exists in database
+                  $component_id = $component['id'];
+                  $component_obj = \CCC\Models\Component::find($component_id);
+                  if ($component_obj) {
+                      // Component exists in database, update with fresh data but preserve metadata
+                      $updated_components[] = [
+                          'id' => $component_obj->getId(),
+                          'name' => $component_obj->getName(),
+                          'handle_name' => $component_obj->getHandleName(),
+                          'order' => intval($component['order'] ?? 0),
+                          'instance_id' => $component['instance_id'] ?? '',
+                          'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false
+                      ];
+                      error_log("CCC DEBUG: Updated component {$component_id} with database data");
+                  } else {
+                      // Component not found in database, keep stored data
+                      error_log("CCC DEBUG: Component {$component_id} not found in database, keeping stored data");
+                      $updated_components[] = $component;
+                  }
+              } elseif (is_numeric($component)) {
+                  // Legacy format: just the ID, convert to new format
+                  $component_id = $component;
+                  $component_obj = \CCC\Models\Component::find($component_id);
+                  if ($component_obj) {
+                      $updated_components[] = [
+                          'id' => $component_obj->getId(),
+                          'name' => $component_obj->getName(),
+                          'handle_name' => $component_obj->getHandleName(),
+                          'order' => 0,
+                          'instance_id' => '',
+                          'isHidden' => false
+                      ];
+                      error_log("CCC DEBUG: Converted legacy component {$component_id} to new format");
+                  } else {
+                      // Component not found, mark as deleted
+                      $updated_components[] = [
+                          'id' => $component_id,
+                          'name' => 'Deleted Component',
+                          'handle_name' => 'deleted_component',
+                          'order' => 0,
+                          'instance_id' => '',
+                          'isHidden' => false
+                      ];
+                      error_log("CCC DEBUG: Component {$component_id} not found, marking as deleted");
+                  }
+              } else {
+                  // Unknown format, skip
+                  error_log("CCC DEBUG: Unknown component format, skipping: " . print_r($component, true));
+              }
           }
 
-          // Update the post meta with fresh component data
-          update_post_meta($post_id, '_ccc_components', array_column($updated_components, 'id'));
+          error_log("CCC DEBUG: Final updated components: " . print_r($updated_components, true));
+
+          // Update the post meta with the preserved component data structure
+          update_post_meta($post_id, '_ccc_components', $updated_components);
           
           // Also store the component details for easy access
           update_post_meta($post_id, '_ccc_component_details', $updated_components);
@@ -236,6 +284,8 @@ class AjaxHandler {
        */
       private function refreshAllMetaboxesWithComponent($component_id) {
           try {
+              error_log("CCC DEBUG: refreshAllMetaboxesWithComponent called for component {$component_id}");
+              
               // Get all posts that have this component assigned
               $posts = get_posts([
                   'post_type' => ['post', 'page'],
@@ -250,8 +300,11 @@ class AjaxHandler {
                   ]
               ]);
 
+              error_log("CCC DEBUG: Found " . count($posts) . " posts to refresh for component {$component_id}");
+              
               $refreshed_count = 0;
               foreach ($posts as $post) {
+                  error_log("CCC DEBUG: Refreshing metabox for post {$post->ID} ({$post->post_title})");
                   // Call the refresh method for each post
                   $this->refreshMetaboxDataForPost($post->ID);
                   $refreshed_count++;
@@ -275,24 +328,73 @@ class AjaxHandler {
                   return;
               }
 
-              // Get updated component data
+              error_log("CCC DEBUG: refreshMetaboxDataForPost - Processing post {$post_id}");
+              error_log("CCC DEBUG: Current components data: " . print_r($components, true));
+
+              // Get updated component data while preserving existing structure
               $updated_components = [];
-              foreach ($components as $component_id) {
-                  $component = \CCC\Models\Component::find($component_id);
-                  if ($component) {
-                      $updated_components[] = [
-                          'id' => $component->getId(),
-                          'name' => $component->getName(),
-                          'handle_name' => $component->getHandleName()
-                      ];
-                   }
+              foreach ($components as $component) {
+                  if (is_array($component) && isset($component['id'])) {
+                      // Component is already in new format, just verify it exists in database
+                      $component_id = $component['id'];
+                      $component_obj = \CCC\Models\Component::find($component_id);
+                      if ($component_obj) {
+                          // Component exists in database, update with fresh data but preserve metadata
+                          $updated_components[] = [
+                              'id' => $component_obj->getId(),
+                              'name' => $component_obj->getName(),
+                              'handle_name' => $component_obj->getHandleName(),
+                              'order' => intval($component['order'] ?? 0),
+                              'instance_id' => $component['instance_id'] ?? '',
+                              'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false
+                          ];
+                          error_log("CCC DEBUG: Updated component {$component_id} with database data");
+                      } else {
+                          // Component not found in database, keep stored data
+                          error_log("CCC DEBUG: Component {$component_id} not found in database, keeping stored data");
+                          $updated_components[] = $component;
+                      }
+                  } elseif (is_numeric($component)) {
+                      // Legacy format: just the ID, convert to new format
+                      $component_id = $component;
+                      $component_obj = \CCC\Models\Component::find($component_id);
+                      if ($component_obj) {
+                          $updated_components[] = [
+                              'id' => $component_obj->getId(),
+                              'name' => $component_obj->getName(),
+                              'handle_name' => $component_obj->getHandleName(),
+                              'order' => 0,
+                              'instance_id' => '',
+                              'isHidden' => false
+                          ];
+                          error_log("CCC DEBUG: Converted legacy component {$component_id} to new format");
+                      } else {
+                          // Component not found, mark as deleted
+                          $updated_components[] = [
+                              'id' => $component_id,
+                              'name' => 'Deleted Component',
+                              'handle_name' => 'deleted_component',
+                              'order' => 0,
+                              'instance_id' => '',
+                              'isHidden' => false
+                          ];
+                          error_log("CCC DEBUG: Component {$component_id} not found, marking as deleted");
+                      }
+                  } else {
+                      // Unknown format, skip
+                      error_log("CCC DEBUG: Unknown component format, skipping: " . print_r($component, true));
+                  }
               }
 
-              // Update the post meta with fresh component data
-              update_post_meta($post_id, '_ccc_components', array_column($updated_components, 'id'));
+              error_log("CCC DEBUG: Final updated components: " . print_r($updated_components, true));
+
+              // Update the post meta with the preserved component data structure
+              update_post_meta($post_id, '_ccc_components', $updated_components);
               
               // Also store the component details for easy access
               update_post_meta($post_id, '_ccc_component_details', $updated_components);
+
+              error_log("CCC DEBUG: Successfully updated metabox data for post {$post_id}");
 
           } catch (\Exception $e) {
               error_log("Exception in refreshMetaboxDataForPost: " . $e->getMessage());
@@ -1344,12 +1446,21 @@ class AjaxHandler {
               
               // Process components to check if they still exist and mark deleted ones
               $processed_components = [];
+              error_log("CCC DEBUG: Processing " . count($components) . " components for post {$post_id}");
+              error_log("CCC DEBUG: Raw components data: " . print_r($components, true));
+              
               foreach ($components as $component) {
+                  error_log("CCC DEBUG: Processing component entry: " . print_r($component, true));
+                  
                   $component_id = intval($component['id'] ?? 0);
                   if ($component_id) {
+                      error_log("CCC DEBUG: Looking up component {$component_id} in database");
                       $component_obj = \CCC\Models\Component::find($component_id);
+                      
                       if ($component_obj) {
-                          // Component still exists
+                          error_log("CCC DEBUG: Component {$component_id} found in database, using database data");
+                          error_log("CCC DEBUG: Database component data - Name: {$component_obj->getName()}, Handle: {$component_obj->getHandleName()}");
+                          // Component still exists - use database data but preserve stored metadata
                           $processed_components[] = [
                               'id' => $component_obj->getId(),
                               'name' => $component_obj->getName(),
@@ -1360,19 +1471,42 @@ class AjaxHandler {
                               'isDeleted' => false
                           ];
                       } else {
-                          // Component was deleted from the plugin
-                          $processed_components[] = [
-                              'id' => $component_id,
-                              'name' => $component['name'] ?? 'Deleted Component',
-                              'handle_name' => $component['handle_name'] ?? 'deleted_component',
-                              'order' => intval($component['order'] ?? 0),
-                              'instance_id' => $component['instance_id'] ?? '',
-                              'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
-                              'isDeleted' => true
-                          ];
+                          error_log("CCC DEBUG: Component {$component_id} NOT found in database, checking stored data");
+                          // Component not found in database - check if we have stored data
+                          if (isset($component['name']) && isset($component['handle_name'])) {
+                              error_log("CCC DEBUG: Using stored component data for component {$component_id}");
+                              error_log("CCC DEBUG: Stored data - Name: {$component['name']}, Handle: {$component['handle_name']}");
+                              // We have stored component data, use it (component might be renamed)
+                              $processed_components[] = [
+                                  'id' => $component_id,
+                                  'name' => $component['name'],
+                                  'handle_name' => $component['handle_name'],
+                                  'order' => intval($component['order'] ?? 0),
+                                  'instance_id' => $component['instance_id'] ?? '',
+                                  'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                  'isDeleted' => false // Not deleted, just not found in DB lookup
+                              ];
+                          } else {
+                              error_log("CCC DEBUG: No stored data for component {$component_id}, marking as deleted");
+                              error_log("CCC DEBUG: Component entry structure: " . print_r($component, true));
+                              // No stored data, mark as deleted
+                              $processed_components[] = [
+                                  'id' => $component_id,
+                                  'name' => $component['name'] ?? 'Deleted Component',
+                                  'handle_name' => $component['handle_name'] ?? 'deleted_component',
+                                  'order' => intval($component['order'] ?? 0),
+                                  'instance_id' => $component['instance_id'] ?? '',
+                                  'isHidden' => isset($component['isHidden']) ? (bool)$component['isHidden'] : false,
+                                  'isDeleted' => true
+                              ];
+                          }
                       }
+                  } else {
+                      error_log("CCC DEBUG: Invalid component entry, skipping: " . print_r($component, true));
                   }
               }
+              
+              error_log("CCC DEBUG: Final processed components for post {$post_id}: " . print_r($processed_components, true));
               
               // Get field values for this post with proper instance_id handling
               $field_values = $this->getFieldValuesForPost($post_id);
@@ -2307,6 +2441,34 @@ class AjaxHandler {
           wp_send_json_success(['data' => $formatted_users]);
       } catch (Exception $e) {
           wp_send_json_error('Error getting users: ' . $e->getMessage());
+      }
+  }
+  
+  /**
+   * Fix handle mismatches between database and template files
+   */
+  public function fixHandleMismatches() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $result = $this->component_service->fixHandleMismatches();
+          
+          if ($result['fixed'] > 0) {
+              wp_send_json_success([
+                  'message' => $result['message'],
+                  'fixed_count' => $result['fixed'],
+                  'errors' => $result['errors']
+              ]);
+          } else {
+              wp_send_json_success([
+                  'message' => 'No handle mismatches found',
+                  'fixed_count' => 0
+              ]);
+          }
+          
+      } catch (\Exception $e) {
+          error_log("Exception in fixHandleMismatches: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
       }
   }
 }

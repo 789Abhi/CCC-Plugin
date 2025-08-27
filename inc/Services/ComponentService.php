@@ -51,35 +51,51 @@ class ComponentService {
     }
 
     /**
-     * Update an existing component's name and handle
+     * Update an existing component
      */
     public function updateComponent($component_id, $name, $handle) {
+        error_log("CCC ComponentService: updateComponent called for component {$component_id} -> {$name} ({$handle})");
+        
         $component = Component::find($component_id);
         if (!$component) {
+            error_log("CCC ComponentService: Component {$component_id} not found in database");
             throw new \Exception('Component not found.');
         }
 
+        error_log("CCC ComponentService: Found component in database - Name: {$component->getName()}, Handle: {$component->getHandleName()}");
+
         // Check if the new handle already exists (excluding this component)
         if (Component::handleExistsExcluding($handle, $component_id)) {
+            error_log("CCC ComponentService: Handle {$handle} already exists for another component");
             throw new \Exception('Handle already exists. Please choose a different one.');
         }
 
         $old_handle = $component->getHandleName();
+        error_log("CCC ComponentService: Old handle: {$old_handle}, New handle: {$handle}");
+        
         $component->setName(sanitize_text_field($name));
         $component->setHandleName($this->sanitizeHandle($handle));
 
         if (!$component->save()) {
+            error_log("CCC ComponentService: Failed to save component {$component_id}");
             throw new \Exception('Failed to update component.');
         }
 
+        error_log("CCC ComponentService: Component saved successfully to database");
+
         // If the handle has changed, update the template file
         if ($old_handle !== $handle) {
+            error_log("CCC ComponentService: Handle changed, updating template file");
             $this->updateComponentTemplate($component, $old_handle);
+        } else {
+            error_log("CCC ComponentService: Handle unchanged, skipping template update");
         }
         
         // Update component assignments in metaboxes to reflect the new name
+        error_log("CCC ComponentService: Updating component assignments");
         $this->updateComponentAssignments($component_id, $name, $handle);
 
+        error_log("CCC ComponentService: updateComponent completed successfully for component {$component_id}");
         return $component;
     }
 
@@ -200,42 +216,43 @@ class ComponentService {
             wp_mkdir_p($templates_dir);
         }
 
-        // Check if old template file exists and has custom content
-        $existing_content = '';
-        $has_custom_content = false;
-        
+        // Check if old template file exists
         if (file_exists($old_template_file)) {
             $existing_content = file_get_contents($old_template_file);
             
-            // Check if the file has content beyond the basic template
-            $basic_template = $this->generateTemplateContent($component);
-            $basic_template_clean = preg_replace('/\s+/', ' ', trim($basic_template));
-            $existing_content_clean = preg_replace('/\s+/', ' ', trim($existing_content));
+            // Update the component header information while preserving all custom content
+            $updated_content = $this->updateTemplateHeader($component, $existing_content);
             
-            // If existing content is different from basic template, it has custom content
-            if ($existing_content_clean !== $basic_template_clean) {
-                $has_custom_content = true;
+            // First, try to rename the file (this preserves all file attributes and is atomic)
+            if (rename($old_template_file, $new_template_file)) {
+                // File renamed successfully, now update its content
+                if (!file_put_contents($new_template_file, $updated_content)) {
+                    error_log("Failed to update content in renamed template file: $new_template_file");
+                    throw new \Exception('Failed to update content in renamed template file');
+                }
+                error_log("CCC ComponentService: Successfully renamed template file from {$old_handle}.php to {$component->getHandleName()}.php");
+            } else {
+                // If rename fails (e.g., different filesystem), fall back to copy and delete
+                error_log("CCC ComponentService: File rename failed, falling back to copy and delete method");
+                
+                // Copy the file with new content
+                if (!file_put_contents($new_template_file, $updated_content)) {
+                    error_log("Failed to create new template file: $new_template_file");
+                    throw new \Exception('Failed to create new template file');
+                }
+                
+                // Delete the old file only after successful creation of new one
+                if (file_exists($old_template_file)) {
+                    unlink($old_template_file);
+                }
             }
-        }
-
-        // Create new template file
-        if ($has_custom_content) {
-            // Preserve existing content but update component info
-            $new_content = $this->generateTemplateContentWithPreservedContent($component, $existing_content);
         } else {
-            // Generate new basic template
+            // Old template file doesn't exist, create a new one
             $new_content = $this->generateTemplateContent($component);
-        }
-
-        // Write new template file
-        if (!file_put_contents($new_template_file, $new_content)) {
-            error_log("Failed to write updated component template: $new_template_file");
-            throw new \Exception('Failed to update component template file');
-        }
-
-        // Delete old template file after successful creation of new one
-        if (file_exists($old_template_file)) {
-            unlink($old_template_file);
+            if (!file_put_contents($new_template_file, $new_content)) {
+                error_log("Failed to create new component template: $new_template_file");
+                throw new \Exception('Failed to create new component template file');
+            }
         }
     }
 
@@ -258,19 +275,26 @@ class ComponentService {
     }
 
     /**
-     * Generate template content while preserving existing custom content
+     * Update template header information while preserving all custom content
      */
-    private function generateTemplateContentWithPreservedContent(Component $component, $existing_content) {
+    private function updateTemplateHeader(Component $component, $existing_content) {
         $component_name = $component->getName();
         $handle_name = $component->getHandleName();
         
-        // Extract the content between the opening PHP tag and the closing PHP tag
-        $pattern = '/<\?php\s*(.*?)\s*\?>/s';
-        if (preg_match($pattern, $existing_content, $matches)) {
-            $inner_content = trim($matches[1]);
+        // Split content into PHP section and HTML/content section
+        $parts = explode('?>', $existing_content, 2);
+        
+        if (count($parts) >= 2) {
+            $php_section = trim($parts[0]);
+            $html_content = trim($parts[1]);
             
-            // Remove the old component header comment if it exists
-            $inner_content = preg_replace('/\/\*\*[\s\S]*?\*\/\s*/', '', $inner_content);
+            // Remove the old component header comment from PHP section
+            $php_section = preg_replace('/\/\*\*[\s\S]*?\*\/\s*/', '', $php_section);
+            
+            // Clean up any remaining PHP tags or extra content in the PHP section
+            $php_section = preg_replace('/<\?php\s*/', '', $php_section);
+            $php_section = preg_replace('/\s*\?>\s*$/', '', $php_section);
+            $php_section = trim($php_section);
             
             // Add new component header
             $new_header = "/**\n"
@@ -284,11 +308,20 @@ class ComponentService {
                 . " * \$title = get_ccc_field('title') - Get field value\n"
                 . " */\n\n";
             
-            return "<?php\n" . $new_header . $inner_content . "\n?>";
+            // Reconstruct the template with preserved HTML content
+            return "<?php\n" . $new_header . $php_section . "\n?>\n" . $html_content;
         }
         
         // Fallback to basic template if parsing fails
         return $this->generateTemplateContent($component);
+    }
+
+    /**
+     * Generate template content while preserving existing custom content
+     * @deprecated Use updateTemplateHeader instead
+     */
+    private function generateTemplateContentWithPreservedContent(Component $component, $existing_content) {
+        return $this->updateTemplateHeader($component, $existing_content);
     }
 
     /**
@@ -304,18 +337,30 @@ class ComponentService {
         
         $existing_content = file_get_contents($template_file);
         
-        // Create a temporary component object to generate basic template for comparison
-        $temp_component = new Component([
-            'name' => 'Temp',
-            'handle_name' => $handle
-        ]);
+        // Split content into PHP section and HTML/content section
+        $parts = explode('?>', $existing_content, 2);
         
-        $basic_template = $this->generateTemplateContent($temp_component);
-        $basic_template_clean = preg_replace('/\s+/', ' ', trim($basic_template));
-        $existing_content_clean = preg_replace('/\s+/', ' ', trim($existing_content));
+        if (count($parts) >= 2) {
+            $html_content = trim($parts[1]);
+            // If there's content after the PHP closing tag, it's custom content
+            if (!empty($html_content)) {
+                return true;
+            }
+        }
         
-        // If existing content is different from basic template, it has custom content
-        return $existing_content_clean !== $basic_template_clean;
+        // Also check if there's custom content within the PHP section (beyond the header)
+        if (count($parts) >= 1) {
+            $php_section = trim($parts[0]);
+            $php_section_clean = preg_replace('/\/\*\*[\s\S]*?\*\/\s*/', '', $php_section);
+            $php_section_clean = preg_replace('/\s+/', ' ', trim($php_section_clean));
+            
+            // If there's more than just the opening PHP tag, it has custom PHP content
+            if (!empty($php_section_clean) && $php_section_clean !== '<?php') {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -338,7 +383,10 @@ class ComponentService {
     private function updateComponentAssignments($component_id, $new_name, $new_handle) {
         global $wpdb;
         
-        // Get all posts that have this component assigned
+        error_log("CCC ComponentService: updateComponentAssignments called for component {$component_id} -> {$new_name} ({$new_handle})");
+        
+        // Get all posts that have this component assigned using a more reliable method
+        // First, try to get posts using the meta query
         $posts = get_posts([
             'post_type' => ['post', 'page'],
             'post_status' => 'any',
@@ -352,25 +400,102 @@ class ComponentService {
             ]
         ]);
         
-        foreach ($posts as $post) {
+        // Also check for posts that might have the component in a different format
+        $additional_posts = get_posts([
+            'post_type' => ['post', 'page'],
+            'post_status' => 'any',
+            'numberposts' => -1,
+            'meta_query' => [
+                [
+                    'key' => '_ccc_components',
+                    'compare' => 'EXISTS'
+                ]
+            ]
+        ]);
+        
+        // Merge and deduplicate posts
+        $all_posts = [];
+        $post_ids = [];
+        foreach (array_merge($posts, $additional_posts) as $post) {
+            if (!in_array($post->ID, $post_ids)) {
+                $all_posts[] = $post;
+                $post_ids[] = $post->ID;
+            }
+        }
+        
+        error_log("CCC ComponentService: Found " . count($all_posts) . " posts to check for component {$component_id}");
+        
+        foreach ($all_posts as $post) {
+            error_log("CCC ComponentService: Processing post {$post->ID} ({$post->post_title})");
+            
             $components = get_post_meta($post->ID, '_ccc_components', true);
+            error_log("CCC ComponentService: Post {$post->ID} _ccc_components meta BEFORE update: " . print_r($components, true));
+            
             if (is_array($components)) {
-                // Update the component data in the assignments
+                $has_component = false;
                 $updated_components = [];
+                
                 foreach ($components as $comp) {
-                    if ($comp === $component_id) {
-                        // This is our updated component, keep the ID but update the data
-                        $updated_components[] = $component_id;
+                    error_log("CCC ComponentService: Processing component entry: " . print_r($comp, true));
+                    
+                    if (is_array($comp) && isset($comp['id']) && $comp['id'] == $component_id) {
+                        // This is our updated component, update the name and handle
+                        error_log("CCC ComponentService: Found component object, updating name and handle");
+                        $comp['name'] = $new_name;
+                        $comp['handle_name'] = $new_handle;
+                        $updated_components[] = $comp;
+                        $has_component = true;
+                    } elseif ($comp === $component_id) {
+                        // Legacy format: just the ID, convert to new format
+                        error_log("CCC ComponentService: Found legacy format, converting to new format");
+                        $updated_components[] = [
+                            'id' => $component_id,
+                            'name' => $new_name,
+                            'handle_name' => $new_handle,
+                            'order' => 0,
+                            'instance_id' => '',
+                            'isHidden' => false
+                        ];
+                        $has_component = true;
                     } else {
+                        error_log("CCC ComponentService: Keeping other component: " . print_r($comp, true));
                         $updated_components[] = $comp;
                     }
                 }
                 
-                // Update the post meta
-                update_post_meta($post->ID, '_ccc_components', $updated_components);
-                
-                // Also update any cached component data
-                $this->clearComponentCache($post->ID);
+                // If we found and updated the component, save the changes
+                if ($has_component) {
+                    error_log("CCC ComponentService: Post {$post->ID} _ccc_components meta AFTER processing: " . print_r($updated_components, true));
+                    
+                    // Update the post meta with the updated component data
+                    update_post_meta($post->ID, '_ccc_components', $updated_components);
+                    
+                    // Verify the update
+                    $verified_components = get_post_meta($post->ID, '_ccc_components', true);
+                    error_log("CCC ComponentService: Post {$post->ID} _ccc_components meta AFTER update_post_meta: " . print_r($verified_components, true));
+                    
+                    // Update the component details in post meta to reflect the new name and handle
+                    $component_details = get_post_meta($post->ID, '_ccc_component_details', true);
+                    if (is_array($component_details)) {
+                        foreach ($component_details as &$detail) {
+                            if ($detail['id'] == $component_id) {
+                                $detail['name'] = $new_name;
+                                $detail['handle_name'] = $new_handle;
+                                break;
+                            }
+                        }
+                        update_post_meta($post->ID, '_ccc_component_details', $component_details);
+                    }
+                    
+                    // Clear any cached component data
+                    $this->clearComponentCache($post->ID);
+                    
+                    error_log("CCC ComponentService: Updated component assignments for post {$post->ID}, component {$component_id} -> {$new_name} ({$new_handle})");
+                } else {
+                    error_log("CCC ComponentService: Post {$post->ID} does not contain component {$component_id}");
+                }
+            } else {
+                error_log("CCC ComponentService: Post {$post->ID} _ccc_components meta is not an array: " . print_r($components, true));
             }
         }
     }
@@ -434,5 +559,56 @@ class ComponentService {
         }
         
         return count($posts);
+    }
+    
+    /**
+     * Fix handle mismatches between database and template files
+     * This method will update component handles in the database to match actual template files
+     */
+    public function fixHandleMismatches() {
+        $theme_dir = get_stylesheet_directory();
+        $templates_dir = $theme_dir . '/ccc-templates';
+        
+        if (!is_dir($templates_dir)) {
+            return ['fixed' => 0, 'message' => 'Template directory not found'];
+        }
+        
+        $template_files = glob($templates_dir . '/*.php');
+        $components = Component::all();
+        $fixed_count = 0;
+        $errors = [];
+        
+        foreach ($components as $component) {
+            $current_handle = $component->getHandleName();
+            $template_file = $templates_dir . '/' . $current_handle . '.php';
+            
+            // If template file doesn't exist with current handle, check if it exists with a different name
+            if (!file_exists($template_file)) {
+                foreach ($template_files as $file) {
+                    $filename = basename($file, '.php');
+                    if ($filename !== $current_handle) {
+                        // Found a potential match, update the handle
+                        try {
+                            $component->setHandleName($filename);
+                            if ($component->save()) {
+                                $fixed_count++;
+                                error_log("CCC ComponentService: Fixed handle mismatch for component {$component->getId()}: {$current_handle} → {$filename}");
+                            } else {
+                                $errors[] = "Failed to save component {$component->getId()}";
+                            }
+                        } catch (\Exception $e) {
+                            $errors[] = "Error updating component {$component->getId()}: " . $e->getMessage();
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        return [
+            'fixed' => $fixed_count,
+            'errors' => $errors,
+            'message' => "Fixed {$fixed_count} handle mismatches"
+        ];
     }
 }
