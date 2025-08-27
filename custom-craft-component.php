@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 3.3
+ * Version: 3.4
  * Author: Abhishek
 */
 
@@ -22,6 +22,12 @@ if (file_exists($global_helpers_file)) {
 $helper_file = CCC_PLUGIN_PATH . 'inc/Helpers/TemplateHelpers.php';
 if (file_exists($helper_file)) {
   require_once $helper_file;
+}
+
+// Load update error suppressor
+$update_error_suppressor_file = CCC_PLUGIN_PATH . 'inc/Helpers/UpdateErrorSuppressor.php';
+if (file_exists($update_error_suppressor_file)) {
+  require_once $update_error_suppressor_file;
 }
 
 // Autoloader for plugin classes
@@ -81,15 +87,35 @@ function custom_craft_component_init() {
   // Ensure helper functions are loaded
   ccc_load_helpers();
   
+  // Initialize update error suppressor
+  if (class_exists('CCC\Helpers\UpdateErrorSuppressor')) {
+      \CCC\Helpers\UpdateErrorSuppressor::init();
+  }
+  
   $plugin = new Plugin();
   $plugin->init();
 
   if (is_admin()) {
-      PucFactory::buildUpdateChecker(
-          'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/manifest.json',
-          __FILE__,
-          'custom-craft-component'
-      );
+      // Initialize update checker with error handling
+      try {
+          $updateChecker = PucFactory::buildUpdateChecker(
+              'https://raw.githubusercontent.com/789Abhi/CCC-Plugin/Master/manifest.json',
+              __FILE__,
+              'custom-craft-component'
+          );
+          
+          // Set longer timeout and error handling
+          if (method_exists($updateChecker, 'setHttpRequestArgs')) {
+              $updateChecker->setHttpRequestArgs(array(
+                  'timeout' => 15,
+                  'sslverify' => false
+              ));
+          }
+          
+      } catch (Exception $e) {
+          // Silently handle update checker errors - don't show alerts
+          error_log('CCC Update Checker Error: ' . $e->getMessage());
+      }
   }
 }
 
