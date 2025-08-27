@@ -25,6 +25,9 @@ class UpdateErrorSuppressor {
         // Suppress automatic update check results (only show manual check results)
         add_filter('site_transient_update_plugins', [self::class, 'suppress_automatic_update_results'], 10, 1);
         add_filter('pre_site_transient_update_plugins', [self::class, 'suppress_automatic_update_results'], 10, 1);
+        
+        // Suppress automatic update notices
+        add_action('admin_init', [self::class, 'suppress_automatic_update_notices']);
     }
     
     public static function suppress_plugin_errors($transient) {
@@ -62,5 +65,37 @@ class UpdateErrorSuppressor {
             }
         }
         return $result;
+    }
+    
+    public static function suppress_automatic_update_results($transient) {
+        if (isset($transient->response['custom-craft-component'])) {
+            // Remove automatic update check results to prevent alerts
+            // Only keep results from manual update checks
+            if (!isset($_GET['force-check']) && !isset($_POST['force-check'])) {
+                unset($transient->response['custom-craft-component']);
+            }
+        }
+        return $transient;
+    }
+    
+    public static function suppress_automatic_update_notices() {
+        // Only show update notices when manually checking
+        if (!isset($_GET['force-check']) && !isset($_POST['force-check'])) {
+            // Suppress automatic update notices
+            add_filter('gettext', function($translated, $text, $domain) {
+                if ($domain === 'default') {
+                    $suppress_messages = [
+                        'The Custom Craft Component plugin is up to date.',
+                        'Custom Craft Component plugin is up to date.',
+                        'Plugin is up to date.'
+                    ];
+                    
+                    if (in_array($translated, $suppress_messages)) {
+                        return '';
+                    }
+                }
+                return $translated;
+            }, 10, 3);
+        }
     }
 }
