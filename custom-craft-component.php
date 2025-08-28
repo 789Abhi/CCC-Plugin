@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 3.6
+ * Version: 3.7
  * Author: Abhishek
 */
 
