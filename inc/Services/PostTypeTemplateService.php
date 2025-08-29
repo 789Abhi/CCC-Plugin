@@ -6,99 +6,64 @@ defined('ABSPATH') || exit;
 class PostTypeTemplateService {
     
     /**
-     * Create post type template
+     * Create a post type template file
      */
     public function createPostTypeTemplate($post_type, $components = []) {
-        $theme_dir = get_stylesheet_directory();
-        $templates_dir = $theme_dir . '/ccc-single-page-templates';
+        // Create templates directory in plugin instead of theme
+        $templates_dir = plugin_dir_path(dirname(dirname(__FILE__))) . 'ccc-templates/post-types';
         
-        if (!file_exists($templates_dir)) {
+        if (!is_dir($templates_dir)) {
             wp_mkdir_p($templates_dir);
         }
         
-        $this->createHtaccessFile($templates_dir);
-        $this->createIndexFile($templates_dir);
+        $template_file = $templates_dir . '/single-' . $post_type . '.php';
         
-        // Store the components assigned to this post type
-        if (!empty($components) && is_array($components)) {
-            $component_ids = array_map(function($component) {
-                return is_array($component) ? $component['id'] : $component->id;
-            }, $components);
+        // Generate template content
+        $template_content = $this->generatePostTypeTemplateContent($post_type, $components);
+        
+        // Write template file
+        $result = file_put_contents($template_file, $template_content);
+        
+        if ($result !== false) {
+            error_log("CCC PostTypeTemplateService: Created post type template: $template_file");
+            
+            // Store component IDs for this post type
+            $component_ids = [];
+            foreach ($components as $component) {
+                if (isset($component['id'])) {
+                    $component_ids[] = $component['id'];
+                }
+            }
             update_option('_ccc_post_type_components_' . $post_type, $component_ids);
-            error_log("CCC PostTypeTemplateService: Stored components for post type $post_type: " . json_encode($component_ids));
-        }
-        
-        // Create only PHP template (no HTML templates)
-        $php_template_file = $templates_dir . '/single-' . $post_type . '.php';
-        
-        // Create PHP template
-        $php_template_content = $this->generatePostTypeTemplateContent($post_type, $components);
-        if (!file_put_contents($php_template_file, $php_template_content)) {
-            error_log("CCC PostTypeTemplateService: Failed to write PHP post type template: $php_template_file");
-            throw new \Exception('Failed to create post type template file');
+            
+            return true;
         } else {
-            error_log("CCC PostTypeTemplateService: Successfully created PHP template for post type: $post_type");
+            error_log("CCC PostTypeTemplateService: Failed to create post type template: $template_file");
+            return false;
         }
-        
-        return $php_template_file;
     }
     
     /**
-     * Remove post type template
+     * Remove a post type template file
      */
     public function removePostTypeTemplate($post_type) {
-        $theme_dir = get_stylesheet_directory();
-        $templates_dir = $theme_dir . '/ccc-single-page-templates';
+        // Remove template from plugin directory
+        $templates_dir = plugin_dir_path(dirname(dirname(__FILE__))) . 'ccc-templates/post-types';
+        $template_file = $templates_dir . '/single-' . $post_type . '.php';
         
-        // Clean up stored components for this post type
-        delete_option('_ccc_post_type_components_' . $post_type);
-        error_log("CCC PostTypeTemplateService: Cleaned up stored components for post type: $post_type");
-        
-        if (!file_exists($templates_dir)) {
-            error_log("CCC PostTypeTemplateService: Templates directory does not exist: $templates_dir");
-            return false;
-        }
-        
-        $deleted_files = [];
-        
-        // Remove only PHP template
-        $php_template_file = $templates_dir . '/single-' . $post_type . '.php';
-        if (file_exists($php_template_file)) {
-            if (unlink($php_template_file)) {
-                $deleted_files[] = 'PHP';
-                error_log("CCC PostTypeTemplateService: Successfully deleted PHP template for post type: $post_type");
+        if (file_exists($template_file)) {
+            $result = unlink($template_file);
+            if ($result) {
+                error_log("CCC PostTypeTemplateService: Removed post type template: $template_file");
             } else {
-                error_log("CCC PostTypeTemplateService: Failed to delete PHP template for post type: $post_type");
+                error_log("CCC PostTypeTemplateService: Failed to remove post type template: $template_file");
             }
         }
         
-        // Check if templates directory is empty and remove it if so
-        $remaining_files = array_diff(scandir($templates_dir), ['.', '..']);
-        if (empty($remaining_files)) {
-            // Remove .htaccess and index.php first
-            $htaccess_file = $templates_dir . '/.htaccess';
-            $index_file = $templates_dir . '/index.php';
-            
-            if (file_exists($htaccess_file)) {
-                unlink($htaccess_file);
-            }
-            if (file_exists($index_file)) {
-                unlink($index_file);
-            }
-            
-            // Remove the directory
-            if (rmdir($templates_dir)) {
-                error_log("CCC PostTypeTemplateService: Removed empty templates directory: $templates_dir");
-            }
-        }
+        // Clean up stored components
+        delete_option('_ccc_post_type_components_' . $post_type);
         
-        if (!empty($deleted_files)) {
-            error_log("CCC PostTypeTemplateService: Deleted " . implode(' and ', $deleted_files) . " templates for post type: $post_type");
-            return true;
-        }
-        
-        error_log("CCC PostTypeTemplateService: No templates found to delete for post type: $post_type");
-        return false;
+        return true;
     }
     
     /**

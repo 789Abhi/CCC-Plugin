@@ -20,6 +20,10 @@ class TemplateLoader {
         // Add content filter to inject CCC components (compatible with all themes)
         add_filter('the_content', [$this, 'injectCCCComponents'], 10);
         
+        // Remove Post Attributes meta box and template selection from post pages
+        add_action('add_meta_boxes', [$this, 'removePostAttributesMetaBox'], 999);
+        add_filter('theme_templates', [$this, 'filterThemeTemplates'], 999);
+        
         error_log("CCC TemplateLoader: Initialized with filters (PHP templates only)");
     }
     
@@ -194,12 +198,12 @@ class TemplateLoader {
      * Get the path to a post type template
      */
     private function getPostTypeTemplatePath($post_type) {
-        $theme_dir = get_stylesheet_directory();
+        // Check for template in plugin directory instead of theme
+        $plugin_dir = plugin_dir_path(dirname(dirname(__FILE__)));
+        $template_path = $plugin_dir . 'ccc-templates/post-types/single-' . $post_type . '.php';
         
-        // Check for PHP template only
-        $php_template_path = $theme_dir . '/ccc-single-page-templates/single-' . $post_type . '.php';
-        if (file_exists($php_template_path)) {
-            return $php_template_path;
+        if (file_exists($template_path)) {
+            return $template_path;
         }
         
         return false;
@@ -214,11 +218,41 @@ class TemplateLoader {
     }
     
     /**
+     * Remove Post Attributes meta box from post pages
+     */
+    public function removePostAttributesMetaBox() {
+        global $post;
+        
+        // Only remove for post post type
+        if ($post && $post->post_type === 'post') {
+            remove_meta_box('pageparentdiv', 'post', 'side');
+            error_log("CCC TemplateLoader: Removed page attributes meta box from post pages");
+        }
+    }
+    
+    /**
+     * Filter theme templates to remove template selection from post pages
+     */
+    public function filterThemeTemplates($templates) {
+        global $post;
+        
+        // Only filter for post post type
+        if ($post && $post->post_type === 'post') {
+            // Remove all template options for posts
+            $templates = [];
+            error_log("CCC TemplateLoader: Removed template selection from post pages");
+        }
+        
+        return $templates;
+    }
+    
+    /**
      * Get all available post type templates
      */
     public function getAvailablePostTypeTemplates() {
-        $theme_dir = get_stylesheet_directory();
-        $templates_dir = $theme_dir . '/ccc-single-page-templates';
+        // Check for templates in plugin directory instead of theme
+        $plugin_dir = plugin_dir_path(dirname(dirname(__FILE__)));
+        $templates_dir = $plugin_dir . 'ccc-templates/post-types';
         
         if (!file_exists($templates_dir)) {
             return [];
