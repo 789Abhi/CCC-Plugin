@@ -80,18 +80,102 @@ class AdminManager {
         error_log("CCC AdminManager: Rendering Components page");
         echo '<div class="">';
         echo '<div id="root" data-page="components"></div>';
+        
+        // Beautiful loading state
+        echo '<div id="loading-state" class="ccc-loading-container">';
+        echo '<div class="ccc-loading-content">';
+        echo '<div class="ccc-loading-spinner"></div>';
+        echo '<h2 class="ccc-loading-title">Loading Custom Craft Component</h2>';
+        echo '<p class="ccc-loading-subtitle">Please wait while we prepare your components...</p>';
+        echo '</div>';
+        echo '</div>';
+        
+        // Fallback error state (hidden by default)
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
         echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
         echo '</div>';
+        
         echo '<script>
             console.log("CCC: Components page rendered, root element:", document.getElementById("root"));
+            
+            // Show loading state immediately
+            document.getElementById("loading-state").style.display = "flex";
+            
+            // Check if React app loads successfully
+            function checkReactApp() {
+                const root = document.querySelector("#root");
+                if (root && root.children.length > 0) {
+                    // React app loaded successfully, hide loading state
+                    document.getElementById("loading-state").style.display = "none";
+                    console.log("CCC: React app loaded successfully");
+                } else {
+                    // Check again in 500ms
+                    setTimeout(checkReactApp, 500);
+                }
+            }
+            
+            // Start checking after a short delay
+            setTimeout(checkReactApp, 100);
+            
+            // Fallback to error message after 10 seconds if still loading
             setTimeout(function() {
                 if (!document.querySelector("#root").children.length) {
+                    document.getElementById("loading-state").style.display = "none";
                     document.getElementById("fallback").style.display = "block";
                 }
-            }, 2000);
+            }, 10000);
         </script>';
+        
+        // Loading styles
+        echo '<style>
+            .ccc-loading-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 400px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                margin: 20px 0;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            
+            .ccc-loading-content {
+                text-align: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .ccc-loading-spinner {
+                width: 60px;
+                height: 60px;
+                border: 4px solid rgba(255,255,255,0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                animation: ccc-spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }
+            
+            .ccc-loading-title {
+                font-size: 24px;
+                font-weight: 600;
+                margin: 0 0 10px 0;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .ccc-loading-subtitle {
+                font-size: 16px;
+                margin: 0;
+                opacity: 0.9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            
+            @keyframes ccc-spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>';
+        
         echo '</div>';
     }
 
@@ -99,20 +183,104 @@ class AdminManager {
         error_log("CCC AdminManager: Rendering Post Types page");
         echo '<div class="">';
         echo '<div id="root" data-page="posttypes"></div>';
+        
+        // Beautiful loading state
+        echo '<div id="loading-state" class="ccc-loading-container">';
+        echo '<div class="ccc-loading-content">';
+        echo '<div class="ccc-loading-spinner"></div>';
+        echo '<h2 class="ccc-loading-title">Loading Post Types Manager</h2>';
+        echo '<p class="ccc-loading-subtitle">Please wait while we prepare your post types...</p>';
+        echo '</div>';
+        echo '</div>';
+        
+        // Fallback error state (hidden by default)
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
         echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
         echo '</div>';
+        
         echo '<script>
             console.log("CCC: Post Types page rendered, root element:", document.getElementById("root"));
             console.log("CCC: Checking if React script is loaded...");
             console.log("CCC: React script elements:", document.querySelectorAll("script[src*=\'index-\']"));
+            
+            // Show loading state immediately
+            document.getElementById("loading-state").style.display = "flex";
+            
+            // Check if React app loads successfully
+            function checkReactApp() {
+                const root = document.querySelector("#root");
+                if (root && root.children.length > 0) {
+                    // React app loaded successfully, hide loading state
+                    document.getElementById("loading-state").style.display = "none";
+                    console.log("CCC: React app loaded successfully");
+                } else {
+                    // Check again in 500ms
+                    setTimeout(checkReactApp, 500);
+                }
+            }
+            
+            // Start checking after a short delay
+            setTimeout(checkReactApp, 100);
+            
+            // Fallback to error message after 10 seconds if still loading
             setTimeout(function() {
                 if (!document.querySelector("#root").children.length) {
+                    document.getElementById("loading-state").style.display = "none";
                     document.getElementById("fallback").style.display = "block";
                 }
-            }, 2000);
+            }, 10000);
         </script>';
+        
+        // Loading styles
+        echo '<style>
+            .ccc-loading-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 400px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                margin: 20px 0;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            
+            .ccc-loading-content {
+                text-align: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .ccc-loading-spinner {
+                width: 60px;
+                height: 60px;
+                border: 4px solid rgba(255,255,255,0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                animation: ccc-spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }
+            
+            .ccc-loading-title {
+                font-size: 24px;
+                font-weight: 600;
+                margin: 0 0 10px 0;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .ccc-loading-subtitle {
+                font-size: 16px;
+                margin: 0;
+                opacity: 0.9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            
+            @keyframes ccc-spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>';
+        
         echo '</div>';
     }
 
@@ -120,18 +288,102 @@ class AdminManager {
         error_log("CCC AdminManager: Rendering Taxonomies page");
         echo '<div class="">';
         echo '<div id="root" data-page="taxonomies"></div>';
+        
+        // Beautiful loading state
+        echo '<div id="loading-state" class="ccc-loading-container">';
+        echo '<div class="ccc-loading-content">';
+        echo '<div class="ccc-loading-spinner"></div>';
+        echo '<h2 class="ccc-loading-title">Loading Taxonomies Manager</h2>';
+        echo '<p class="ccc-loading-subtitle">Please wait while we prepare your taxonomies...</p>';
+        echo '</div>';
+        echo '</div>';
+        
+        // Fallback error state (hidden by default)
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
         echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
         echo '</div>';
+        
         echo '<script>
             console.log("CCC: Taxonomies page rendered, root element:", document.getElementById("root"));
+            
+            // Show loading state immediately
+            document.getElementById("loading-state").style.display = "flex";
+            
+            // Check if React app loads successfully
+            function checkReactApp() {
+                const root = document.querySelector("#root");
+                if (root && root.children.length > 0) {
+                    // React app loaded successfully, hide loading state
+                    document.getElementById("loading-state").style.display = "none";
+                    console.log("CCC: React app loaded successfully");
+                } else {
+                    // Check again in 500ms
+                    setTimeout(checkReactApp, 500);
+                }
+            }
+            
+            // Start checking after a short delay
+            setTimeout(checkReactApp, 100);
+            
+            // Fallback to error message after 10 seconds if still loading
             setTimeout(function() {
                 if (!document.querySelector("#root").children.length) {
+                    document.getElementById("loading-state").style.display = "none";
                     document.getElementById("fallback").style.display = "block";
                 }
-            }, 2000);
+            }, 10000);
         </script>';
+        
+        // Loading styles
+        echo '<style>
+            .ccc-loading-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 400px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                margin: 20px 0;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            
+            .ccc-loading-content {
+                text-align: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .ccc-loading-spinner {
+                width: 60px;
+                height: 60px;
+                border: 4px solid rgba(255,255,255,0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                animation: ccc-spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }
+            
+            .ccc-loading-title {
+                font-size: 24px;
+                font-weight: 600;
+                margin: 0 0 10px 0;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .ccc-loading-subtitle {
+                font-size: 16px;
+                margin: 0;
+                opacity: 0.9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            
+            @keyframes ccc-spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>';
+        
         echo '</div>';
     }
 
@@ -139,18 +391,102 @@ class AdminManager {
         error_log("CCC AdminManager: Rendering Import/Export page");
         echo '<div class="">';
         echo '<div id="root" data-page="importexport"></div>';
+        
+        // Beautiful loading state
+        echo '<div id="loading-state" class="ccc-loading-container">';
+        echo '<div class="ccc-loading-content">';
+        echo '<div class="ccc-loading-spinner"></div>';
+        echo '<h2 class="ccc-loading-title">Loading Import/Export Manager</h2>';
+        echo '<p class="ccc-loading-subtitle">Please wait while we prepare your import/export tools...</p>';
+        echo '</div>';
+        echo '</div>';
+        
+        // Fallback error state (hidden by default)
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
         echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
         echo '</div>';
+        
         echo '<script>
             console.log("CCC: Import/Export page rendered, root element:", document.getElementById("root"));
+            
+            // Show loading state immediately
+            document.getElementById("loading-state").style.display = "flex";
+            
+            // Check if React app loads successfully
+            function checkReactApp() {
+                const root = document.querySelector("#root");
+                if (root && root.children.length > 0) {
+                    // React app loaded successfully, hide loading state
+                    document.getElementById("loading-state").style.display = "none";
+                    console.log("CCC: React app loaded successfully");
+                } else {
+                    // Check again in 500ms
+                    setTimeout(checkReactApp, 500);
+                }
+            }
+            
+            // Start checking after a short delay
+            setTimeout(checkReactApp, 100);
+            
+            // Fallback to error message after 10 seconds if still loading
             setTimeout(function() {
                 if (!document.querySelector("#root").children.length) {
+                    document.getElementById("loading-state").style.display = "none";
                     document.getElementById("fallback").style.display = "block";
                 }
-            }, 2000);
+            }, 10000);
         </script>';
+        
+        // Loading styles
+        echo '<style>
+            .ccc-loading-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 400px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                margin: 20px 0;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            
+            .ccc-loading-content {
+                text-align: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .ccc-loading-spinner {
+                width: 60px;
+                height: 60px;
+                border: 4px solid rgba(255,255,255,0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                animation: ccc-spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }
+            
+            .ccc-loading-title {
+                font-size: 24px;
+                font-weight: 600;
+                margin: 0 0 10px 0;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .ccc-loading-subtitle {
+                font-size: 16px;
+                margin: 0;
+                opacity: 0.9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            
+            @keyframes ccc-spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>';
+        
         echo '</div>';
     }
 
@@ -158,18 +494,102 @@ class AdminManager {
         error_log("CCC AdminManager: Rendering Settings page");
         echo '<div class="">';
         echo '<div id="root" data-page="settings"></div>';
+        
+        // Beautiful loading state
+        echo '<div id="loading-state" class="ccc-loading-container">';
+        echo '<div class="ccc-loading-content">';
+        echo '<div class="ccc-loading-spinner"></div>';
+        echo '<h2 class="ccc-loading-title">Loading Settings Manager</h2>';
+        echo '<p class="ccc-loading-subtitle">Please wait while we prepare your settings...</p>';
+        echo '</div>';
+        echo '</div>';
+        
+        // Fallback error state (hidden by default)
         echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
         echo '<h2>React App Not Loading</h2>';
         echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
         echo '</div>';
+        
         echo '<script>
             console.log("CCC: Settings page rendered, root element:", document.getElementById("root"));
+            
+            // Show loading state immediately
+            document.getElementById("loading-state").style.display = "flex";
+            
+            // Check if React app loads successfully
+            function checkReactApp() {
+                const root = document.querySelector("#root");
+                if (root && root.children.length > 0) {
+                    // React app loaded successfully, hide loading state
+                    document.getElementById("loading-state").style.display = "none";
+                    console.log("CCC: React app loaded successfully");
+                } else {
+                    // Check again in 500ms
+                    setTimeout(checkReactApp, 500);
+                }
+            }
+            
+            // Start checking after a short delay
+            setTimeout(checkReactApp, 100);
+            
+            // Fallback to error message after 10 seconds if still loading
             setTimeout(function() {
                 if (!document.querySelector("#root").children.length) {
+                    document.getElementById("loading-state").style.display = "none";
                     document.getElementById("fallback").style.display = "block";
                 }
-            }, 2000);
+            }, 10000);
         </script>';
+        
+        // Loading styles
+        echo '<style>
+            .ccc-loading-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 400px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                margin: 20px 0;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            }
+            
+            .ccc-loading-content {
+                text-align: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .ccc-loading-spinner {
+                width: 60px;
+                height: 60px;
+                border: 4px solid rgba(255,255,255,0.3);
+                border-top: 4px solid white;
+                border-radius: 50%;
+                animation: ccc-spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }
+            
+            .ccc-loading-title {
+                font-size: 24px;
+                font-weight: 600;
+                margin: 0 0 10px 0;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .ccc-loading-subtitle {
+                font-size: 16px;
+                margin: 0;
+                opacity: 0.9;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            
+            @keyframes ccc-spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>';
+        
         echo '</div>';
     }
 }
