@@ -90,12 +90,6 @@ class AdminManager {
         echo '</div>';
         echo '</div>';
         
-        // Fallback error state (hidden by default)
-        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
-        echo '<h2>React App Not Loading</h2>';
-        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
-        echo '</div>';
-        
         echo '<script>
             console.log("CCC: Components page rendered, root element:", document.getElementById("root"));
             
@@ -117,14 +111,6 @@ class AdminManager {
             
             // Start checking after a short delay
             setTimeout(checkReactApp, 100);
-            
-            // Fallback to error message after 10 seconds if still loading
-            setTimeout(function() {
-                if (!document.querySelector("#root").children.length) {
-                    document.getElementById("loading-state").style.display = "none";
-                    document.getElementById("fallback").style.display = "block";
-                }
-            }, 10000);
         </script>';
         
         // Loading styles
@@ -193,12 +179,6 @@ class AdminManager {
         echo '</div>';
         echo '</div>';
         
-        // Fallback error state (hidden by default)
-        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
-        echo '<h2>React App Not Loading</h2>';
-        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
-        echo '</div>';
-        
         echo '<script>
             console.log("CCC: Post Types page rendered, root element:", document.getElementById("root"));
             console.log("CCC: Checking if React script is loaded...");
@@ -222,14 +202,6 @@ class AdminManager {
             
             // Start checking after a short delay
             setTimeout(checkReactApp, 100);
-            
-            // Fallback to error message after 10 seconds if still loading
-            setTimeout(function() {
-                if (!document.querySelector("#root").children.length) {
-                    document.getElementById("loading-state").style.display = "none";
-                    document.getElementById("fallback").style.display = "block";
-                }
-            }, 10000);
         </script>';
         
         // Loading styles
@@ -298,12 +270,6 @@ class AdminManager {
         echo '</div>';
         echo '</div>';
         
-        // Fallback error state (hidden by default)
-        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
-        echo '<h2>React App Not Loading</h2>';
-        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
-        echo '</div>';
-        
         echo '<script>
             console.log("CCC: Taxonomies page rendered, root element:", document.getElementById("root"));
             
@@ -325,14 +291,6 @@ class AdminManager {
             
             // Start checking after a short delay
             setTimeout(checkReactApp, 100);
-            
-            // Fallback to error message after 10 seconds if still loading
-            setTimeout(function() {
-                if (!document.querySelector("#root").children.length) {
-                    document.getElementById("loading-state").style.display = "none";
-                    document.getElementById("fallback").style.display = "block";
-                }
-            }, 10000);
         </script>';
         
         // Loading styles
@@ -401,12 +359,6 @@ class AdminManager {
         echo '</div>';
         echo '</div>';
         
-        // Fallback error state (hidden by default)
-        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
-        echo '<h2>React App Not Loading</h2>';
-        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
-        echo '</div>';
-        
         echo '<script>
             console.log("CCC: Import/Export page rendered, root element:", document.getElementById("root"));
             
@@ -428,14 +380,6 @@ class AdminManager {
             
             // Start checking after a short delay
             setTimeout(checkReactApp, 100);
-            
-            // Fallback to error message after 10 seconds if still loading
-            setTimeout(function() {
-                if (!document.querySelector("#root").children.length) {
-                    document.getElementById("loading-state").style.display = "none";
-                    document.getElementById("fallback").style.display = "block";
-                }
-            }, 10000);
         </script>';
         
         // Loading styles
@@ -504,12 +448,6 @@ class AdminManager {
         echo '</div>';
         echo '</div>';
         
-        // Fallback error state (hidden by default)
-        echo '<div id="fallback" style="display:none; padding: 20px; background: #f0f0f0; border: 1px solid #ccc; margin: 20px 0;">';
-        echo '<h2>React App Not Loading</h2>';
-        echo '<p>If you see this message, the React app failed to load. Check the browser console for errors.</p>';
-        echo '</div>';
-        
         echo '<script>
             console.log("CCC: Settings page rendered, root element:", document.getElementById("root"));
             
@@ -531,14 +469,6 @@ class AdminManager {
             
             // Start checking after a short delay
             setTimeout(checkReactApp, 100);
-            
-            // Fallback to error message after 10 seconds if still loading
-            setTimeout(function() {
-                if (!document.querySelector("#root").children.length) {
-                    document.getElementById("loading-state").style.display = "none";
-                    document.getElementById("fallback").style.display = "block";
-                }
-            }, 10000);
         </script>';
         
         // Loading styles
