@@ -3,6 +3,7 @@ namespace CCC\Ajax;
 
 use CCC\Services\ComponentService;
 use CCC\Services\FieldService;
+use CCC\Services\PostTypeTemplateService;
 use CCC\Models\Component;
 use CCC\Models\FieldValue;
 use CCC\Models\Field;
@@ -1820,7 +1821,114 @@ class AjaxHandler {
           return;
       }
 
-      // Original format for bulk assignments (main plugin interface)
+      // Check assignment type
+      $assignment_type = sanitize_text_field($_POST['assignment_type'] ?? 'individual_posts');
+      error_log("CCC DEBUG saveComponentAssignments - Assignment type: $assignment_type");
+
+      if ($assignment_type === 'post_types') {
+          // Handle post type assignments
+          $assignments = json_decode(wp_unslash($_POST['assignments'] ?? '{}'), true);
+          
+          if (!is_array($assignments)) {
+              wp_send_json_error(['message' => 'Invalid assignments data']);
+              return;
+          }
+
+          // Initialize PostTypeTemplateService
+          $template_service = new \CCC\Services\PostTypeTemplateService();
+          
+          // Get all available components for template generation
+          $all_components = [];
+          $components_query = new \WP_Query([
+              'post_type' => 'ccc_component',
+              'post_status' => 'publish',
+              'posts_per_page' => -1,
+              'meta_query' => [
+                  [
+                      'key' => '_ccc_component_data',
+                      'compare' => 'EXISTS'
+                  ]
+              ]
+          ]);
+          
+          if ($components_query->have_posts()) {
+              while ($components_query->have_posts()) {
+                  $components_query->the_post();
+                  $component_data = get_post_meta(get_the_ID(), '_ccc_component_data', true);
+                  if (!empty($component_data)) {
+                      $all_components[] = [
+                          'id' => get_the_ID(),
+                          'name' => get_the_title(),
+                          'handle_name' => $component_data['handle_name'] ?? ''
+                      ];
+                  }
+              }
+              wp_reset_postdata();
+          }
+
+          foreach ($assignments as $assignment_key => $component_data_array) {
+              if (strpos($assignment_key, 'post_type:') === 0) {
+                  $post_type = substr($assignment_key, 10); // Remove 'post_type:' prefix
+                  error_log("CCC DEBUG saveComponentAssignments - Processing post type: $post_type");
+                  
+                  // Get all posts of this post type
+                  $posts = get_posts([
+                      'post_type' => $post_type,
+                      'post_status' => 'publish',
+                      'numberposts' => -1,
+                      'fields' => 'ids'
+                  ]);
+                  
+                  if (is_array($posts)) {
+                      foreach ($posts as $post_id) {
+                          if (is_null($component_data_array)) {
+                              // Post type is being assigned - mark all posts of this type
+                              $previous_components = get_post_meta($post_id, '_ccc_previous_components', true);
+                              if (!empty($previous_components) && is_array($previous_components)) {
+                                  update_post_meta($post_id, '_ccc_components', $previous_components);
+                                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id (type: $post_type) assigned, restoring previous components: " . json_encode($previous_components));
+                              } else {
+                                  update_post_meta($post_id, '_ccc_components', []);
+                                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id (type: $post_type) assigned, no previous components to restore");
+                              }
+                              update_post_meta($post_id, '_ccc_had_components', '1');
+                              update_post_meta($post_id, '_ccc_assigned_via_main_interface', '1');
+                              update_post_meta($post_id, '_ccc_assigned_via_post_type', $post_type);
+                              error_log("CCC DEBUG saveComponentAssignments - Post $post_id (type: $post_type): assigned via post type, showing metabox");
+                          } else {
+                              // Post type is being unassigned - clear all posts of this type
+                              $current_components = get_post_meta($post_id, '_ccc_components', true);
+                              if (!empty($current_components) && is_array($current_components)) {
+                                  update_post_meta($post_id, '_ccc_previous_components', $current_components);
+                                  error_log("CCC DEBUG saveComponentAssignments - Post $post_id (type: $post_type) unassigned, storing previous components: " . json_encode($current_components));
+                              }
+                              update_post_meta($post_id, '_ccc_components', []);
+                              delete_post_meta($post_id, '_ccc_had_components');
+                              delete_post_meta($post_id, '_ccc_assigned_via_main_interface');
+                              delete_post_meta($post_id, '_ccc_assigned_via_post_type');
+                              error_log("CCC DEBUG saveComponentAssignments - Post $post_id (type: $post_type): unassigned via post type, hiding metabox");
+                          }
+                      }
+                      
+                      // Create or remove post type template based on assignment status
+                      try {
+                          if (is_null($component_data_array)) {
+                              // Post type is being assigned - create template
+                              $template_service->createPostTypeTemplate($post_type, $all_components);
+                              error_log("CCC DEBUG saveComponentAssignments - Created template for post type: $post_type");
+                          } else {
+                              // Post type is being unassigned - remove template
+                              $template_service->removePostTypeTemplate($post_type);
+                              error_log("CCC DEBUG saveComponentAssignments - Removed template for post type: $post_type");
+                          }
+                      } catch (\Exception $e) {
+                          error_log("CCC DEBUG saveComponentAssignments - Error handling template for post type $post_type: " . $e->getMessage());
+                      }
+                  }
+              }
+          }
+      } else {
+          // Handle individual post assignments (existing logic)
       $assignments = json_decode(wp_unslash($_POST['assignments'] ?? '{}'), true);
       
       if (!is_array($assignments)) {
@@ -1868,6 +1976,7 @@ class AjaxHandler {
           error_log("  - Final components: " . json_encode($final_components));
           error_log("  - Final _ccc_assigned_via_main_interface: " . ($final_assigned_via_main ? 'YES' : 'NO'));
           error_log("  - Final _ccc_had_components: " . ($final_had_components ? 'YES' : 'NO'));
+          }
                   }
 
       error_log("CCC DEBUG saveComponentAssignments - END");
@@ -2362,15 +2471,27 @@ class AjaxHandler {
           error_log("CCC DEBUG: getAvailablePostTypes - Found " . count($post_types) . " post types");
           
           foreach ($post_types as $post_type => $post_type_object) {
+              // Get the label with fallbacks
+              $label = '';
+              if (isset($post_type_object->labels->singular_name) && !empty($post_type_object->labels->singular_name)) {
+                  $label = $post_type_object->labels->singular_name;
+              } elseif (isset($post_type_object->labels->name) && !empty($post_type_object->labels->name)) {
+                  $label = $post_type_object->labels->name;
+              } else {
+                  // Fallback to the post type name itself
+                  $label = ucfirst(str_replace(['_', '-'], ' ', $post_type));
+              }
+              
               $available_post_types[] = [
                   'value' => $post_type,
-                  'label' => $post_type_object->labels->singular_name
+                  'label' => $label
               ];
-              error_log("CCC DEBUG: getAvailablePostTypes - Added post type: {$post_type} => {$post_type_object->labels->singular_name}");
+              error_log("CCC DEBUG: getAvailablePostTypes - Added post type: {$post_type} => {$label}");
           }
           
           error_log("CCC DEBUG: getAvailablePostTypes - Returning " . count($available_post_types) . " post types");
-          wp_send_json_success(['data' => $available_post_types]);
+          error_log("CCC DEBUG: getAvailablePostTypes - Final data: " . json_encode($available_post_types));
+          wp_send_json_success($available_post_types);
       } catch (\Exception $e) {
           error_log("Exception in getAvailablePostTypes: " . $e->getMessage());
           wp_send_json_error(['message' => $e->getMessage()]);

@@ -5,6 +5,7 @@ namespace CCC\Core;
 use CCC\Admin\AdminManager;
 use CCC\Admin\RevisionAdmin;
 use CCC\Frontend\TemplateManager;
+use CCC\Frontend\TemplateLoader;
 use CCC\Ajax\AjaxHandler;
 
 defined('ABSPATH') || exit;
@@ -13,6 +14,7 @@ class Plugin {
    private $admin_manager;
    private $revision_admin;
    private $template_manager;
+   private $template_loader;
    private $ajax_handler;
    
    /**
@@ -33,6 +35,7 @@ class Plugin {
    public function __construct() {
        $this->admin_manager = new AdminManager();
        $this->template_manager = new TemplateManager();
+       $this->template_loader = new TemplateLoader();
        $this->ajax_handler = new AjaxHandler();
    }
 
@@ -115,7 +118,46 @@ class Plugin {
        
        // Handle plugin updates
        add_action('upgrader_process_complete', [$this, 'handle_plugin_update'], 10, 2);
+       
+       // Register CCC shortcodes
+       add_action('init', [$this, 'register_shortcodes']);
    }
+   
+   /**
+    * Register CCC shortcodes
+    */
+    public function register_shortcodes() {
+        // Register the ccc_render_components shortcode
+        if (!shortcode_exists('ccc_render_components')) {
+            add_shortcode('ccc_render_components', function($atts = []) {
+                // Parse shortcode attributes
+                $atts = shortcode_atts([
+                    'post_id' => null,
+                ], $atts, 'ccc_render_components');
+                
+                // Get post ID
+                $post_id = $atts['post_id'] ? intval($atts['post_id']) : get_the_ID();
+                
+                if (!$post_id) {
+                    return '';
+                }
+                
+                // Start output buffering
+                ob_start();
+                
+                // Render components
+                if (function_exists('render_ccc_components')) {
+                    render_ccc_components($post_id);
+                }
+                
+                // Get the output
+                $output = ob_get_clean();
+                
+                return $output;
+            });
+            error_log("CCC Plugin: Registered ccc_render_components shortcode in main plugin");
+        }
+    }
    
    /**
     * Register REST API routes

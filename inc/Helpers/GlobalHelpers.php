@@ -494,14 +494,16 @@ if (!function_exists('extract_tiktok_video_id')) {
 
 if (!function_exists('get_ccc_field')) {
     function get_ccc_field($field_name, $post_id = null, $component_id = null, $instance_id = null) {
-        global $wpdb, $ccc_current_component, $ccc_current_post_id, $ccc_current_instance_id;
+        global $wpdb, $ccc_current_component, $ccc_current_post_id, $ccc_current_component_id, $ccc_current_instance_id;
         
         // Use global context if available
         if (!$post_id) {
             $post_id = $ccc_current_post_id ?: get_the_ID();
         }
         
-        if (!$component_id && isset($ccc_current_component['id'])) {
+        if (!$component_id && isset($ccc_current_component_id)) {
+            $component_id = $ccc_current_component_id;
+        } elseif (!$component_id && isset($ccc_current_component['id'])) {
             $component_id = $ccc_current_component['id'];
         }
         
@@ -513,6 +515,8 @@ if (!function_exists('get_ccc_field')) {
             error_log("CCC: No post ID available for get_ccc_field('$field_name')");
             return '';
         }
+        
+        error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, $instance_id)");
         
         $fields_table = $wpdb->prefix . 'cc_fields';
         $values_table = $wpdb->prefix . 'cc_field_values';
@@ -550,6 +554,8 @@ if (!function_exists('get_ccc_field')) {
         
         $query .= " ORDER BY fv.id DESC LIMIT 1"; // Get the latest value
         $value = $wpdb->get_var($wpdb->prepare($query, $params));
+        
+        error_log("CCC: get_ccc_field query result for '$field_name': " . json_encode($value));
         
         // Process value based on field type
         if ($field_type === 'repeater') {
@@ -2436,4 +2442,391 @@ if (!function_exists('debug_ccc_select_values')) {
             'select_list' => get_ccc_select_values($field_name, $post_id, $instance_id, 'list')
         ];
     }
+}
+
+// Component rendering function for post type templates
+if (!function_exists('render_ccc_components')) {
+    /**
+     * Render all components assigned to a post
+     * 
+     * @param int $post_id The post ID to render components for
+     * @param array $options Optional rendering options
+     * @return void Outputs HTML directly
+     */
+    function render_ccc_components($post_id, $options = []) {
+        if (!$post_id) {
+            error_log("CCC render_ccc_components: No post ID provided");
+            return;
+        }
+        
+        error_log("CCC render_ccc_components: Starting for post ID: $post_id");
+        
+        // Get components assigned to this post
+        $assigned_components = get_post_meta($post_id, '_ccc_components', true);
+        $assigned_via_post_type = get_post_meta($post_id, '_ccc_assigned_via_post_type', true);
+        
+        error_log("CCC render_ccc_components: Post $post_id - assigned_components: " . json_encode($assigned_components));
+        error_log("CCC render_ccc_components: Post $post_id - assigned_via_post_type: " . json_encode($assigned_via_post_type));
+        
+        $components = [];
+        
+        // Priority 1: Check if this post has individual components assigned
+        if (!empty($assigned_components) && is_array($assigned_components)) {
+            error_log("CCC render_ccc_components: Post $post_id has individual components assigned, using those");
+            
+            global $wpdb;
+            $components_table = $wpdb->prefix . 'cc_components';
+            
+            foreach ($assigned_components as $component_data) {
+                if (isset($component_data['id'])) {
+                    $component_id = $component_data['id'];
+                    $component = $wpdb->get_row($wpdb->prepare("SELECT * FROM $components_table WHERE id = %d AND hidden = 0", $component_id));
+                    if ($component) {
+                        $components[] = $component;
+                        error_log("CCC render_ccc_components: Added individual component: {$component->name} (ID: {$component->id})");
+                    }
+                }
+            }
+            
+            error_log("CCC render_ccc_components: Final component count for individual assignment: " . count($components));
+        }
+        // Priority 2: If no individual components, check post type assignment
+        elseif (!empty($assigned_via_post_type)) {
+            error_log("CCC render_ccc_components: Post type assignment detected: $assigned_via_post_type");
+            
+            global $wpdb;
+            $components_table = $wpdb->prefix . 'cc_components';
+            
+            // Get components from stored post type assignment
+            $post_type_components = get_option('_ccc_post_type_components_' . $assigned_via_post_type, []);
+            error_log("CCC render_ccc_components: Stored post type components for $assigned_via_post_type: " . json_encode($post_type_components));
+            
+            if (!empty($post_type_components) && is_array($post_type_components)) {
+                foreach ($post_type_components as $component_id) {
+                    $component = $wpdb->get_row($wpdb->prepare("SELECT * FROM $components_table WHERE id = %d AND hidden = 0", $component_id));
+                    if ($component) {
+                        $components[] = $component;
+                        error_log("CCC render_ccc_components: Added component from post type assignment: {$component->name} (ID: {$component->id})");
+                    }
+                }
+            }
+            
+            error_log("CCC render_ccc_components: Final component count for post type $assigned_via_post_type: " . count($components));
+        }
+        // Priority 3: Auto-detect post type assignment if no explicit assignment found
+        else {
+            $post = get_post($post_id);
+            if ($post) {
+                $post_type = $post->post_type;
+                $stored_components = get_option('_ccc_post_type_components_' . $post_type, []);
+                if (!empty($stored_components)) {
+                    error_log("CCC render_ccc_components: Auto-detected post type assignment for $post_type with components: " . json_encode($stored_components));
+                    
+                    global $wpdb;
+                    $components_table = $wpdb->prefix . 'cc_components';
+                    
+                    foreach ($stored_components as $component_id) {
+                        $component = $wpdb->get_row($wpdb->prepare("SELECT * FROM $components_table WHERE id = %d AND hidden = 0", $component_id));
+                        if ($component) {
+                            $components[] = $component;
+                            error_log("CCC render_ccc_components: Added auto-detected component: {$component->name} (ID: {$component->id})");
+                        }
+                    }
+                    
+                    error_log("CCC render_ccc_components: Final component count for auto-detected post type $post_type: " . count($components));
+                } else {
+                    error_log("CCC render_ccc_components: Post type $post_type has no stored components");
+                }
+            } else {
+                error_log("CCC render_ccc_components: Post $post_id not found");
+            }
+        }
+        
+        // Final debug log
+        error_log("CCC render_ccc_components: Summary for post $post_id - assigned_components: " . json_encode($assigned_components) . ", assigned_via_post_type: " . json_encode($assigned_via_post_type) . ", total components: " . count($components));
+        
+        if (empty($components)) {
+            error_log("CCC render_ccc_components: No components to render for post $post_id");
+            return;
+        }
+        
+        error_log("CCC render_ccc_components: About to render " . count($components) . " components for post $post_id");
+        
+        // Render each component
+        if (!empty($assigned_components) && is_array($assigned_components)) {
+            // Start the components wrapper
+            echo '<div class="ccc-components-display">';
+            
+            // Render each assigned component instance separately
+            foreach ($assigned_components as $comp_data) {
+                if (!isset($comp_data['id']) || !isset($comp_data['instance_id'])) {
+                    continue;
+                }
+                
+                // Skip hidden components
+                if (isset($comp_data['isHidden']) && $comp_data['isHidden']) {
+                    error_log("CCC render_ccc_components: Skipping hidden component instance {$comp_data['instance_id']}");
+                    continue;
+                }
+                
+                $component_id = $comp_data['id'];
+                $instance_id = $comp_data['instance_id'];
+                $component_order = $comp_data['order'] ?? 0;
+                
+                // Get the component data from database
+                global $wpdb;
+                $components_table = $wpdb->prefix . 'cc_components';
+                $component = $wpdb->get_row($wpdb->prepare("SELECT * FROM $components_table WHERE id = %d AND hidden = 0", $component_id));
+                
+                if (!$component) {
+                    error_log("CCC render_ccc_components: Component $component_id not found or hidden");
+                    continue;
+                }
+                
+                error_log("CCC render_ccc_components: Rendering component instance {$component->name} (ID: {$component->id}) with handle: {$component->handle_name}, instance_id: {$instance_id}");
+                
+                // Start component wrapper with proper structure
+                echo '<div class="ccc-component ccc-component-' . esc_attr($component->handle_name) . '" data-component-order="' . esc_attr($component_order) . '" data-instance-id="' . esc_attr($instance_id) . '">';
+                
+                // Check if component template exists
+                $template_path = get_template_directory() . '/ccc-templates/' . $component->handle_name . '.php';
+                error_log("CCC render_ccc_components: Looking for template at: $template_path");
+                
+                if (file_exists($template_path)) {
+                    error_log("CCC render_ccc_components: Found template, including it");
+                    
+                    // Set up variables for the template
+                    $component_name = $component->name;
+                    $component_handle = $component->handle_name;
+                    
+                    // Set up global context for get_ccc_field to work without parameters
+                    global $ccc_current_post_id, $ccc_current_component_id, $ccc_current_instance_id;
+                    $ccc_current_post_id = $post_id;
+                    $ccc_current_component_id = $component->id;
+                    $ccc_current_instance_id = $instance_id;
+                    
+                    error_log("CCC render_ccc_components: Set global context - post_id: $post_id, component_id: {$component->id}, instance_id: $instance_id");
+                    
+                    // Include the component template
+                    include $template_path;
+                    
+                    error_log("CCC render_ccc_components: Template included successfully for component instance {$component->name} with instance_id {$instance_id}");
+                } else {
+                    error_log("CCC render_ccc_components: Template not found, falling back to basic rendering");
+                    
+                    // Fallback to basic rendering if template doesn't exist
+                    echo '<h3 class="ccc-component-title">' . esc_html($component->name) . '</h3>';
+                    
+                    // Get component fields
+                    $fields_table = $wpdb->prefix . 'cc_fields';
+                    $fields = $wpdb->get_results($wpdb->prepare("SELECT * FROM $fields_table WHERE component_id = %d ORDER BY field_order ASC", $component->id));
+                    
+                    error_log("CCC render_ccc_components: Component {$component->name} (ID: {$component->id}) has " . count($fields) . " fields");
+                    
+                    if ($fields) {
+                        echo '<div class="ccc-component-fields">';
+                        foreach ($fields as $field) {
+                            echo '<div class="ccc-field" data-field-id="' . esc_attr($field->id) . '">';
+                            echo '<label class="ccc-field-label">' . esc_html($field->label) . '</label>';
+                            
+                            $field_value = get_ccc_field($field->name, $post_id, $component->id, $instance_id);
+                            error_log("CCC render_ccc_components: Field {$field->name} (type: {$field->type}) value: " . json_encode($field_value));
+                            
+                            // Render field based on type
+                            switch ($field->type) {
+                                case 'text':
+                                case 'textarea':
+                                    echo '<div class="ccc-field-value">' . esc_html($field_value) . '</div>';
+                                    break;
+                                case 'image':
+                                    if ($field_value) {
+                                        echo '<div class="ccc-field-value">';
+                                        echo '<img src="' . esc_url($field_value) . '" alt="' . esc_attr($field->label) . '" class="ccc-field-image">';
+                                        echo '</div>';
+                                    }
+                                    break;
+                                case 'repeater':
+                                    if (is_array($field_value)) {
+                                        echo '<div class="ccc-field-value ccc-repeater">';
+                                        foreach ($field_value as $index => $repeater_data) {
+                                            echo '<div class="ccc-repeater-item" data-index="' . $index . '">';
+                                            if (isset($field->children) && is_array($field->children)) {
+                                                foreach ($field->children as $child_field) {
+                                                    $child_value = isset($repeater_data[$child_field->name]) ? $repeater_data[$child_field->name] : '';
+                                                    echo '<div class="ccc-child-field">';
+                                                    echo '<span class="ccc-child-field-label">' . esc_html($child_field->label) . ':</span> ';
+                                                    echo '<span class="ccc-child-field-value">' . esc_html($child_value) . '</span>';
+                                                    echo '</div>';
+                                                }
+                                            }
+                                            echo '</div>';
+                                        }
+                                        echo '</div>';
+                                    }
+                                    break;
+                                default:
+                                    echo '<div class="ccc-field-value">' . esc_html($field_value) . '</div>';
+                                    break;
+                            }
+                            
+                            echo '</div>'; // .ccc-field
+                        }
+                        echo '</div>'; // .ccc-component-fields
+                    }
+                }
+                
+                // Close component wrapper
+                echo '</div>'; // .ccc-component
+            }
+            
+            // Close the components wrapper
+            echo '</div>'; // .ccc-components-display
+        } else {
+            // Fallback for post type level components (if no individual components assigned)
+            // Start the components wrapper
+            echo '<div class="ccc-components-display">';
+            
+            foreach ($components as $component) {
+                error_log("CCC render_ccc_components: Rendering component {$component->name} (ID: {$component->id}) with handle: {$component->handle_name}");
+                
+                // Start component wrapper with proper structure
+                echo '<div class="ccc-component ccc-component-' . esc_attr($component->handle_name) . '" data-component-order="0" data-instance-id="">';
+                
+                // Check if component template exists
+                $template_path = get_template_directory() . '/ccc-templates/' . $component->handle_name . '.php';
+                error_log("CCC render_ccc_components: Looking for template at: $template_path");
+                
+                if (file_exists($template_path)) {
+                    error_log("CCC render_ccc_components: Found template, including it");
+                    
+                    // Set up variables for the template
+                    $component_id = $component->id;
+                    $component_name = $component->name;
+                    $component_handle = $component->handle_name;
+                    $instance_id = null;
+                    
+                    // Include the component template
+                    include $template_path;
+                    
+                    error_log("CCC render_ccc_components: Template included successfully for component {$component->name}");
+                } else {
+                    error_log("CCC render_ccc_components: Template not found, falling back to basic rendering");
+                    
+                    // Fallback to basic rendering if template doesn't exist
+                    echo '<h3 class="ccc-component-title">' . esc_html($component->name) . '</h3>';
+                    
+                    // Get component fields
+                    $fields_table = $wpdb->prefix . 'cc_fields';
+                    $fields = $wpdb->get_results($wpdb->prepare("SELECT * FROM $components_table WHERE component_id = %d ORDER BY field_order ASC", $component->id));
+                    
+                    error_log("CCC render_ccc_components: Component {$component->name} (ID: {$component->id}) has " . count($fields) . " fields");
+                    
+                    if ($fields) {
+                        echo '<div class="ccc-component-fields">';
+                        foreach ($fields as $field) {
+                            echo '<div class="ccc-field" data-field-id="' . esc_attr($field->id) . '">';
+                            echo '<label class="ccc-field-label">' . esc_html($field->label) . '</label>';
+                            
+                            $field_value = get_ccc_field($field->name, $post_id, $component->id, $instance_id);
+                            error_log("CCC render_ccc_components: Field {$field->name} (type: {$field->type}) value: " . json_encode($field_value));
+                            
+                            // Render field based on type
+                            switch ($field->type) {
+                                case 'text':
+                                case 'textarea':
+                                    echo '<div class="ccc-field-value">' . esc_html($field_value) . '</div>';
+                                    break;
+                                case 'image':
+                                    if ($field_value) {
+                                        echo '<div class="ccc-field-value">';
+                                        echo '<img src="' . esc_url($field_value) . '" alt="' . esc_attr($field->label) . '" class="ccc-field-image">';
+                                        echo '</div>';
+                                    }
+                                    break;
+                                case 'repeater':
+                                    if (is_array($field_value)) {
+                                        echo '<div class="ccc-field-value ccc-repeater">';
+                                        foreach ($field_value as $index => $repeater_data) {
+                                            echo '<div class="ccc-repeater-item" data-index="' . $index . '">';
+                                            if (isset($field->children) && is_array($field->children)) {
+                                                foreach ($field->children as $child_field) {
+                                                    $child_value = isset($repeater_data[$child_field->name]) ? $repeater_data[$child_field->name] : '';
+                                                    echo '<div class="ccc-child-field">';
+                                                    echo '<span class="ccc-child-field-label">' . esc_html($child_field->label) . ':</span> ';
+                                                    echo '<span class="ccc-child-field-value">' . esc_html($child_value) . '</span>';
+                                                    echo '</div>';
+                                                }
+                                            }
+                                            echo '</div>';
+                                        }
+                                        echo '</div>';
+                                    }
+                                    break;
+                                default:
+                                    echo '<div class="ccc-field-value">' . esc_html($field_value) . '</div>';
+                                    break;
+                            }
+                            
+                            echo '</div>'; // .ccc-field
+                        }
+                        echo '</div>'; // .ccc-component-fields
+                    }
+                }
+                
+                // Close component wrapper
+                echo '</div>'; // .ccc-component
+            }
+            
+            // Close the components wrapper
+            echo '</div>'; // .ccc-components-display
+        }
+        
+        error_log("CCC render_ccc_components: Completed rendering for post $post_id");
+    }
+}
+
+if (!function_exists('ccc_render_components_shortcode')) {
+    /**
+     * Shortcode to render CCC components
+     * Usage: [ccc_render_components] or [ccc_render_components post_id="123"]
+     * 
+     * @param array $atts Shortcode attributes
+     * @return string HTML output for the components
+     */
+    function ccc_render_components_shortcode($atts = []) {
+        // Parse shortcode attributes
+        $atts = shortcode_atts([
+            'post_id' => null,
+        ], $atts, 'ccc_render_components');
+        
+        // Get post ID
+        $post_id = $atts['post_id'] ? intval($atts['post_id']) : get_the_ID();
+        
+        if (!$post_id) {
+            return '';
+        }
+        
+        // Start output buffering
+        ob_start();
+        
+        // Render components
+        render_ccc_components($post_id);
+        
+        // Get the output
+        $output = ob_get_clean();
+        
+        return $output;
+    }
+    
+    // Register the shortcode
+    add_shortcode('ccc_render_components', 'ccc_render_components_shortcode');
+    error_log("CCC Shortcode: Registered ccc_render_components shortcode");
+    
+    // Also hook into init to ensure it's available early
+    add_action('init', function() {
+        if (!shortcode_exists('ccc_render_components')) {
+            add_shortcode('ccc_render_components', 'ccc_render_components_shortcode');
+            error_log("CCC Shortcode: Re-registered ccc_render_components shortcode on init");
+        }
+    });
 }
