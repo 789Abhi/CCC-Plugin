@@ -26,20 +26,28 @@ class MetaBoxManager {
         }
 
         // Show metabox if this post has components assigned OR if it previously had components
-        // This ensures the metabox stays visible even when all components are removed
-        // The metabox will only disappear when the user explicitly saves the page with no components
+        // OR if this post type has components assigned at the post type level
         $components = get_post_meta($post->ID, '_ccc_components', true);
         $had_components = get_post_meta($post->ID, '_ccc_had_components', true);
         
-        error_log("CCC MetaBoxManager: Post {$post->ID} - components: " . json_encode($components) . ", had_components: " . $had_components);
+        // Check if this post type has components assigned at the post type level
+        $post_type_components = get_option('_ccc_post_type_components_' . $post->post_type, []);
+        $has_post_type_components = !empty($post_type_components) && is_array($post_type_components);
         
-        if ((is_array($components) && !empty($components)) || $had_components) {
+        error_log("CCC MetaBoxManager: Post {$post->ID} - components: " . json_encode($components) . ", had_components: " . $had_components . ", post_type_components: " . json_encode($post_type_components) . ", has_post_type_components: " . ($has_post_type_components ? 'YES' : 'NO'));
+        
+        if ((is_array($components) && !empty($components)) || $had_components || $has_post_type_components) {
             error_log("CCC MetaBoxManager: Adding metabox for post {$post->ID}");
+            
+            // Get all public post types to support custom post types like 'products'
+            $post_types = get_post_types(['public' => true], 'names');
+            error_log("CCC MetaBoxManager: Available post types for metabox: " . json_encode($post_types));
+            
             add_meta_box(
                 'ccc_component_selector',
                 'Custom Components',
                 [$this, 'renderComponentMetaBox'],
-                ['post', 'page'],
+                $post_types,
                 'normal',
                 'high'
             );
