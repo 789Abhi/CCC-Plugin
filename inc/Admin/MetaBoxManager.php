@@ -57,12 +57,13 @@ class MetaBoxManager {
     }
 
     public function renderComponentMetaBox($post) {
-        wp_nonce_field('ccc_component_meta_box', 'ccc_component_nonce');
+        wp_nonce_field('ccc_nonce', 'ccc_nonce');
         
         error_log("CCC MetaBoxManager: Rendering metabox for post {$post->ID}");
         
         echo '<div class="ccc-meta-box">';
-        echo '<div id="ccc-metabox-root" data-post-id="' . esc_attr($post->ID) . '"></div>';
+        echo '<div id="ccc-metabox-root" data-post-id="' . esc_attr($post->ID) . '" data-nonce="' . esc_attr(wp_create_nonce('ccc_nonce')) . '"></div>';
+        echo '<script>console.log("CCC MetaBox: Nonce generated: ' . wp_create_nonce('ccc_nonce') . '");</script>';
         echo '</div>';
     }
 
@@ -71,7 +72,7 @@ class MetaBoxManager {
     // Old field rendering removed - now using React components
 
     public function saveComponentData($post_id, $post) {
-        if (!isset($_POST['ccc_component_nonce']) || !wp_verify_nonce($_POST['ccc_component_nonce'], 'ccc_component_meta_box')) {
+        if (!isset($_POST['ccc_nonce']) || !wp_verify_nonce($_POST['ccc_nonce'], 'ccc_nonce')) {
             return;
         }
 

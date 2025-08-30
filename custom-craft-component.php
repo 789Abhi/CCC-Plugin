@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas.
- * Version: 4.2
+ * Version: 4.3
  * Author: Abhishek
 */
 
@@ -82,6 +82,8 @@ function ccc_load_helpers() {
 
 // Initialize plugin very early
 add_action('plugins_loaded', 'custom_craft_component_init', 1);
+
+
 
 function custom_craft_component_init() {
   // Ensure helper functions are loaded

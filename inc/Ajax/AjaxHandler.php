@@ -70,6 +70,7 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_update_component_fields', [$this, 'updateComponentFields']);
       add_action('wp_ajax_ccc_update_field_from_hierarchy', [$this, 'updateFieldFromHierarchy']);
       add_action('wp_ajax_ccc_get_posts_by_ids', [$this, 'getPostsByIds']);
+      add_action('wp_ajax_ccc_search_posts', [$this, 'searchPosts']);
       add_action('wp_ajax_ccc_get_available_post_types', [$this, 'getAvailablePostTypes']);
       add_action('wp_ajax_ccc_get_available_taxonomies', [$this, 'getAvailableTaxonomies']);
       add_action('wp_ajax_ccc_get_taxonomies_for_post_type', [$this, 'getTaxonomiesForPostType']);
@@ -2460,6 +2461,8 @@ class AjaxHandler {
           wp_send_json_error(['message' => $e->getMessage()]);
       }
   }
+
+
 
   public function getAvailablePostTypes() {
       try {

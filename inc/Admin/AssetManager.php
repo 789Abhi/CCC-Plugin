@@ -216,8 +216,6 @@ class AssetManager {
           $current_page = 'custom-craft-posttypes';
       } elseif ($hook === 'custom-craft-component_page_custom-craft-taxonomies' || $hook === 'custom-components_page_custom-craft-taxonomies') {
           $current_page = 'custom-craft-taxonomies';
-      } elseif ($hook === 'custom-craft-component_page_custom-craft-importexport' || $hook === 'custom-components_page_custom-craft-importexport') {
-          $current_page = 'custom-craft-importexport';
       } elseif ($hook === 'custom-craft-component_page_custom-craft-settings' || $hook === 'custom-components_page_custom-craft-settings') {
           $current_page = 'custom-craft-settings';
       }
