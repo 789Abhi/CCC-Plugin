@@ -773,12 +773,15 @@ class AjaxHandler {
   public function createFieldCallback() {
       try {
           check_ajax_referer('ccc_nonce', 'nonce');
+          
+          error_log('CCC createFieldCallback: POST data received: ' . json_encode($_POST));
 
           $label = sanitize_text_field($_POST['label'] ?? '');
           $name = sanitize_text_field($_POST['name'] ?? '');
           $type = sanitize_text_field($_POST['type'] ?? '');
           $component_id = intval($_POST['component_id'] ?? 0);
           $required = isset($_POST['required']) ? (bool) $_POST['required'] : false;
+          $placeholder = sanitize_text_field($_POST['placeholder'] ?? '');
           $children = isset($_POST['children']) ? json_decode(wp_unslash($_POST['children']), true) : null;
 
           if (empty($label) || empty($name) || empty($type) || empty($component_id)) {
@@ -801,8 +804,107 @@ class AjaxHandler {
                   'max_sets' => 0,
                   'children' => $children
               ];
+          } elseif (in_array($type, ['checkbox', 'select', 'radio', 'button_group'])) {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'options' => $field_config['options'] ?? [],
+                  'multiple' => (bool)($field_config['multiple'] ?? false)
+              ];
+          } elseif ($type === 'image') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url')
+              ];
+          } elseif ($type === 'video') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
+                  'sources' => is_array($field_config['sources']) ? $field_config['sources'] : ['file', 'youtube', 'vimeo', 'url'],
+                  'player_options' => is_array($field_config['player_options']) ? $field_config['player_options'] : [
+                      'controls' => true,
+                      'autoplay' => false,
+                      'muted' => false,
+                      'loop' => false,
+                      'download' => true
+                  ]
+              ];
+          } elseif ($type === 'wysiwyg') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'editor_settings' => is_array($field_config['editor_settings']) ? $field_config['editor_settings'] : [
+                      'media_buttons' => true,
+                      'teeny' => false,
+                      'textarea_rows' => 10
+                  ]
+              ];
+          } elseif ($type === 'number') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'number_type' => sanitize_text_field($field_config['number_type'] ?? 'normal'),
+                  'unique' => (bool)($field_config['unique'] ?? false),
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' ? floatval($field_config['min_value']) : null,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' ? floatval($field_config['max_value']) : null,
+                  'min_length' => isset($field_config['min_length']) && $field_config['min_length'] !== '' ? intval($field_config['min_length']) : null,
+                  'max_length' => isset($field_config['max_length']) && $field_config['max_length'] !== '' ? intval($field_config['max_length']) : null,
+                  'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
+                  'append' => sanitize_text_field($field_config['append'] ?? '')
+              ];
+          } elseif ($type === 'range') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'min_value' => isset($field_config['min_value']) && $field_config['min_value'] !== '' && $field_config['min_value'] !== null ? floatval($field_config['min_value']) : null,
+                  'max_value' => isset($field_config['max_value']) && $field_config['max_value'] !== '' && $field_config['max_value'] !== null ? floatval($field_config['max_value']) : null,
+                  'prepend' => sanitize_text_field($field_config['prepend'] ?? ''),
+                  'append' => sanitize_text_field($field_config['append'] ?? '')
+              ];
+          } elseif ($type === 'toggle') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'default_value' => (bool)($field_config['default_value'] ?? false)
+              ];
+          } elseif ($type === 'user') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'role_filter' => isset($field_config['role_filter']) && is_array($field_config['role_filter']) ? $field_config['role_filter'] : [],
+                  'multiple' => (bool)($field_config['multiple'] ?? false),
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'id'),
+                  'searchable' => (bool)($field_config['searchable'] ?? true),
+                  'orderby' => sanitize_text_field($field_config['orderby'] ?? 'display_name'),
+                  'order' => sanitize_text_field($field_config['order'] ?? 'ASC')
+              ];
+          } elseif ($type === 'relationship') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'filter_post_types' => isset($field_config['filter_post_types']) && is_array($field_config['filter_post_types']) ? $field_config['filter_post_types'] : [],
+                  'filter_post_status' => isset($field_config['filter_post_status']) && is_array($field_config['filter_post_status']) ? $field_config['filter_post_status'] : [],
+                  'filter_taxonomy' => sanitize_text_field($field_config['filter_taxonomy'] ?? ''),
+                  'filters' => isset($field_config['filters']) && is_array($field_config['filters']) ? $field_config['filters'] : ['search', 'post_type'],
+                  'max_posts' => intval($field_config['max_posts'] ?? 0),
+                  'return_format' => sanitize_text_field($field_config['return_format'] ?? 'object')
+              ];
+          } elseif ($type === 'link') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'link_types' => isset($field_config['link_types']) && is_array($field_config['link_types']) ? $field_config['link_types'] : ['internal', 'external'],
+                  'default_type' => sanitize_text_field($field_config['default_type'] ?? 'internal'),
+                  'post_types' => isset($field_config['post_types']) && is_array($field_config['post_types']) ? $field_config['post_types'] : ['post', 'page'],
+                  'show_target' => (bool)($field_config['show_target'] ?? true),
+                  'show_title' => (bool)($field_config['show_title'] ?? true)
+              ];
+          } elseif ($type === 'file') {
+              $field_config = json_decode(wp_unslash($_POST['field_config'] ?? '{}'), true);
+              $config = [
+                  'allowed_types' => isset($field_config['allowed_types']) && is_array($field_config['allowed_types']) ? $field_config['allowed_types'] : ['image', 'video', 'document', 'audio', 'archive'],
+                  'max_file_size' => intval($field_config['max_file_size'] ?? 25),
+                  'return_type' => sanitize_text_field($field_config['return_type'] ?? 'url'),
+                  'show_preview' => (bool)($field_config['show_preview'] ?? true),
+                  'show_download' => (bool)($field_config['show_download'] ?? true),
+                  'show_delete' => (bool)($field_config['show_delete'] ?? true)
+              ];
           }
 
+          error_log('CCC createFieldCallback: Field config being saved: ' . json_encode($config));
+          
           $field = new \CCC\Models\Field([
               'component_id' => $component_id,
               'label' => $label,
@@ -810,7 +912,8 @@ class AjaxHandler {
               'type' => $type,
               'config' => json_encode($config),
               'field_order' => $next_order,
-              'required' => $required
+              'required' => $required,
+              'placeholder' => $placeholder
           ]);
 
           if ($field->save()) {

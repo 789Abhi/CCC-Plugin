@@ -32,13 +32,16 @@ class ComponentService {
     }
 
     public function createComponent($name, $handle) {
-        if (Component::handleExists($handle)) {
-            throw new \Exception("A component with the handle '{$handle}' already exists. Please choose a different name or handle.");
+        // Always sanitize the handle before validating or saving
+        $sanitized_handle = $this->sanitizeHandle($handle);
+
+        if (Component::handleExists($sanitized_handle)) {
+            throw new \Exception("A component with the handle '{$sanitized_handle}' already exists. Please choose a different name or handle.");
         }
 
         $component = new Component([
             'name' => sanitize_text_field($name),
-            'handle_name' => $this->sanitizeHandle($handle)
+            'handle_name' => $sanitized_handle
         ]);
 
         if (!$component->save()) {
@@ -64,17 +67,20 @@ class ComponentService {
 
         error_log("CCC ComponentService: Found component in database - Name: {$component->getName()}, Handle: {$component->getHandleName()}");
 
+        // Always sanitize the requested handle before any comparisons/validations
+        $sanitized_handle = $this->sanitizeHandle($handle);
+
         // Check if the new handle already exists (excluding this component)
-        if (Component::handleExistsExcluding($handle, $component_id)) {
-            error_log("CCC ComponentService: Handle {$handle} already exists for another component");
-            throw new \Exception("A component with the handle '{$handle}' already exists. Please choose a different name or handle.");
+        if (Component::handleExistsExcluding($sanitized_handle, $component_id)) {
+            error_log("CCC ComponentService: Handle {$sanitized_handle} already exists for another component");
+            throw new \Exception("A component with the handle '{$sanitized_handle}' already exists. Please choose a different name or handle.");
         }
 
         $old_handle = $component->getHandleName();
-        error_log("CCC ComponentService: Old handle: {$old_handle}, New handle: {$handle}");
+        error_log("CCC ComponentService: Old handle: {$old_handle}, New handle: {$sanitized_handle}");
         
         $component->setName(sanitize_text_field($name));
-        $component->setHandleName($this->sanitizeHandle($handle));
+        $component->setHandleName($sanitized_handle);
 
         if (!$component->save()) {
             error_log("CCC ComponentService: Failed to save component {$component_id}");
@@ -84,7 +90,7 @@ class ComponentService {
         error_log("CCC ComponentService: Component saved successfully to database");
 
         // If the handle has changed, update the template file
-        if ($old_handle !== $handle) {
+        if ($old_handle !== $sanitized_handle) {
             error_log("CCC ComponentService: Handle changed, updating template file");
             $this->updateComponentTemplate($component, $old_handle);
         } else {
@@ -93,7 +99,7 @@ class ComponentService {
         
         // Update component assignments in metaboxes to reflect the new name
         error_log("CCC ComponentService: Updating component assignments");
-        $this->updateComponentAssignments($component_id, $name, $handle);
+        $this->updateComponentAssignments($component_id, $name, $sanitized_handle);
 
         error_log("CCC ComponentService: updateComponent completed successfully for component {$component_id}");
         return $component;
