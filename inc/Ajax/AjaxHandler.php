@@ -81,9 +81,19 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
       add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
       
+      // API Key management
+      add_action('wp_ajax_ccc_save_api_key', [$this, 'saveApiKey']);
+      add_action('wp_ajax_ccc_get_api_key', [$this, 'getApiKey']);
+      add_action('wp_ajax_ccc_get_api_key_for_use', [$this, 'getApiKeyForUse']);
       
       // Add test endpoint for debugging
       add_action('wp_ajax_ccc_test', [$this, 'testEndpoint']);
+      
+      // Add new AJAX actions for proxy API key system
+      add_action('wp_ajax_ccc_proxy_openai_request', [$this, 'proxyOpenAIRequest']);
+      add_action('wp_ajax_ccc_generate_proxy_key', [$this, 'generateProxyKey']);
+      add_action('wp_ajax_ccc_validate_proxy_key', [$this, 'validateProxyKey']);
+      add_action('wp_ajax_ccc_revoke_proxy_key', [$this, 'revokeProxyKey']);
       
       error_log("CCC DEBUG: All AJAX actions registered");
   }
@@ -2858,6 +2868,248 @@ class AjaxHandler {
           wp_send_json_error('Error getting users: ' . $e->getMessage());
       }
   }
+
+  /**
+   * Save OpenAI API key to WordPress options
+   */
+  public function saveApiKey() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $api_key = sanitize_text_field($_POST['api_key'] ?? '');
+
+          if (empty($api_key)) {
+              wp_send_json_error(['message' => 'API key is required']);
+              return;
+          }
+
+          // Validate API key format (should start with sk-)
+          if (!preg_match('/^sk-[a-zA-Z0-9]{32,}$/', $api_key)) {
+              wp_send_json_error(['message' => 'Invalid API key format. Should start with "sk-" and be at least 32 characters long.']);
+              return;
+          }
+
+          // Save to WordPress options
+          update_option('ccc_openai_api_key', $api_key);
+
+          wp_send_json_success(['message' => 'API key saved successfully']);
+
+      } catch (\Exception $e) {
+          error_log("Exception in saveApiKey: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get OpenAI API key from WordPress options
+   */
+  public function getApiKey() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $api_key = get_option('ccc_openai_api_key', '');
+          
+          // Return masked version for security
+          $masked_key = '';
+          if (!empty($api_key)) {
+              $masked_key = substr($api_key, 0, 8) . '...' . substr($api_key, -4);
+          }
+
+          wp_send_json_success([
+              'has_key' => !empty($api_key),
+              'masked_key' => $masked_key
+          ]);
+
+      } catch (\Exception $e) {
+          error_log("Exception in getApiKey: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get full OpenAI API key for use in generation (secure endpoint)
+   */
+  public function getApiKeyForUse() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+
+          $api_key = get_option('ccc_openai_api_key', '');
+          
+          if (empty($api_key)) {
+              wp_send_json_error(['message' => 'API key not configured']);
+              return;
+          }
+
+          wp_send_json_success(['api_key' => $api_key]);
+
+      } catch (\Exception $e) {
+          error_log("Exception in getApiKeyForUse: " . $e->getMessage());
+          wp_send_json_error(['message' => $e->getMessage()]);
+      }
+  }
   
+  /**
+   * Generate a proxy API key for a user
+   */
+  public function generateProxyKey() {
+      check_ajax_referer('ccc_nonce', 'nonce');
+      
+      if (!current_user_can('manage_options')) {
+          wp_die('Unauthorized');
+      }
+
+      // Generate a unique proxy key
+      $proxy_key = 'ccc_proxy_' . bin2hex(random_bytes(16));
+      
+      // Store the proxy key mapping (in production, use a proper database table)
+      $proxy_keys = get_option('ccc_proxy_keys', []);
+      $proxy_keys[$proxy_key] = [
+          'created' => current_time('mysql'),
+          'user_id' => get_current_user_id(),
+          'usage_count' => 0,
+          'last_used' => null,
+          'is_active' => true
+      ];
+      
+      update_option('ccc_proxy_keys', $proxy_keys);
+      
+      wp_send_json_success([
+          'proxy_key' => $proxy_key,
+          'message' => 'Proxy key generated successfully'
+      ]);
+  }
+
+  /**
+   * Validate a proxy API key
+   */
+  public function validateProxyKey() {
+      check_ajax_referer('ccc_nonce', 'nonce');
+      
+      $proxy_key = sanitize_text_field($_POST['proxy_key'] ?? '');
+      
+      if (empty($proxy_key)) {
+          wp_send_json_error('Proxy key is required');
+      }
+
+      $proxy_keys = get_option('ccc_proxy_keys', []);
+      
+      if (!isset($proxy_keys[$proxy_key])) {
+          wp_send_json_error('Invalid proxy key');
+      }
+
+      $key_data = $proxy_keys[$proxy_key];
+      
+      if (!$key_data['is_active']) {
+          wp_send_json_error('Proxy key is revoked');
+      }
+
+      wp_send_json_success([
+          'valid' => true,
+          'usage_count' => $key_data['usage_count'],
+          'created' => $key_data['created']
+      ]);
+  }
+
+  /**
+   * Handle OpenAI API requests through proxy
+   */
+  public function proxyOpenAIRequest() {
+      check_ajax_referer('ccc_nonce', 'nonce');
+      
+      $proxy_key = sanitize_text_field($_POST['proxy_key'] ?? '');
+      $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+      $model = sanitize_text_field($_POST['model'] ?? 'gpt-4o-mini');
+      
+      if (empty($proxy_key) || empty($prompt)) {
+          wp_send_json_error('Proxy key and prompt are required');
+      }
+
+      // Validate proxy key
+      $proxy_keys = get_option('ccc_proxy_keys', []);
+      
+      if (!isset($proxy_keys[$proxy_key]) || !$proxy_keys[$proxy_key]['is_active']) {
+          wp_send_json_error('Invalid or revoked proxy key');
+      }
+
+      // Get the real API key (stored securely on server)
+      $real_api_key = get_option('ccc_openai_api_key');
+      
+      if (empty($real_api_key)) {
+          wp_send_json_error('OpenAI API key not configured on server');
+      }
+
+      // Rate limiting (optional)
+      $key_data = &$proxy_keys[$proxy_key];
+      $key_data['usage_count']++;
+      $key_data['last_used'] = current_time('mysql');
+      update_option('ccc_proxy_keys', $proxy_keys);
+
+      // Make the actual OpenAI API call
+      $response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+          'headers' => [
+              'Authorization' => 'Bearer ' . $real_api_key,
+              'Content-Type' => 'application/json',
+          ],
+          'body' => json_encode([
+              'model' => $model,
+              'messages' => [
+                  [
+                      'role' => 'system',
+                      'content' => 'You are a WordPress component generator. Generate valid JSON responses only.'
+                  ],
+                  [
+                      'role' => 'user',
+                      'content' => $prompt
+                  ]
+              ],
+              'temperature' => 0.7,
+              'max_tokens' => 2000
+          ]),
+          'timeout' => 30
+      ]);
+
+      if (is_wp_error($response)) {
+          wp_send_json_error('API request failed: ' . $response->get_error_message());
+      }
+
+      $body = wp_remote_retrieve_body($response);
+      $data = json_decode($body, true);
+
+      if (empty($data) || !isset($data['choices'][0]['message']['content'])) {
+          wp_send_json_error('Invalid response from OpenAI API');
+      }
+
+      wp_send_json_success([
+          'response' => $data['choices'][0]['message']['content'],
+          'usage' => $data['usage'] ?? null
+      ]);
+  }
+
+  /**
+   * Revoke a proxy API key
+   */
+  public function revokeProxyKey() {
+      check_ajax_referer('ccc_nonce', 'nonce');
+      
+      if (!current_user_can('manage_options')) {
+          wp_die('Unauthorized');
+      }
+
+      $proxy_key = sanitize_text_field($_POST['proxy_key'] ?? '');
+      
+      if (empty($proxy_key)) {
+          wp_send_json_error('Proxy key is required');
+      }
+
+      $proxy_keys = get_option('ccc_proxy_keys', []);
+      
+      if (isset($proxy_keys[$proxy_key])) {
+          $proxy_keys[$proxy_key]['is_active'] = false;
+          update_option('ccc_proxy_keys', $proxy_keys);
+          wp_send_json_success('Proxy key revoked successfully');
+      }
+
+      wp_send_json_error('Proxy key not found');
+  }
 
 }

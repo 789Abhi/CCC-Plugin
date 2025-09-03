@@ -1,7 +1,7 @@
 {
     "name": "Custom Craft Component",
     "slug": "custom-craft-component",
-    "version": "4.4",
+    "version": "4.5",
     "download_url": "https://github.com/789Abhi/CCC-Plugin/releases/download/v4.4/custom-craft-component.zip",
     "requires": "6.8.1",
     "tested": "6.8.1",
