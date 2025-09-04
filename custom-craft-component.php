@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Custom Craft Component
- * Description: Create custom frontend components with fields like text and textareas.
- * Version: 4.6
- * Author: Abhishek
+ * Description: Create custom frontend components with fields like text and textareas Using AI.
+ * Version: 4.7
+ * Author: Abhishek T K
 */
 
 defined('ABSPATH') || exit;
