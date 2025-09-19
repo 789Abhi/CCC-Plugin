@@ -187,6 +187,14 @@ class MetaBoxManager {
                 }
 
                 $value_to_save = $this->sanitizeFieldValue($value, $field_obj);
+                
+                // Handle WP_Error objects properly
+                if (is_wp_error($value_to_save)) {
+                    error_log("CCC DEBUG: MetaBoxManager sanitization error for field_id: $field_id: " . $value_to_save->get_error_message());
+                    // Skip saving this field if there's a validation error
+                    continue;
+                }
+                
                 error_log("CCC DEBUG: MetaBoxManager sanitized value for field_id: $field_id: " . $value_to_save);
                 
                 // Check uniqueness for number fields before saving
@@ -432,6 +440,21 @@ class MetaBoxManager {
                 
             case 'email':
                 return sanitize_email($value_to_save);
+                
+            case 'password':
+                // Handle password field - use PasswordField's sanitize method if available
+                $password_field = new \CCC\Fields\PasswordField('', '', 0, false, '', $field_obj->getConfig());
+                return $password_field->sanitize($value_to_save);
+                
+            case 'relationship':
+                // Handle relationship field - use RelationshipField's sanitize method if available
+                $relationship_field = new \CCC\Fields\RelationshipField('', '', 0, false, '', $field_obj->getConfig());
+                return $relationship_field->sanitize($value_to_save);
+                
+            case 'gallery':
+                // Handle gallery field - use GalleryField's sanitize method if available
+                $gallery_field = new \CCC\Fields\GalleryField('', '', 0, false, '', $field_obj->getConfig());
+                return $gallery_field->sanitize($value_to_save);
                 
             case 'link':
                 // Link fields store JSON data, preserve it
@@ -818,6 +841,16 @@ class MetaBoxManager {
                                         $sanitized_item[$field_name] = sanitize_textarea_field($value);
                                         break;
                                         
+                                    case 'email':
+                                        $sanitized_item[$field_name] = sanitize_email($value);
+                                        break;
+                                        
+                                    case 'password':
+                                        // Handle password field - use PasswordField's sanitize method
+                                        $password_field = new \CCC\Fields\PasswordField('', '', 0, false, '', json_encode($nested_field_config));
+                                        $sanitized_item[$field_name] = $password_field->sanitize($value);
+                                        break;
+                                        
                                     case 'image':
                                         $return_type = $nested_field_config['return_type'] ?? 'url';
                                         if ($return_type === 'url') {
@@ -1073,6 +1106,16 @@ class MetaBoxManager {
                             case 'text':
                             case 'textarea':
                                 $sanitized_item[$field_name] = sanitize_textarea_field($value);
+                                break;
+                                
+                            case 'email':
+                                $sanitized_item[$field_name] = sanitize_email($value);
+                                break;
+                                
+                            case 'password':
+                                // Handle password field - use PasswordField's sanitize method
+                                $password_field = new \CCC\Fields\PasswordField('', '', 0, false, '', json_encode($nested_field_config));
+                                $sanitized_item[$field_name] = $password_field->sanitize($value);
                                 break;
                                 
                             case 'image':

@@ -734,6 +734,99 @@ if (!function_exists('get_ccc_field')) {
                 return false;
             }
             return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+        } elseif ($field_type === 'gallery') {
+            // Gallery field returns array of image objects with full metadata
+            // Usage: $images = get_ccc_field('my_gallery_field');
+            // foreach ($images as $image) {
+            //     echo '<img src="' . $image['thumbnail'] . '" alt="' . $image['alt'] . '">';
+            //     echo '<h3>' . $image['title'] . '</h3>';
+            // }
+            
+            // Handle null values safely
+            if ($value === null) {
+                return [];
+            }
+            
+            // Parse JSON value
+            if (is_string($value)) {
+                $gallery_data = json_decode($value, true);
+            } else {
+                $gallery_data = $value;
+            }
+            
+            if (!is_array($gallery_data)) {
+                return [];
+            }
+            
+            // Check if we have full image objects or just IDs (backward compatibility)
+            $first_item = reset($gallery_data);
+            $has_full_objects = is_array($first_item) && isset($first_item['id']) && isset($first_item['url']);
+            
+            $gallery_items = [];
+            
+            if ($has_full_objects) {
+                // New format: full image objects
+                foreach ($gallery_data as $item) {
+                    if (is_array($item) && isset($item['id'])) {
+                        // Check if image is enabled - only include enabled images in frontend
+                        $is_enabled = !isset($item['enabled']) || $item['enabled'] === true;
+                        if (!$is_enabled) {
+                            continue; // Skip disabled images
+                        }
+                        
+                        // Use the stored data, but refresh URLs to ensure they're current
+                        $media_id = intval($item['id']);
+                        $gallery_items[] = [
+                            'id' => $media_id,
+                            'title' => $item['title'] ?: get_the_title($media_id),
+                            'filename' => $item['filename'] ?: basename(get_attached_file($media_id)),
+                            'url' => wp_get_attachment_url($media_id) ?: $item['url'],
+                            'thumbnail' => wp_get_attachment_image_url($media_id, 'thumbnail') ?: $item['thumbnail'],
+                            'medium' => wp_get_attachment_image_url($media_id, 'medium') ?: $item['medium'],
+                            'large' => wp_get_attachment_image_url($media_id, 'large') ?: $item['large'],
+                            'full' => wp_get_attachment_image_url($media_id, 'full'),
+                            'alt' => $item['alt'] ?: get_post_meta($media_id, '_wp_attachment_image_alt', true),
+                            'caption' => $item['caption'] ?: get_post($media_id)->post_excerpt,
+                            'description' => $item['description'] ?: get_post($media_id)->post_content,
+                            'mime_type' => $item['mime_type'] ?: get_post_mime_type($media_id),
+                            'filesize' => $item['filesize'] ?: filesize(get_attached_file($media_id)),
+                            'filesizeHumanReadable' => $item['filesizeHumanReadable'] ?: size_format(filesize(get_attached_file($media_id))),
+                            'date' => $item['date'] ?: get_post($media_id)->post_date,
+                            'modified' => $item['modified'] ?: get_post($media_id)->post_modified
+                        ];
+                    }
+                }
+            } else {
+                // Old format: just IDs (backward compatibility)
+                foreach ($gallery_data as $media_id) {
+                    $attachment = get_post($media_id);
+                    if ($attachment && $attachment->post_type === 'attachment') {
+                        $file_path = get_attached_file($media_id);
+                        $file_size = $file_path ? filesize($file_path) : 0;
+                        
+                        $gallery_items[] = [
+                            'id' => $media_id,
+                            'title' => $attachment->post_title,
+                            'filename' => basename($file_path),
+                            'url' => wp_get_attachment_url($media_id),
+                            'thumbnail' => wp_get_attachment_image_url($media_id, 'thumbnail'),
+                            'medium' => wp_get_attachment_image_url($media_id, 'medium'),
+                            'large' => wp_get_attachment_image_url($media_id, 'large'),
+                            'full' => wp_get_attachment_image_url($media_id, 'full'),
+                            'alt' => get_post_meta($media_id, '_wp_attachment_image_alt', true),
+                            'caption' => $attachment->post_excerpt,
+                            'description' => $attachment->post_content,
+                            'mime_type' => get_post_mime_type($media_id),
+                            'filesize' => $file_size,
+                            'filesizeHumanReadable' => $file_size ? size_format($file_size) : 'Unknown',
+                            'date' => $attachment->post_date,
+                            'modified' => $attachment->post_modified
+                        ];
+                    }
+                }
+            }
+            
+            return $gallery_items;
         }
         
         error_log("CCC: get_ccc_field('$field_name', $post_id, $component_id, '$instance_id') = '" . ($value ?: 'EMPTY') . "'");
@@ -2829,4 +2922,739 @@ if (!function_exists('ccc_render_components_shortcode')) {
             error_log("CCC Shortcode: Re-registered ccc_render_components shortcode on init");
         }
     });
+}
+
+if (!function_exists('get_ccc_field_user')) {
+    /**
+     * Get user field data with proper formatting
+     * 
+     * @param string $field_name The name of the user field
+     * @param int|null $post_id Post ID (optional)
+     * @param int|null $component_id Component ID (optional)
+     * @param string|null $instance_id Instance ID (optional)
+     * @param string $format Return format: 'ids', 'objects', 'names', 'emails', 'display'
+     * @return mixed User data based on format
+     */
+    function get_ccc_field_user($field_name, $post_id = null, $component_id = null, $instance_id = null, $format = 'objects') {
+        // Get the raw user field value (IDs)
+        $user_value = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+        
+        if (empty($user_value)) {
+            return $format === 'ids' ? [] : null;
+        }
+        
+        // Parse user IDs
+        $user_ids = [];
+        if (is_string($user_value)) {
+            // Handle JSON array format [1,2,3] or comma-separated 1,2,3
+            if (strpos($user_value, '[') === 0) {
+                $user_ids = json_decode($user_value, true) ?: [];
+            } else {
+                $user_ids = explode(',', $user_value);
+            }
+        } elseif (is_array($user_value)) {
+            $user_ids = $user_value;
+        } else {
+            $user_ids = [$user_value];
+        }
+        
+        $user_ids = array_map('intval', array_filter($user_ids));
+        
+        if (empty($user_ids)) {
+            return $format === 'ids' ? [] : null;
+        }
+        
+        // Return based on format
+        switch ($format) {
+            case 'ids':
+                return $user_ids;
+                
+            case 'objects':
+                return array_map(function($id) {
+                    return get_user_by('ID', $id);
+                }, $user_ids);
+                
+            case 'names':
+                return array_map(function($id) {
+                    $user = get_user_by('ID', $id);
+                    return $user ? $user->display_name : "User #$id";
+                }, $user_ids);
+                
+            case 'emails':
+                return array_map(function($id) {
+                    $user = get_user_by('ID', $id);
+                    return $user ? $user->user_email : '';
+                }, $user_ids);
+                
+            case 'display':
+                return array_map(function($id) {
+                    $user = get_user_by('ID', $id);
+                    return $user ? [
+                        'id' => $user->ID,
+                        'name' => $user->display_name,
+                        'email' => $user->user_email,
+                        'username' => $user->user_login,
+                        'roles' => $user->roles,
+                        'avatar' => get_avatar_url($user->ID)
+                    ] : null;
+                }, $user_ids);
+                
+            default:
+                return $user_ids;
+        }
+    }
+}
+
+if (!function_exists('render_ccc_field_user')) {
+    /**
+     * Render user field with HTML output
+     * 
+     * @param string $field_name The name of the user field
+     * @param array $options Rendering options
+     * @param int|null $post_id Post ID (optional)
+     * @param int|null $component_id Component ID (optional)
+     * @param string|null $instance_id Instance ID (optional)
+     * @return string HTML output
+     */
+    function render_ccc_field_user($field_name, $options = [], $post_id = null, $component_id = null, $instance_id = null) {
+        $users = get_ccc_field_user($field_name, $post_id, $component_id, $instance_id, 'display');
+        
+        if (empty($users)) {
+            return '';
+        }
+        
+        $defaults = [
+            'show_avatar' => true,
+            'avatar_size' => 32,
+            'show_email' => false,
+            'show_roles' => false,
+            'link_to_profile' => false,
+            'wrapper_class' => 'ccc-user-list',
+            'user_class' => 'ccc-user-item'
+        ];
+        
+        $options = array_merge($defaults, $options);
+        
+        ob_start();
+        ?>
+        <div class="<?php echo esc_attr($options['wrapper_class']); ?>">
+            <?php foreach ($users as $user): ?>
+                <?php if ($user): ?>
+                    <div class="<?php echo esc_attr($options['user_class']); ?>">
+                        <?php if ($options['show_avatar']): ?>
+                            <img src="<?php echo esc_url($user['avatar']); ?>" 
+                                 alt="<?php echo esc_attr($user['name']); ?>" 
+                                 class="ccc-user-avatar" 
+                                 width="<?php echo (int)$options['avatar_size']; ?>" 
+                                 height="<?php echo (int)$options['avatar_size']; ?>">
+                        <?php endif; ?>
+                        
+                        <div class="ccc-user-info">
+                            <?php if ($options['link_to_profile']): ?>
+                                <a href="<?php echo esc_url(get_author_posts_url($user['id'])); ?>" class="ccc-user-name">
+                                    <?php echo esc_html($user['name']); ?>
+                                </a>
+                            <?php else: ?>
+                                <span class="ccc-user-name"><?php echo esc_html($user['name']); ?></span>
+                            <?php endif; ?>
+                            
+                            <?php if ($options['show_email']): ?>
+                                <span class="ccc-user-email"><?php echo esc_html($user['email']); ?></span>
+                            <?php endif; ?>
+                            
+                            <?php if ($options['show_roles'] && !empty($user['roles'])): ?>
+                                <span class="ccc-user-roles"><?php echo esc_html(implode(', ', $user['roles'])); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            <?php endforeach; ?>
+        </div>
+        
+        <style>
+        .ccc-user-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .ccc-user-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f9f9f9;
+        }
+        .ccc-user-avatar {
+            border-radius: 50%;
+        }
+        .ccc-user-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .ccc-user-name {
+            font-weight: bold;
+            text-decoration: none;
+            color: #333;
+        }
+        .ccc-user-name:hover {
+            color: #0073aa;
+        }
+        .ccc-user-email {
+            font-size: 0.9em;
+            color: #666;
+        }
+        .ccc-user-roles {
+            font-size: 0.8em;
+            color: #999;
+        }
+        </style>
+        <?php
+        return ob_get_clean();
+    }
+}
+
+if (!function_exists('get_ccc_field_relationship')) {
+    /**
+     * Get relationship field data with proper formatting
+     * 
+     * @param string $field_name The name of the relationship field
+     * @param int|null $post_id Post ID (optional)
+     * @param int|null $component_id Component ID (optional)
+     * @param string|null $instance_id Instance ID (optional)
+     * @param string $format Return format: 'ids', 'objects', 'titles', 'display'
+     * @return mixed Post data based on format
+     */
+    function get_ccc_field_relationship($field_name, $post_id = null, $component_id = null, $instance_id = null, $format = 'objects') {
+        // Get the raw relationship field value (post IDs)
+        $relationship_value = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+        
+        if (empty($relationship_value)) {
+            return $format === 'ids' ? [] : null;
+        }
+        
+        // Parse post IDs
+        $post_ids = [];
+        if (is_string($relationship_value)) {
+            // Handle JSON array format [1,2,3] or comma-separated 1,2,3
+            if (strpos($relationship_value, '[') === 0) {
+                $post_ids = json_decode($relationship_value, true) ?: [];
+            } else {
+                $post_ids = explode(',', $relationship_value);
+            }
+        } elseif (is_array($relationship_value)) {
+            $post_ids = $relationship_value;
+        } else {
+            $post_ids = [$relationship_value];
+        }
+        
+        $post_ids = array_map('intval', array_filter($post_ids));
+        
+        if (empty($post_ids)) {
+            return $format === 'ids' ? [] : null;
+        }
+        
+        // Return based on format
+        switch ($format) {
+            case 'ids':
+                return $post_ids;
+                
+            case 'objects':
+                return array_map(function($id) {
+                    return get_post($id);
+                }, $post_ids);
+                
+            case 'titles':
+                return array_map(function($id) {
+                    $post = get_post($id);
+                    return $post ? $post->post_title : "Post #$id";
+                }, $post_ids);
+                
+            case 'display':
+                return array_map(function($id) {
+                    $post = get_post($id);
+                    if ($post) {
+                        $post_type_obj = get_post_type_object($post->post_type);
+                        return [
+                            'id' => $post->ID,
+                            'title' => $post->post_title,
+                            'post_type' => $post->post_type,
+                            'post_type_label' => $post_type_obj ? $post_type_obj->label : $post->post_type,
+                            'post_status' => $post->post_status,
+                            'permalink' => get_permalink($post->ID),
+                            'featured_image' => get_the_post_thumbnail_url($post->ID, 'medium'),
+                            'excerpt' => $post->post_excerpt,
+                            'date' => $post->post_date,
+                            'modified' => $post->post_modified
+                        ];
+                    }
+                    return [
+                        'id' => $id,
+                        'title' => "(Post not found)",
+                        'post_type' => '',
+                        'post_type_label' => '',
+                        'post_status' => '',
+                        'permalink' => '',
+                        'featured_image' => '',
+                        'excerpt' => '',
+                        'date' => '',
+                        'modified' => ''
+                    ];
+                }, $post_ids);
+                
+            default:
+                return $post_ids;
+        }
+    }
+}
+
+if (!function_exists('render_ccc_field_relationship')) {
+    /**
+     * Render relationship field with HTML output
+     * 
+     * @param string $field_name The name of the relationship field
+     * @param array $options Rendering options
+     * @param int|null $post_id Post ID (optional)
+     * @param int|null $component_id Component ID (optional)
+     * @param string|null $instance_id Instance ID (optional)
+     * @return string HTML output
+     */
+    function render_ccc_field_relationship($field_name, $options = [], $post_id = null, $component_id = null, $instance_id = null) {
+        $posts = get_ccc_field_relationship($field_name, $post_id, $component_id, $instance_id, 'display');
+        
+        if (empty($posts)) {
+            return '';
+        }
+        
+        $defaults = [
+            'show_thumbnail' => true,
+            'thumbnail_size' => 'medium',
+            'show_excerpt' => false,
+            'show_date' => true,
+            'show_post_type' => true,
+            'link_to_post' => true,
+            'wrapper_class' => 'ccc-relationship-list',
+            'post_class' => 'ccc-relationship-item',
+            'layout' => 'grid', // 'grid' or 'list'
+            'columns' => 3,
+            'show_post_count' => true
+        ];
+        
+        $options = array_merge($defaults, $options);
+        
+        ob_start();
+        ?>
+        <div class="ccc-frontend <?php echo esc_attr($options['wrapper_class']); ?> ccc-layout-<?php echo esc_attr($options['layout']); ?>">
+            <?php if ($options['show_post_count']): ?>
+                <div class="ccc-relationship-header">
+                    <h4><?php echo count($posts); ?> Related Post<?php echo count($posts) !== 1 ? 's' : ''; ?></h4>
+                </div>
+            <?php endif; ?>
+            
+            <div class="ccc-posts-container ccc-<?php echo esc_attr($options['layout']); ?>" 
+                 <?php if ($options['layout'] === 'grid'): ?>style="grid-template-columns: repeat(<?php echo (int)$options['columns']; ?>, 1fr);"<?php endif; ?>>
+                <?php foreach ($posts as $post): ?>
+                    <div class="<?php echo esc_attr($options['post_class']); ?>">
+                        <?php if ($options['show_thumbnail'] && $post['featured_image']): ?>
+                            <div class="ccc-post-thumbnail">
+                                <?php if ($options['link_to_post']): ?>
+                                    <a href="<?php echo esc_url($post['permalink']); ?>">
+                                        <img src="<?php echo esc_url($post['featured_image']); ?>" 
+                                             alt="<?php echo esc_attr($post['title']); ?>" 
+                                             class="ccc-thumbnail-image" />
+                                    </a>
+                                <?php else: ?>
+                                    <img src="<?php echo esc_url($post['featured_image']); ?>" 
+                                         alt="<?php echo esc_attr($post['title']); ?>" 
+                                         class="ccc-thumbnail-image" />
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="ccc-post-content">
+                            <?php if ($options['link_to_post']): ?>
+                                <h5 class="ccc-post-title">
+                                    <a href="<?php echo esc_url($post['permalink']); ?>">
+                                        <?php echo esc_html($post['title']); ?>
+                                    </a>
+                                </h5>
+                            <?php else: ?>
+                                <h5 class="ccc-post-title"><?php echo esc_html($post['title']); ?></h5>
+                            <?php endif; ?>
+                            
+                            <div class="ccc-post-meta">
+                                <?php if ($options['show_post_type']): ?>
+                                    <span class="ccc-post-type">
+                                        <?php echo esc_html($post['post_type_label']); ?>
+                                    </span>
+                                <?php endif; ?>
+                                
+                                <?php if ($options['show_date']): ?>
+                                    <span class="ccc-post-date">
+                                        <?php echo esc_html(date('M j, Y', strtotime($post['date']))); ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <?php if ($options['show_excerpt'] && $post['excerpt']): ?>
+                                <div class="ccc-post-excerpt">
+                                    <?php echo esc_html(wp_trim_words($post['excerpt'], 20)); ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        
+        <style>
+        /* Frontend relationship field styles - scoped to avoid admin conflicts */
+        .ccc-frontend .ccc-relationship-list {
+            margin: 20px 0;
+        }
+        
+        .ccc-frontend .ccc-relationship-header {
+            margin-bottom: 16px;
+        }
+        
+        .ccc-frontend .ccc-relationship-header h4 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .ccc-frontend .ccc-layout-grid .ccc-posts-container {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .ccc-frontend .ccc-layout-list .ccc-posts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .ccc-frontend .ccc-relationship-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #ffffff;
+            transition: box-shadow 0.2s;
+        }
+        
+        .ccc-frontend .ccc-relationship-item:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .ccc-frontend .ccc-post-thumbnail {
+            width: 100%;
+            height: 200px;
+            overflow: hidden;
+        }
+        
+        .ccc-frontend .ccc-thumbnail-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.2s;
+        }
+        
+        .ccc-frontend .ccc-relationship-item:hover .ccc-thumbnail-image {
+            transform: scale(1.05);
+        }
+        
+        .ccc-frontend .ccc-post-content {
+            padding: 16px;
+        }
+        
+        .ccc-frontend .ccc-post-title {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        
+        .ccc-frontend .ccc-post-title a {
+            color: #1f2937;
+            text-decoration: none;
+        }
+        
+        .ccc-frontend .ccc-post-title a:hover {
+            color: #3b82f6;
+        }
+        
+        .ccc-frontend .ccc-post-meta {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        
+        .ccc-frontend .ccc-post-type {
+            background: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        .ccc-post-excerpt {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.5;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .ccc-layout-grid .ccc-posts-container {
+                grid-template-columns: 1fr !important;
+            }
+        }
+        
+        @media (max-width: 1024px) {
+            .ccc-layout-grid .ccc-posts-container {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+        }
+        </style>
+        <?php
+        return ob_get_clean();
+    }
+}
+
+
+/**
+ * Render gallery field with HTML output
+ */
+if (!function_exists('render_ccc_field_gallery')) {
+    /**
+     * Render gallery field with HTML output
+     * 
+     * @param string $field_name The name of the gallery field
+     * @param array $options Rendering options
+     * @param int|null $post_id Post ID (optional)
+     * @param int|null $component_id Component ID (optional)
+     * @param string|null $instance_id Instance ID (optional)
+     * @return string HTML output
+     * 
+     * Example usage:
+     * echo render_ccc_field_gallery('my_gallery_field', [
+     *     'layout' => 'grid',
+     *     'columns' => 3,
+     *     'show_caption' => true,
+     *     'show_title' => true
+     * ]);
+     * 
+     * Or use get_ccc_field directly:
+     * $images = get_ccc_field('my_gallery_field');
+     * foreach ($images as $image) {
+     *     echo '<img src="' . $image['thumbnail'] . '" alt="' . $image['alt'] . '">';
+     * }
+     */
+    function render_ccc_field_gallery($field_name, $options = [], $post_id = null, $component_id = null, $instance_id = null) {
+        $images = get_ccc_field($field_name, $post_id, $component_id, $instance_id);
+        
+        if (empty($images)) {
+            return '';
+        }
+        
+        $defaults = [
+            'show_thumbnail' => true,
+            'thumbnail_size' => 'medium',
+            'show_caption' => false,
+            'show_title' => true,
+            'link_to_attachment' => true,
+            'wrapper_class' => 'ccc-gallery-list',
+            'image_class' => 'ccc-gallery-item',
+            'layout' => 'grid', // 'grid' or 'list'
+            'columns' => 3,
+            'show_image_count' => true,
+            'lazy_loading' => true
+        ];
+        
+        $options = array_merge($defaults, $options);
+        
+        ob_start();
+        ?>
+        <div class="ccc-frontend <?php echo esc_attr($options['wrapper_class']); ?> ccc-layout-<?php echo esc_attr($options['layout']); ?>">
+            <?php if ($options['show_image_count']): ?>
+                <div class="ccc-gallery-header">
+                    <h4><?php echo count($images); ?> Image<?php echo count($images) !== 1 ? 's' : ''; ?></h4>
+                </div>
+            <?php endif; ?>
+            
+            <div class="ccc-images-container ccc-<?php echo esc_attr($options['layout']); ?>" 
+                 <?php if ($options['layout'] === 'grid'): ?>style="grid-template-columns: repeat(<?php echo (int)$options['columns']; ?>, 1fr);"<?php endif; ?>>
+                <?php foreach ($images as $image): ?>
+                    <div class="<?php echo esc_attr($options['image_class']); ?>">
+                        <?php if ($options['show_thumbnail']): ?>
+                            <div class="ccc-image-thumbnail">
+                                <?php if ($options['link_to_attachment']): ?>
+                                    <a href="<?php echo esc_url($image['url']); ?>" target="_blank">
+                                        <img
+                                            src="<?php echo esc_url($image[$options['thumbnail_size']] ?: $image['medium']); ?>"
+                                            alt="<?php echo esc_attr($image['alt'] ?: $image['title']); ?>"
+                                            class="ccc-thumbnail-image"
+                                            <?php if ($options['lazy_loading']): ?>loading="lazy"<?php endif; ?>
+                                        />
+                                    </a>
+                                <?php else: ?>
+                                    <img
+                                        src="<?php echo esc_url($image[$options['thumbnail_size']] ?: $image['medium']); ?>"
+                                        alt="<?php echo esc_attr($image['alt'] ?: $image['title']); ?>"
+                                        class="ccc-thumbnail-image"
+                                        <?php if ($options['lazy_loading']): ?>loading="lazy"<?php endif; ?>
+                                    />
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <div class="ccc-image-content">
+                            <?php if ($options['show_title'] && $image['title']): ?>
+                                <h5 class="ccc-image-title">
+                                    <?php if ($options['link_to_attachment']): ?>
+                                        <a href="<?php echo esc_url($image['url']); ?>" target="_blank">
+                                            <?php echo esc_html($image['title']); ?>
+                                        </a>
+                                    <?php else: ?>
+                                        <?php echo esc_html($image['title']); ?>
+                                    <?php endif; ?>
+                                </h5>
+                            <?php endif; ?>
+                            
+                            <?php if ($options['show_caption'] && $image['caption']): ?>
+                                <div class="ccc-image-caption">
+                                    <?php echo esc_html($image['caption']); ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="ccc-image-meta">
+                                <span class="ccc-image-size"><?php echo esc_html($image['filesizeHumanReadable']); ?></span>
+                                <?php if ($image['mime_type']): ?>
+                                    <span class="ccc-image-type"><?php echo esc_html(strtoupper(explode('/', $image['mime_type'])[1])); ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        
+        <style>
+        /* Frontend gallery field styles - scoped to avoid admin conflicts */
+        .ccc-frontend .ccc-gallery-list {
+            margin: 20px 0;
+        }
+        
+        .ccc-frontend .ccc-gallery-header {
+            margin-bottom: 16px;
+        }
+        
+        .ccc-frontend .ccc-gallery-header h4 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .ccc-frontend .ccc-layout-grid .ccc-images-container {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .ccc-frontend .ccc-layout-list .ccc-images-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .ccc-frontend .ccc-gallery-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #ffffff;
+            transition: box-shadow 0.2s;
+        }
+        
+        .ccc-frontend .ccc-gallery-item:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .ccc-frontend .ccc-image-thumbnail {
+            width: 100%;
+            height: 200px;
+            overflow: hidden;
+        }
+        
+        .ccc-frontend .ccc-thumbnail-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.2s;
+        }
+        
+        .ccc-frontend .ccc-gallery-item:hover .ccc-thumbnail-image {
+            transform: scale(1.05);
+        }
+        
+        .ccc-frontend .ccc-image-content {
+            padding: 16px;
+        }
+        
+        .ccc-frontend .ccc-image-title {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        
+        .ccc-frontend .ccc-image-title a {
+            color: #1f2937;
+            text-decoration: none;
+        }
+        
+        .ccc-frontend .ccc-image-title a:hover {
+            color: #3b82f6;
+        }
+        
+        .ccc-frontend .ccc-image-meta {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        
+        .ccc-frontend .ccc-image-type {
+            background: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        .ccc-frontend .ccc-image-caption {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.5;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .ccc-frontend .ccc-layout-grid .ccc-images-container {
+                grid-template-columns: 1fr !important;
+            }
+        }
+        
+        @media (max-width: 1024px) {
+            .ccc-frontend .ccc-layout-grid .ccc-images-container {
+                grid-template-columns: repeat(2, 1fr) !important;
+            }
+        }
+        </style>
+        <?php
+        return ob_get_clean();
+    }
 }

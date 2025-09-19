@@ -4,6 +4,7 @@ namespace CCC\Core;
 
 use CCC\Admin\AdminManager;
 use CCC\Admin\RevisionAdmin;
+// use CCC\Admin\LicenseSettings; // Commented out - License Settings removed
 use CCC\Frontend\TemplateManager;
 use CCC\Frontend\TemplateLoader;
 use CCC\Ajax\AjaxHandler;
@@ -13,6 +14,7 @@ defined('ABSPATH') || exit;
 class Plugin {
    private $admin_manager;
    private $revision_admin;
+   // private $license_settings; // Commented out - License Settings removed
    private $template_manager;
    private $template_loader;
    private $ajax_handler;
@@ -32,12 +34,13 @@ class Plugin {
     */
    const MIN_PHP_VERSION = '7.4';
 
-   public function __construct() {
-       $this->admin_manager = new AdminManager();
-       $this->template_manager = new TemplateManager();
-       $this->template_loader = new TemplateLoader();
-       $this->ajax_handler = new AjaxHandler();
-   }
+  public function __construct() {
+      $this->admin_manager = new AdminManager();
+      // $this->license_settings = new LicenseSettings(); // Commented out - License Settings removed
+      $this->template_manager = new TemplateManager();
+      $this->template_loader = new TemplateLoader();
+      $this->ajax_handler = new AjaxHandler();
+  }
 
    public function init() {
        // Check system requirements

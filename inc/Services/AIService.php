@@ -1,23 +1,49 @@
 <?php
 
-namespace CustomCraftComponent\Services;
+namespace CCC\Services;
 
+/**
+ * Enhanced AI Service with License Validation
+ * Integrates with license system to control AI usage
+ */
 class AIService {
     
     private $api_key;
     private $component_service;
     private $field_service;
+    private $license_validator;
     
-    public function __init__() {
+    public function __construct() {
         $this->api_key = get_option('ccc_openai_api_key', '');
         $this->component_service = new ComponentService();
         $this->field_service = new FieldService();
+        $this->license_validator = new LicenseValidator();
     }
     
     /**
-     * Generate component using ChatGPT API
+     * Generate component using ChatGPT API with license validation
      */
-    public function generate_component_from_chatgpt($prompt) {
+    public function generate_component_from_chatgpt($prompt, $license_key = null) {
+        // Check if license validation is enabled
+        $license_required = get_option('ccc_license_required', false);
+        
+        if ($license_required && !empty($license_key)) {
+            // Validate license before proceeding
+            if (!$this->license_validator->can_use_ai_service($license_key)) {
+                return [
+                    'success' => false,
+                    'message' => 'Invalid or expired license. Please check your license key.',
+                    'license_error' => true
+                ];
+            }
+        } elseif ($license_required && empty($license_key)) {
+            return [
+                'success' => false,
+                'message' => 'License key is required to use AI service.',
+                'license_required' => true
+            ];
+        }
+        
         if (empty($this->api_key)) {
             return [
                 'success' => false,
@@ -45,6 +71,11 @@ class AIService {
             
             // Create component in database
             $component_result = $this->create_component_from_ai($component_data);
+            
+            // Increment license usage if license key provided
+            if ($license_required && !empty($license_key) && $component_result['success']) {
+                $this->license_validator->increment_usage($license_key);
+            }
             
             return $component_result;
             
@@ -206,7 +237,26 @@ Be creative and think about what would be most useful for the user's request.";
     /**
      * Process manual ChatGPT response
      */
-    public function process_manual_chatgpt_response($json_response) {
+    public function process_manual_chatgpt_response($json_response, $license_key = null) {
+        // Check license if required
+        $license_required = get_option('ccc_license_required', false);
+        
+        if ($license_required && !empty($license_key)) {
+            if (!$this->license_validator->can_use_ai_service($license_key)) {
+                return [
+                    'success' => false,
+                    'message' => 'Invalid or expired license. Please check your license key.',
+                    'license_error' => true
+                ];
+            }
+        } elseif ($license_required && empty($license_key)) {
+            return [
+                'success' => false,
+                'message' => 'License key is required to use AI service.',
+                'license_required' => true
+            ];
+        }
+        
         try {
             $component_data = json_decode($json_response, true);
             
@@ -217,7 +267,14 @@ Be creative and think about what would be most useful for the user's request.";
                 ];
             }
             
-            return $this->create_component_from_ai($component_data);
+            $result = $this->create_component_from_ai($component_data);
+            
+            // Increment license usage if license key provided
+            if ($license_required && !empty($license_key) && $result['success']) {
+                $this->license_validator->increment_usage($license_key);
+            }
+            
+            return $result;
             
         } catch (Exception $e) {
             return [
@@ -234,7 +291,8 @@ Be creative and think about what would be most useful for the user's request.";
         return [
             'has_api_key' => !empty($this->api_key),
             'api_key_masked' => !empty($this->api_key) ? substr($this->api_key, 0, 8) . '...' : '',
-            'estimated_cost' => '~$0.002 per request (GPT-3.5-turbo)'
+            'estimated_cost' => '~$0.002 per request (GPT-3.5-turbo)',
+            'license_required' => get_option('ccc_license_required', false)
         ];
     }
-} 
+}

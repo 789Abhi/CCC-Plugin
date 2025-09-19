@@ -222,4 +222,107 @@ class UserField extends BaseField {
     public function getReturnType() {
         return $this->return_type;
     }
+    
+    /**
+     * Process field value based on return type
+     * 
+     * @param mixed $value Raw field value (user ID or array of IDs)
+     * @return mixed Processed value based on return_type setting
+     */
+    public function processValue($value) {
+        if (empty($value)) {
+            return $this->multiple ? [] : null;
+        }
+        
+        // Handle multiple selection
+        if ($this->multiple) {
+            $user_ids = is_array($value) ? $value : explode(',', $value);
+            $user_ids = array_map('intval', array_filter($user_ids));
+            
+            switch ($this->return_type) {
+                case 'object':
+                    return array_map(function($id) {
+                        return get_user_by('ID', $id);
+                    }, $user_ids);
+                    
+                case 'array':
+                    return array_map(function($id) {
+                        $user = get_user_by('ID', $id);
+                        return $user ? [
+                            'ID' => $user->ID,
+                            'user_login' => $user->user_login,
+                            'display_name' => $user->display_name,
+                            'user_email' => $user->user_email,
+                            'roles' => $user->roles
+                        ] : null;
+                    }, $user_ids);
+                    
+                default: // 'id'
+                    return $user_ids;
+            }
+        }
+        
+        // Handle single selection
+        $user_id = is_array($value) ? (int)$value[0] : (int)$value;
+        
+        switch ($this->return_type) {
+            case 'object':
+                return get_user_by('ID', $user_id);
+                
+            case 'array':
+                $user = get_user_by('ID', $user_id);
+                return $user ? [
+                    'ID' => $user->ID,
+                    'user_login' => $user->user_login,
+                    'display_name' => $user->display_name,
+                    'user_email' => $user->user_email,
+                    'roles' => $user->roles
+                ] : null;
+                
+            default: // 'id'
+                return $user_id;
+        }
+    }
+    
+    /**
+     * Get user display information for admin/debug purposes
+     * 
+     * @param mixed $value Raw field value
+     * @return array Array with user information for display
+     */
+    public function getDisplayInfo($value) {
+        if (empty($value)) {
+            return [];
+        }
+        
+        $user_ids = $this->multiple 
+            ? (is_array($value) ? $value : explode(',', $value))
+            : [is_array($value) ? $value[0] : $value];
+            
+        $user_ids = array_map('intval', array_filter($user_ids));
+        
+        $display_info = [];
+        foreach ($user_ids as $user_id) {
+            $user = get_user_by('ID', $user_id);
+            if ($user) {
+                $display_info[] = [
+                    'id' => $user->ID,
+                    'name' => $user->display_name,
+                    'email' => $user->user_email,
+                    'username' => $user->user_login,
+                    'roles' => implode(', ', $user->roles)
+                ];
+            } else {
+                $display_info[] = [
+                    'id' => $user_id,
+                    'name' => '(User not found)',
+                    'email' => '',
+                    'username' => '',
+                    'roles' => ''
+                ];
+            }
+        }
+        
+        return $display_info;
+    }
 } 

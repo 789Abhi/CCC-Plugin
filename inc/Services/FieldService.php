@@ -18,6 +18,7 @@ use CCC\Fields\OembedField;
 use CCC\Fields\RelationshipField;
 use CCC\Fields\LinkField;
 use CCC\Fields\EmailField;
+use CCC\Fields\PasswordField;
 use CCC\Fields\NumberField;
 use CCC\Fields\RangeField;
 use CCC\Fields\FileField;
@@ -85,6 +86,9 @@ class FieldService {
                 break;
             case 'email':
                 $field = new EmailField($label, $name, $component_id, false, '', $config);
+                break;
+            case 'password':
+                $field = new PasswordField($label, $name, $component_id, false, '', $config);
                 break;
             case 'number':
                 $field = new NumberField($label, $name, $component_id, false, '', $config);

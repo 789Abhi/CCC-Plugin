@@ -80,6 +80,13 @@ class AjaxHandler {
       add_action('wp_ajax_nopriv_ccc_get_taxonomy_terms', [$this, 'getTaxonomyTerms']);
       add_action('wp_ajax_ccc_get_users', [$this, 'getUsers']);
       add_action('wp_ajax_nopriv_ccc_get_users', [$this, 'getUsers']);
+      add_action('wp_ajax_ccc_get_relationship_posts', [$this, 'getRelationshipPosts']);
+      add_action('wp_ajax_nopriv_ccc_get_relationship_posts', [$this, 'getRelationshipPosts']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_get_relationship_posts");
+      
+      add_action('wp_ajax_ccc_get_gallery_media', [$this, 'getGalleryMedia']);
+      add_action('wp_ajax_nopriv_ccc_get_gallery_media', [$this, 'getGalleryMedia']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_get_gallery_media");
       
       // API Key management
       add_action('wp_ajax_ccc_save_api_key', [$this, 'saveApiKey']);
@@ -110,8 +117,15 @@ class AjaxHandler {
               return;
           }
 
-          $this->component_service->createComponent($name, $handle);
-          wp_send_json_success(['message' => 'Component created successfully']);
+          $component = $this->component_service->createComponent($name, $handle);
+          wp_send_json_success([
+              'message' => 'Component created successfully',
+              'data' => [
+                  'id' => $component->getId(),
+                  'name' => $component->getName(),
+                  'handle' => $component->getHandleName()
+              ]
+          ]);
 
       } catch (\Exception $e) {
           error_log("Exception in handleCreateComponent: " . $e->getMessage());
@@ -2618,35 +2632,38 @@ class AjaxHandler {
       try {
           check_ajax_referer('ccc_nonce', 'nonce');
           
-          $post_type = sanitize_text_field($_POST['post_type'] ?? '');
+          error_log("CCC DEBUG: getAvailableTaxonomies called");
           
-          if (!empty($post_type)) {
-              // Get taxonomies specific to the selected post type
-              $taxonomies = get_object_taxonomies($post_type, 'objects');
-          } else {
-              // Get all public taxonomies if no post type specified (for "All post types")
-              $taxonomies = get_taxonomies(['public' => true], 'objects');
-          }
+          // Get all public taxonomies (including custom taxonomies)
+          $taxonomies = get_taxonomies(['public' => true], 'objects');
+          
+          error_log("CCC DEBUG: Found " . count($taxonomies) . " public taxonomies");
           
           $available_taxonomies = [];
           
           foreach ($taxonomies as $taxonomy => $taxonomy_object) {
-              // Only include taxonomies that have terms
-              $terms = get_terms([
-                  'taxonomy' => $taxonomy,
-                  'hide_empty' => false,
-                  'number' => 1
-              ]);
-              
-              if (!empty($terms) && !is_wp_error($terms)) {
-                  $available_taxonomies[] = [
-                      'value' => $taxonomy,
-                      'label' => $taxonomy_object->labels->singular_name
-                  ];
+              // Include all public taxonomies, regardless of whether they have terms
+              // This ensures custom taxonomies show up even if they don't have terms yet
+              $label = '';
+              if (isset($taxonomy_object->labels->singular_name) && !empty($taxonomy_object->labels->singular_name)) {
+                  $label = $taxonomy_object->labels->singular_name;
+              } elseif (isset($taxonomy_object->labels->name) && !empty($taxonomy_object->labels->name)) {
+                  $label = $taxonomy_object->labels->name;
+              } else {
+                  // Fallback to the taxonomy name itself
+                  $label = ucfirst(str_replace(['_', '-'], ' ', $taxonomy));
               }
+              
+              $available_taxonomies[] = [
+                  'value' => $taxonomy,
+                  'label' => $label
+              ];
+              
+              error_log("CCC DEBUG: Added taxonomy: {$taxonomy} => {$label}");
           }
           
-          wp_send_json_success(['data' => $available_taxonomies]);
+          error_log("CCC DEBUG: Returning " . count($available_taxonomies) . " taxonomies");
+          wp_send_json_success($available_taxonomies);
       } catch (\Exception $e) {
           error_log("Exception in getAvailableTaxonomies: " . $e->getMessage());
           wp_send_json_error(['message' => $e->getMessage()]);
@@ -2659,32 +2676,42 @@ class AjaxHandler {
           
           $post_type = sanitize_text_field($_POST['post_type'] ?? '');
           
-          if (empty($post_type)) {
-              wp_send_json_error(['message' => 'Post type is required']);
-              return;
+          error_log("CCC DEBUG: getTaxonomiesForPostType called with post_type: " . $post_type);
+          
+          if (empty($post_type) || $post_type === 'all') {
+              // Return all public taxonomies if no specific post type or 'all' is selected
+              $taxonomies = get_taxonomies(['public' => true], 'objects');
+              error_log("CCC DEBUG: Returning all public taxonomies");
+          } else {
+              // Get taxonomies specific to the selected post type
+              $taxonomies = get_object_taxonomies($post_type, 'objects');
+              error_log("CCC DEBUG: Returning taxonomies for post type: " . $post_type);
           }
           
-          // Get taxonomies specific to the selected post type
-          $taxonomies = get_object_taxonomies($post_type, 'objects');
           $available_taxonomies = [];
           
           foreach ($taxonomies as $taxonomy => $taxonomy_object) {
-              // Only include taxonomies that have terms
-              $terms = get_terms([
-                  'taxonomy' => $taxonomy,
-                  'hide_empty' => false,
-                  'number' => 1
-              ]);
-              
-              if (!empty($terms) && !is_wp_error($terms)) {
-                  $available_taxonomies[] = [
-                      'value' => $taxonomy,
-                      'label' => $taxonomy_object->labels->singular_name
-                  ];
+              // Include all taxonomies, regardless of whether they have terms
+              $label = '';
+              if (isset($taxonomy_object->labels->singular_name) && !empty($taxonomy_object->labels->singular_name)) {
+                  $label = $taxonomy_object->labels->singular_name;
+              } elseif (isset($taxonomy_object->labels->name) && !empty($taxonomy_object->labels->name)) {
+                  $label = $taxonomy_object->labels->name;
+              } else {
+                  // Fallback to the taxonomy name itself
+                  $label = ucfirst(str_replace(['_', '-'], ' ', $taxonomy));
               }
+              
+              $available_taxonomies[] = [
+                  'value' => $taxonomy,
+                  'label' => $label
+              ];
+              
+              error_log("CCC DEBUG: Added taxonomy: {$taxonomy} => {$label}");
           }
           
-          wp_send_json_success(['data' => $available_taxonomies]);
+          error_log("CCC DEBUG: Returning " . count($available_taxonomies) . " taxonomies");
+          wp_send_json_success($available_taxonomies);
       } catch (\Exception $e) {
           error_log("Exception in getTaxonomiesForPostType: " . $e->getMessage());
           wp_send_json_error(['message' => $e->getMessage()]);
@@ -3110,6 +3137,323 @@ class AjaxHandler {
       }
 
       wp_send_json_error('Proxy key not found');
+  }
+
+  /**
+   * Get posts for relationship field with advanced filtering
+   */
+  public function getRelationshipPosts() {
+      error_log("CCC AjaxHandler: getRelationshipPosts called");
+      
+      // Check nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_nonce')) {
+          error_log("CCC DEBUG: Nonce verification failed. Received nonce: " . ($_POST['nonce'] ?? 'none'));
+          wp_die('Security check failed');
+      }
+      
+      error_log("CCC DEBUG: Nonce verification passed");
+      
+      try {
+
+          // Get filter parameters
+          $post_types_raw = $_POST['post_types'] ?? '';
+          $post_status_raw = $_POST['post_status'] ?? '';
+          $search = sanitize_text_field($_POST['search'] ?? '');
+          $post_type_filter = sanitize_text_field($_POST['post_type_filter'] ?? '');
+          $status_filter = sanitize_text_field($_POST['status_filter'] ?? '');
+          $taxonomy_filters = sanitize_text_field($_POST['taxonomy_filters'] ?? '');
+          $exclude = sanitize_text_field($_POST['exclude'] ?? '');
+          $per_page = intval($_POST['per_page'] ?? 50);
+
+          // Parse post_types - handle both JSON array and comma-separated string
+          $post_types = '';
+          if (!empty($post_types_raw)) {
+              error_log("CCC AjaxHandler: Raw post_types_raw: '" . $post_types_raw . "'");
+              
+              if (strpos($post_types_raw, '[') === 0) {
+                  // JSON array format - try to fix escaped quotes
+                  error_log("CCC AjaxHandler: Detected JSON array format");
+                  
+                  // Fix escaped quotes: [\"page\"] -> ["page"]
+                  $fixed_json = str_replace('\"', '"', $post_types_raw);
+                  error_log("CCC AjaxHandler: Fixed JSON: '" . $fixed_json . "'");
+                  
+                  $post_types_array = json_decode($fixed_json, true);
+                  error_log("CCC AjaxHandler: JSON decode result: " . print_r($post_types_array, true));
+                  
+                  if (is_array($post_types_array)) {
+                      $post_types = implode(',', $post_types_array);
+                      error_log("CCC AjaxHandler: Final post_types: '" . $post_types . "'");
+                  } else {
+                      error_log("CCC AjaxHandler: JSON decode failed, trying alternative approach");
+                      // Alternative: extract post types using regex
+                      if (preg_match('/\["([^"]+)"\]/', $post_types_raw, $matches)) {
+                          $post_types = $matches[1];
+                          error_log("CCC AjaxHandler: Extracted via regex: '" . $post_types . "'");
+                      }
+                  }
+              } else {
+                  // Comma-separated string format
+                  error_log("CCC AjaxHandler: Detected comma-separated format");
+                  $post_types = $post_types_raw;
+              }
+          }
+
+          // Parse post_status - handle both JSON array and comma-separated string
+          $post_status = '';
+          if (!empty($post_status_raw)) {
+              if (strpos($post_status_raw, '[') === 0) {
+                  // JSON array format
+                  $post_status_array = json_decode($post_status_raw, true);
+                  if (is_array($post_status_array)) {
+                      $post_status = implode(',', $post_status_array);
+                  }
+              } else {
+                  // Comma-separated string format
+                  $post_status = $post_status_raw;
+              }
+          }
+
+          error_log("CCC AjaxHandler: getRelationshipPosts called with filters");
+          error_log("CCC AjaxHandler: POST data: " . print_r($_POST, true));
+          error_log("CCC AjaxHandler: All POST keys: " . implode(', ', array_keys($_POST)));
+          error_log("CCC AjaxHandler: post_types_raw: " . $post_types_raw);
+          error_log("CCC AjaxHandler: post_types_parsed: " . $post_types);
+          error_log("CCC AjaxHandler: post_status: " . $post_status);
+          error_log("CCC AjaxHandler: search: " . $search);
+
+          // Build query args
+          $args = [
+              'post_type' => $post_types ? explode(',', $post_types) : 'any',
+              'post_status' => $post_status ? explode(',', $post_status) : ['publish', 'private', 'draft'],
+              'posts_per_page' => $per_page,
+              'orderby' => 'title',
+              'order' => 'ASC',
+              'meta_query' => []
+          ];
+
+          error_log("CCC AjaxHandler: Initial args post_type: " . print_r($args['post_type'], true));
+
+          // Add search
+          if (!empty($search)) {
+              $args['s'] = $search;
+          }
+
+          // Add post type filter
+          if (!empty($post_type_filter)) {
+              $args['post_type'] = $post_type_filter;
+              error_log("CCC AjaxHandler: Override with post_type_filter: " . $post_type_filter);
+          }
+
+          error_log("CCC AjaxHandler: Final args post_type: " . print_r($args['post_type'], true));
+
+          // Add status filter
+          if (!empty($status_filter)) {
+              $args['post_status'] = $status_filter;
+          }
+
+          // Add taxonomy filters
+          if (!empty($taxonomy_filters)) {
+              $tax_filters = json_decode($taxonomy_filters, true);
+              error_log("CCC AjaxHandler: Parsed taxonomy_filters: " . print_r($tax_filters, true));
+              
+              if (is_array($tax_filters)) {
+                  $tax_query = ['relation' => 'AND'];
+                  foreach ($tax_filters as $taxonomy => $terms) {
+                      if (is_array($terms) && !empty($terms)) {
+                          // Filter by specific terms
+                          $tax_query[] = [
+                              'taxonomy' => $taxonomy,
+                              'field' => 'term_id',
+                              'terms' => $terms,
+                              'operator' => 'IN'
+                          ];
+                          error_log("CCC AjaxHandler: Added taxonomy filter for {$taxonomy} with " . count($terms) . " specific terms");
+                      } else {
+                          // Filter by taxonomy only (show posts that have any terms in this taxonomy)
+                          $all_terms = get_terms([
+                              'taxonomy' => $taxonomy,
+                              'hide_empty' => false,
+                              'fields' => 'ids'
+                          ]);
+                          
+                          if (!is_wp_error($all_terms) && !empty($all_terms)) {
+                              $tax_query[] = [
+                                  'taxonomy' => $taxonomy,
+                                  'field' => 'term_id',
+                                  'terms' => $all_terms,
+                                  'operator' => 'IN'
+                              ];
+                              error_log("CCC AjaxHandler: Added taxonomy filter for {$taxonomy} with " . count($all_terms) . " all terms");
+                          }
+                      }
+                  }
+                  
+                  if (count($tax_query) > 1) {
+                      $args['tax_query'] = $tax_query;
+                      error_log("CCC AjaxHandler: Applied tax_query: " . print_r($tax_query, true));
+                  }
+              }
+          }
+
+          // Exclude posts
+          if (!empty($exclude)) {
+              $exclude_ids = array_map('intval', explode(',', $exclude));
+              $args['post__not_in'] = $exclude_ids;
+          }
+
+          // Get posts
+          $query = new \WP_Query($args);
+          $posts = $query->posts;
+
+          if (is_wp_error($posts)) {
+              error_log("CCC AjaxHandler: WP_Query returned error: " . $posts->get_error_message());
+              wp_send_json_error(['message' => 'Failed to retrieve posts: ' . $posts->get_error_message()]);
+              return;
+          }
+
+          $post_list = array_map(function ($post) {
+              try {
+                  return [
+                      'ID' => $post->ID,
+                      'post_title' => $post->post_title,
+                      'post_name' => $post->post_name,
+                      'post_type' => $post->post_type,
+                      'post_status' => $post->post_status,
+                      'post_date' => $post->post_date,
+                      'post_modified' => $post->post_modified,
+                      'post_excerpt' => $post->post_excerpt,
+                      'featured_image' => get_the_post_thumbnail_url($post->ID, 'medium'),
+                      'permalink' => get_permalink($post->ID),
+                      'post_type_label' => get_post_type_object($post->post_type)->label ?? $post->post_type
+                  ];
+              } catch (\Exception $e) {
+                  error_log("CCC AjaxHandler: Error processing post {$post->ID}: " . $e->getMessage());
+                  return [
+                      'ID' => $post->ID,
+                      'post_title' => $post->post_title,
+                      'post_name' => $post->post_name,
+                      'post_type' => $post->post_type,
+                      'post_status' => $post->post_status,
+                      'post_date' => $post->post_date,
+                      'post_modified' => $post->post_modified,
+                      'post_excerpt' => '',
+                      'featured_image' => '',
+                      'permalink' => '',
+                      'post_type_label' => $post->post_type
+                  ];
+              }
+          }, $posts);
+
+          error_log("CCC AjaxHandler: getRelationshipPosts successful, returning " . count($post_list) . " posts");
+          wp_send_json_success($post_list);
+
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getRelationshipPosts: " . $e->getMessage());
+          error_log("CCC AjaxHandler: Exception trace: " . $e->getTraceAsString());
+          wp_send_json_error(['message' => 'An error occurred while retrieving posts: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get gallery media/images for the gallery field
+   */
+  public function getGalleryMedia() {
+      error_log("CCC AjaxHandler: getGalleryMedia called");
+      
+      // Check nonce for security
+      if (!wp_verify_nonce($_POST['nonce'] ?? '', 'ccc_nonce')) {
+          error_log("CCC DEBUG: Nonce verification failed. Received nonce: " . ($_POST['nonce'] ?? 'none'));
+          wp_die('Security check failed');
+      }
+      
+      error_log("CCC DEBUG: Nonce verification passed");
+      
+      try {
+          // Get filter parameters
+          $search = sanitize_text_field($_POST['search'] ?? '');
+          $mime_type = sanitize_text_field($_POST['mime_type'] ?? '');
+          $per_page = intval($_POST['per_page'] ?? 50);
+          $allowed_types_raw = $_POST['allowed_types'] ?? '';
+          
+          // Parse allowed types
+          $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+          if (!empty($allowed_types_raw)) {
+              if (is_string($allowed_types_raw)) {
+                  $decoded_types = json_decode($allowed_types_raw, true);
+                  if (is_array($decoded_types)) {
+                      $allowed_types = $decoded_types;
+                  }
+              }
+          }
+          
+          error_log("CCC AjaxHandler: getGalleryMedia called with filters");
+          error_log("CCC AjaxHandler: search: " . $search);
+          error_log("CCC AjaxHandler: mime_type: " . $mime_type);
+          error_log("CCC AjaxHandler: allowed_types: " . print_r($allowed_types, true));
+          
+          // Build query args
+          $args = [
+              'post_type' => 'attachment',
+              'post_status' => 'inherit',
+              'posts_per_page' => $per_page,
+              'orderby' => 'date',
+              'order' => 'DESC',
+              'post_mime_type' => $allowed_types
+          ];
+          
+          // Add search
+          if (!empty($search)) {
+              $args['s'] = $search;
+          }
+          
+          // Add specific mime type filter
+          if (!empty($mime_type)) {
+              $args['post_mime_type'] = $mime_type;
+          }
+          
+          error_log("CCC AjaxHandler: Final query args: " . print_r($args, true));
+          
+          // Execute query
+          $query = new \WP_Query($args);
+          $attachments = $query->posts;
+          
+          error_log("CCC AjaxHandler: Found " . count($attachments) . " attachments");
+          
+          // Format attachments for frontend
+          $media_data = [];
+          foreach ($attachments as $attachment) {
+              $file_path = get_attached_file($attachment->ID);
+              $file_size = $file_path ? filesize($file_path) : 0;
+              
+              $media_data[] = [
+                  'id' => $attachment->ID,
+                  'title' => $attachment->post_title,
+                  'filename' => basename($file_path),
+                  'url' => wp_get_attachment_url($attachment->ID),
+                  'thumbnail' => wp_get_attachment_image_url($attachment->ID, 'thumbnail'),
+                  'medium' => wp_get_attachment_image_url($attachment->ID, 'medium'),
+                  'large' => wp_get_attachment_image_url($attachment->ID, 'large'),
+                  'alt' => get_post_meta($attachment->ID, '_wp_attachment_image_alt', true),
+                  'caption' => $attachment->post_excerpt,
+                  'description' => $attachment->post_content,
+                  'mime_type' => get_post_mime_type($attachment->ID),
+                  'filesize' => $file_size,
+                  'filesizeHumanReadable' => $file_size ? size_format($file_size) : 'Unknown',
+                  'date' => $attachment->post_date,
+                  'modified' => $attachment->post_modified
+              ];
+          }
+          
+          error_log("CCC AjaxHandler: getGalleryMedia successful, returning " . count($media_data) . " media items");
+          
+          wp_send_json_success($media_data);
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getGalleryMedia: " . $e->getMessage());
+          error_log("CCC AjaxHandler: Exception trace: " . $e->getTraceAsString());
+          wp_send_json_error(['message' => 'An error occurred while retrieving media: ' . $e->getMessage()]);
+      }
   }
 
 }
