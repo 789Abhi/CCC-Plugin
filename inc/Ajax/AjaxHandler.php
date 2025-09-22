@@ -73,6 +73,8 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_search_posts', [$this, 'searchPosts']);
       add_action('wp_ajax_ccc_get_available_post_types', [$this, 'getAvailablePostTypes']);
       add_action('wp_ajax_ccc_get_available_taxonomies', [$this, 'getAvailableTaxonomies']);
+      add_action('wp_ajax_ccc_get_settings', [$this, 'getSettings']);
+      add_action('wp_ajax_ccc_save_settings', [$this, 'saveSettings']);
       add_action('wp_ajax_ccc_get_taxonomies_for_post_type', [$this, 'getTaxonomiesForPostType']);
       add_action('wp_ajax_ccc_check_number_uniqueness', [$this, 'checkNumberUniqueness']);
       // Add more AJAX endpoints here
@@ -3453,6 +3455,77 @@ class AjaxHandler {
           error_log("CCC AjaxHandler: Exception in getGalleryMedia: " . $e->getMessage());
           error_log("CCC AjaxHandler: Exception trace: " . $e->getTraceAsString());
           wp_send_json_error(['message' => 'An error occurred while retrieving media: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get plugin settings
+   */
+  public function getSettings() {
+      try {
+          // Verify nonce
+          if (!wp_verify_nonce($_POST['nonce'], 'ccc_nonce')) {
+              wp_send_json_error(['message' => 'Security check failed']);
+              return;
+          }
+
+          // Check permissions
+          if (!current_user_can('manage_options')) {
+              wp_send_json_error(['message' => 'Insufficient permissions']);
+              return;
+          }
+
+          $settings = [
+              'api_key' => get_option('ccc_api_key', ''),
+              'other_settings' => get_option('ccc_other_settings', [])
+          ];
+
+          wp_send_json_success($settings);
+
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getSettings: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while retrieving settings: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Save plugin settings
+   */
+  public function saveSettings() {
+      try {
+          // Verify nonce
+          if (!wp_verify_nonce($_POST['nonce'], 'ccc_nonce')) {
+              wp_send_json_error(['message' => 'Security check failed']);
+              return;
+          }
+
+          // Check permissions
+          if (!current_user_can('manage_options')) {
+              wp_send_json_error(['message' => 'Insufficient permissions']);
+              return;
+          }
+
+          $settings = json_decode(stripslashes($_POST['settings']), true);
+          
+          if (!$settings) {
+              wp_send_json_error(['message' => 'Invalid settings data']);
+              return;
+          }
+
+          // Save individual settings
+          if (isset($settings['api_key'])) {
+              update_option('ccc_api_key', sanitize_text_field($settings['api_key']));
+          }
+
+          if (isset($settings['other_settings'])) {
+              update_option('ccc_other_settings', $settings['other_settings']);
+          }
+
+          wp_send_json_success(['message' => 'Settings saved successfully']);
+
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in saveSettings: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while saving settings: ' . $e->getMessage()]);
       }
   }
 

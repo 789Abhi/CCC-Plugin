@@ -456,6 +456,11 @@ class MetaBoxManager {
                 $gallery_field = new \CCC\Fields\GalleryField('', '', 0, false, '', $field_obj->getConfig());
                 return $gallery_field->sanitize($value_to_save);
                 
+            case 'date':
+                // Handle date field - use DateField's sanitize method if available
+                $date_field = new \CCC\Fields\DateField('', '', 0, false, '', $field_obj->getConfig());
+                return $date_field->sanitize($value_to_save);
+                
             case 'link':
                 // Link fields store JSON data, preserve it
                 return $value_to_save;

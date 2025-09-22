@@ -169,18 +169,11 @@ class GalleryField extends BaseField {
             }
         }
         
-        // Remove duplicates based on ID
-        $unique_media = [];
-        $seen_ids = [];
-        foreach ($processed_media as $item) {
-            if (!in_array($item['id'], $seen_ids)) {
-                $unique_media[] = $item;
-                $seen_ids[] = $item['id'];
-            }
-        }
+        // Allow duplicates - don't remove based on ID to allow same image multiple times
+        $unique_media = $processed_media;
         
         error_log("CCC GalleryField: Final processed media count: " . count($unique_media));
-        error_log("CCC GalleryField: All images (enabled and disabled) saved to database for UI persistence");
+        error_log("CCC GalleryField: All images (enabled and disabled, including duplicates) saved to database for UI persistence");
         
         // Validate against min/max limits
         if ($this->min_images > 0 && count($unique_media) < $this->min_images) {
