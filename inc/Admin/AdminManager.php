@@ -3,16 +3,19 @@ namespace CCC\Admin;
 
 use CCC\Admin\MetaBoxManager;
 use CCC\Admin\AssetManager;
+use CCC\Services\AutoSyncService;
 
 defined('ABSPATH') || exit;
 
 class AdminManager {
     private $meta_box_manager;
     private $asset_manager;
+    private $auto_sync_service;
 
     public function __construct() {
         $this->meta_box_manager = new MetaBoxManager();
         $this->asset_manager = new AssetManager();
+        $this->auto_sync_service = new AutoSyncService();
         add_action('admin_menu', [$this, 'addMigrationToolPage']);
     }
 

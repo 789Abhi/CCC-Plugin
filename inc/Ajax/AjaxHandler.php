@@ -4,6 +4,7 @@ namespace CCC\Ajax;
 use CCC\Services\ComponentService;
 use CCC\Services\FieldService;
 use CCC\Services\PostTypeTemplateService;
+use CCC\Services\ProAccessService;
 use CCC\Models\Component;
 use CCC\Models\FieldValue;
 use CCC\Models\Field;
@@ -13,12 +14,14 @@ defined('ABSPATH') || exit;
 class AjaxHandler {
   private $component_service;
   private $field_service;
+  private $pro_access_service;
 
   public function __construct() {
       error_log("CCC DEBUG: AjaxHandler constructor called");
       try {
           $this->component_service = new ComponentService();
           $this->field_service = new FieldService();
+          $this->pro_access_service = new ProAccessService();
           error_log("CCC: AjaxHandler constructed successfully");
       } catch (\Exception $e) {
           error_log("CCC: Error constructing AjaxHandler: " . $e->getMessage());
@@ -90,10 +93,11 @@ class AjaxHandler {
       add_action('wp_ajax_nopriv_ccc_get_gallery_media', [$this, 'getGalleryMedia']);
       error_log("CCC DEBUG: Registered AJAX action: ccc_get_gallery_media");
       
-      // API Key management
-      add_action('wp_ajax_ccc_save_api_key', [$this, 'saveApiKey']);
-      add_action('wp_ajax_ccc_get_api_key', [$this, 'getApiKey']);
-      add_action('wp_ajax_ccc_get_api_key_for_use', [$this, 'getApiKeyForUse']);
+      // License management
+      add_action('wp_ajax_ccc_get_license_info', [$this, 'getLicenseInfo']);
+      add_action('wp_ajax_ccc_save_license_key', [$this, 'saveLicenseKey']);
+      add_action('wp_ajax_ccc_validate_license', [$this, 'validateLicense']);
+      add_action('wp_ajax_ccc_register_site', [$this, 'registerSite']);
       
       // Add test endpoint for debugging
       add_action('wp_ajax_ccc_test', [$this, 'testEndpoint']);
@@ -103,6 +107,18 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_generate_proxy_key', [$this, 'generateProxyKey']);
       add_action('wp_ajax_ccc_validate_proxy_key', [$this, 'validateProxyKey']);
       add_action('wp_ajax_ccc_revoke_proxy_key', [$this, 'revokeProxyKey']);
+      
+      // PRO Access AJAX handlers
+      add_action('wp_ajax_ccc_check_pro_access', [$this, 'checkProAccess']);
+      add_action('wp_ajax_ccc_register_site', [$this, 'registerSite']);
+      add_action('wp_ajax_ccc_get_license_status', [$this, 'getLicenseStatus']);
+      add_action('wp_ajax_ccc_get_pro_fields_config', [$this, 'getProFieldsConfig']);
+      add_action('wp_ajax_ccc_get_plan_comparison', [$this, 'getPlanComparison']);
+      
+      // Manifest AJAX handlers
+      add_action('wp_ajax_ccc_get_field_configurations', [$this, 'getFieldConfigurations']);
+      add_action('wp_ajax_ccc_refresh_field_configuration', [$this, 'refreshFieldConfiguration']);
+      add_action('wp_ajax_ccc_get_manifest_info', [$this, 'getManifestInfo']);
       
       error_log("CCC DEBUG: All AJAX actions registered");
   }
@@ -3529,4 +3545,274 @@ class AjaxHandler {
       }
   }
 
+  /**
+   * Check PRO access for a field type
+   */
+  public function checkProAccess() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $field_type = sanitize_text_field($_POST['field_type'] ?? '');
+          
+          if (empty($field_type)) {
+              wp_send_json_error(['message' => 'Field type is required']);
+              return;
+          }
+          
+          $result = $this->pro_access_service->can_access_field($field_type);
+          wp_send_json_success($result);
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in checkProAccess: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while checking PRO access: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Register current site with license
+   */
+  public function registerSite() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $result = $this->pro_access_service->register_current_site();
+          
+          if ($result['success']) {
+              wp_send_json_success($result);
+          } else {
+              wp_send_json_error($result);
+          }
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in registerSite: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while registering site: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get license status
+   */
+  public function getLicenseStatus() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $status = $this->pro_access_service->get_license_status();
+          wp_send_json_success($status);
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getLicenseStatus: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while getting license status: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get PRO fields configuration
+   */
+  public function getProFieldsConfig() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $config = $this->pro_access_service->get_pro_fields_config();
+          wp_send_json_success($config);
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getProFieldsConfig: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while getting PRO fields config: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get plan comparison data
+   */
+  public function getPlanComparison() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $comparison = $this->pro_access_service->get_plan_comparison();
+          wp_send_json_success($comparison);
+          
+      } catch (\Exception $e) {
+          error_log("CCC AjaxHandler: Exception in getPlanComparison: " . $e->getMessage());
+          wp_send_json_error(['message' => 'An error occurred while getting plan comparison: ' . $e->getMessage()]);
+      }
+  }
+
+  /**
+   * Get field configurations from manifest
+   */
+  public function getFieldConfigurations() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $configurations = $this->pro_access_service->get_all_field_configurations();
+          
+          wp_send_json_success([
+              'fieldConfigurations' => $configurations,
+              'message' => 'Field configurations retrieved successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error getting field configurations - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get field configurations',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Refresh field configuration from manifest
+   */
+  public function refreshFieldConfiguration() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $configurations = $this->pro_access_service->refresh_field_configuration();
+          
+          wp_send_json_success([
+              'fieldConfigurations' => $configurations,
+              'message' => 'Field configuration refreshed successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error refreshing field configuration - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to refresh field configuration',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Get manifest info
+   */
+  public function getManifestInfo() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $manifest_info = $this->pro_access_service->get_manifest_info();
+          
+          wp_send_json_success([
+              'manifestInfo' => $manifest_info,
+              'message' => 'Manifest info retrieved successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error getting manifest info - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get manifest info',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Get license information
+   */
+  public function getLicenseInfo() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $license_key = get_option('ccc_license_key', '');
+          $license_status = get_option('ccc_license_status', 'invalid');
+          $license_info = get_option('ccc_license_info', '');
+          
+          wp_send_json_success([
+              'license_key' => $license_key,
+              'status' => $license_status,
+              'info' => $license_info
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error getting license info - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get license info',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Save and validate license key
+   */
+  public function saveLicenseKey() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $license_key = sanitize_text_field($_POST['license_key'] ?? '');
+          
+          if (empty($license_key)) {
+              wp_send_json_error('License key is required');
+          }
+          
+          // Save license key
+          update_option('ccc_license_key', $license_key);
+          
+          // Validate license with backend API
+          $license_validator = new \CCC\Services\LicenseValidator();
+          $validation_result = $license_validator->validate_license($license_key);
+          
+          if ($validation_result['success']) {
+              update_option('ccc_license_status', 'valid');
+              update_option('ccc_license_info', $validation_result['message']);
+              
+              wp_send_json_success([
+                  'status' => 'valid',
+                  'info' => $validation_result['message']
+              ]);
+          } else {
+              update_option('ccc_license_status', 'invalid');
+              update_option('ccc_license_info', $validation_result['message']);
+              
+              wp_send_json_error($validation_result['message']);
+          }
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error saving license key - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to save license key',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Validate license
+   */
+  public function validateLicense() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $license_key = get_option('ccc_license_key', '');
+          
+          if (empty($license_key)) {
+              wp_send_json_error('No license key found');
+          }
+          
+          $license_validator = new \CCC\Services\LicenseValidator();
+          $validation_result = $license_validator->validate_license($license_key);
+          
+          if ($validation_result['success']) {
+              update_option('ccc_license_status', 'valid');
+              update_option('ccc_license_info', $validation_result['message']);
+              
+              wp_send_json_success([
+                  'status' => 'valid',
+                  'info' => $validation_result['message']
+              ]);
+          } else {
+              update_option('ccc_license_status', 'invalid');
+              update_option('ccc_license_info', $validation_result['message']);
+              
+              wp_send_json_error($validation_result['message']);
+          }
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error validating license - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to validate license',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
 }

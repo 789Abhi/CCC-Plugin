@@ -134,4 +134,142 @@ class LicenseValidator {
             'plan' => $license['plan']
         ];
     }
+    
+    /**
+     * Register site with license
+     */
+    public function register_site($license_key, $site_url = null, $site_name = null) {
+        if (empty($license_key)) {
+            return [
+                'success' => false,
+                'message' => 'License key is required'
+            ];
+        }
+        
+        $site_url = $site_url ?: home_url();
+        $site_name = $site_name ?: get_bloginfo('name');
+        
+        $response = wp_remote_post($this->api_url . '/pro-features/register-site', [
+            'body' => json_encode([
+                'licenseKey' => $license_key,
+                'siteUrl' => $site_url,
+                'siteName' => $site_name
+            ]),
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : ''
+            ],
+            'timeout' => 10
+        ]);
+        
+        if (is_wp_error($response)) {
+            return [
+                'success' => false,
+                'message' => 'Failed to register site: ' . $response->get_error_message()
+            ];
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (!$data) {
+            return [
+                'success' => false,
+                'message' => 'Invalid response from license server'
+            ];
+        }
+        
+        return $data;
+    }
+    
+    /**
+     * Check site usage limits
+     */
+    public function check_site_usage($license_key, $site_url = null) {
+        if (empty($license_key)) {
+            return [
+                'success' => false,
+                'message' => 'License key is required'
+            ];
+        }
+        
+        $site_url = $site_url ?: home_url();
+        
+        $response = wp_remote_post($this->api_url . '/pro-features/site-usage', [
+            'body' => json_encode([
+                'licenseKey' => $license_key,
+                'siteUrl' => $site_url
+            ]),
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : ''
+            ],
+            'timeout' => 10
+        ]);
+        
+        if (is_wp_error($response)) {
+            return [
+                'success' => false,
+                'message' => 'Failed to check site usage: ' . $response->get_error_message()
+            ];
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (!$data) {
+            return [
+                'success' => false,
+                'message' => 'Invalid response from license server'
+            ];
+        }
+        
+        return $data;
+    }
+    
+    /**
+     * Check PRO feature access
+     */
+    public function check_pro_feature_access($license_key, $feature_type) {
+        if (empty($license_key) || empty($feature_type)) {
+            return [
+                'success' => false,
+                'canAccess' => false,
+                'message' => 'License key and feature type are required'
+            ];
+        }
+        
+        $response = wp_remote_post($this->api_url . '/pro-features/check-access', [
+            'body' => json_encode([
+                'licenseKey' => $license_key,
+                'featureType' => $feature_type
+            ]),
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : ''
+            ],
+            'timeout' => 10
+        ]);
+        
+        if (is_wp_error($response)) {
+            return [
+                'success' => false,
+                'canAccess' => false,
+                'message' => 'Failed to check PRO access: ' . $response->get_error_message()
+            ];
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        
+        if (!$data) {
+            return [
+                'success' => false,
+                'canAccess' => false,
+                'message' => 'Invalid response from license server'
+            ];
+        }
+        
+        return $data;
+    }
 }
