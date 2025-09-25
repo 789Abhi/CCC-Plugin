@@ -87,6 +87,8 @@ class AssetManager {
       }
 
       wp_enqueue_script('react-beautiful-dnd', 'https://unpkg.com/react-beautiful-dnd@13.1.1/dist/react-beautiful-dnd.min.js', ['react', 'react-dom'], '13.1.1', true);
+      
+      // PRO field handler is now handled by React components
   }
 
   private function enqueueFrontendAssets() {
@@ -236,5 +238,7 @@ class AssetManager {
           'nonce' => wp_create_nonce('ccc_nonce'),
           'postId' => $post_id,
       ]);
+      
+      // PRO field handler localization is now handled by React components
   }
 }

@@ -5,6 +5,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class OembedField extends BaseField {
+    protected $field_type = 'oembed';
     private $width;
     private $height;
     private $show_title;

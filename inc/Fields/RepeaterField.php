@@ -8,6 +8,7 @@ defined('ABSPATH') || exit;
 class RepeaterField extends BaseField {
     private $max_sets = 0;
     private $nested_fields = [];
+    protected $field_type = 'repeater';
     
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = []) {
         parent::__construct($label, $name, $component_id, $required, $placeholder);
@@ -201,7 +202,17 @@ class RepeaterField extends BaseField {
         });
         </script>
         <?php
-        return ob_get_clean();
+        $field_content = ob_get_clean();
+        
+        // Check PRO access for repeater field
+        $pro_access_service = new \CCC\Services\ProFieldAccessService();
+        $access_check = $pro_access_service->can_access_field('repeater');
+        
+        if (!$access_check['canAccess']) {
+            return $pro_access_service->render_pro_field_disabled('repeater', $this->label, $field_content);
+        }
+        
+        return $field_content;
     }
     
     private function renderRepeaterItem($index, $values = [], $field_name = '', $is_template = false) {

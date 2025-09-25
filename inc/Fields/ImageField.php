@@ -4,6 +4,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class ImageField extends BaseField {
+    protected $field_type = 'image';
     private $return_type = 'url';
     
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = []) {

@@ -10,26 +10,27 @@ class ManifestService {
     
     private $api_url;
     private $cache_key = 'ccc_field_config_cache';
-    private $cache_duration = 3600; // 1 hour
+    private $cache_duration = 300; // 5 minutes (reduced from 1 hour for faster sync)
     
     public function __construct() {
-        $this->api_url = defined('CCC_LICENSE_API_URL') ? CCC_LICENSE_API_URL : 'https://api.customcraftcomponents.com/api';
+        $this->api_url = defined('CCC_LICENSE_API_URL') ? CCC_LICENSE_API_URL : 'https://custom-craft-component-backend.vercel.app/api';
     }
     
     /**
-     * Fetch field configuration from manifest endpoint
+     * Fetch field configuration from backend API
      */
     public function fetch_field_configuration() {
         try {
-            $response = wp_remote_get($this->api_url . '/pro-features/manifest', [
-                'timeout' => 10,
+            $response = wp_remote_get($this->api_url . '/pro-features/config', [
+                'timeout' => 15,
                 'headers' => [
-                    'User-Agent' => 'Custom-Craft-Component-Plugin/' . get_option('ccc_plugin_version', '1.0.0')
+                    'User-Agent' => 'Custom-Craft-Component-Plugin/' . get_option('ccc_plugin_version', '1.0.0'),
+                    'Accept' => 'application/json'
                 ]
             ]);
             
             if (is_wp_error($response)) {
-                error_log('CCC ManifestService: Failed to fetch manifest - ' . $response->get_error_message());
+                error_log('CCC ManifestService: Failed to fetch config - ' . $response->get_error_message());
                 return $this->get_default_field_configuration();
             }
             
@@ -37,14 +38,48 @@ class ManifestService {
             $data = json_decode($body, true);
             
             if (!$data || !$data['success']) {
-                error_log('CCC ManifestService: Invalid manifest response');
+                error_log('CCC ManifestService: Invalid config response - ' . $body);
                 return $this->get_default_field_configuration();
             }
             
-            return $data['field_configuration'] ?? $this->get_default_field_configuration();
+            // Convert the backend API response format to the expected format
+            $field_configuration = [];
+            
+            // Process field types from backend API
+            if (isset($data['fieldTypes'])) {
+                foreach ($data['fieldTypes'] as $fieldType => $config) {
+                    $field_configuration[$fieldType] = [
+                        'required_plan' => $config['requiredPlan'] ?? 'free',
+                        'is_pro' => $config['isPro'] ?? false,
+                        'description' => $config['description'] ?? '',
+                        'name' => ucfirst($fieldType), // Generate name from field type
+                        'icon' => '📝', // Default icon
+                        'category' => 'basic', // Default category
+                        'order' => 1 // Default order
+                    ];
+                }
+            }
+            
+            // Process special features from backend API
+            if (isset($data['specialFeatures'])) {
+                foreach ($data['specialFeatures'] as $featureType => $config) {
+                    $field_configuration[$featureType] = [
+                        'required_plan' => $config['requiredPlan'] ?? 'free',
+                        'is_pro' => $config['isPro'] ?? false,
+                        'description' => $config['description'] ?? '',
+                        'name' => ucfirst($featureType), // Generate name from feature type
+                        'icon' => '⭐', // Default icon for special features
+                        'category' => 'special',
+                        'order' => 999 // Default order for special features
+                    ];
+                }
+            }
+            
+            error_log('CCC ManifestService: Successfully fetched ' . count($field_configuration) . ' field configurations from backend API');
+            return !empty($field_configuration) ? $field_configuration : $this->get_default_field_configuration();
             
         } catch (\Exception $e) {
-            error_log('CCC ManifestService: Exception fetching manifest - ' . $e->getMessage());
+            error_log('CCC ManifestService: Exception fetching config - ' . $e->getMessage());
             return $this->get_default_field_configuration();
         }
     }
@@ -104,20 +139,16 @@ class ManifestService {
             'number' => ['required_plan' => 'free', 'is_pro' => false],
             'range' => ['required_plan' => 'free', 'is_pro' => false],
             'file' => ['required_plan' => 'free', 'is_pro' => false],
-            'repeater' => ['required_plan' => 'pro', 'is_pro' => true],
+            'repeater' => ['required_plan' => 'basic', 'is_pro' => true],
             'wysiwyg' => ['required_plan' => 'free', 'is_pro' => false],
             'color' => ['required_plan' => 'free', 'is_pro' => false],
             'select' => ['required_plan' => 'free', 'is_pro' => false],
             'checkbox' => ['required_plan' => 'free', 'is_pro' => false],
             'radio' => ['required_plan' => 'free', 'is_pro' => false],
             'toggle' => ['required_plan' => 'free', 'is_pro' => false],
-            'gallery' => ['required_plan' => 'pro', 'is_pro' => true],
+            'gallery' => ['required_plan' => 'basic', 'is_pro' => true],
             'date' => ['required_plan' => 'free', 'is_pro' => false],
-            'date_range' => ['required_plan' => 'pro', 'is_pro' => true],
-            'datetime' => ['required_plan' => 'free', 'is_pro' => false],
-            'time' => ['required_plan' => 'free', 'is_pro' => false],
-            'time_range' => ['required_plan' => 'pro', 'is_pro' => true],
-            'ai_generator' => ['required_plan' => 'pro', 'is_pro' => true],
+            'ai_generator' => ['required_plan' => 'max', 'is_pro' => true],
             'conditional_logic' => ['required_plan' => 'max', 'is_pro' => true],
             'custom_validation' => ['required_plan' => 'max', 'is_pro' => true],
             'api_integration' => ['required_plan' => 'max', 'is_pro' => true]
@@ -145,7 +176,12 @@ class ManifestService {
      */
     public function get_field_config($field_type) {
         $config = $this->get_field_configuration();
-        return $config[$field_type] ?? ['required_plan' => 'free', 'is_pro' => false];
+        $field_config = $config[$field_type] ?? ['required_plan' => 'free', 'is_pro' => false];
+        
+        // Debug logging
+        error_log('CCC ManifestService: Field config for ' . $field_type . ': ' . json_encode($field_config));
+        
+        return $field_config;
     }
     
     /**

@@ -4,6 +4,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class SelectField extends BaseField {
+    protected $field_type = 'select';
     private $options = [];
     
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = []) {

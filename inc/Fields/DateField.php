@@ -3,6 +3,7 @@
 namespace CCC\Fields;
 
 class DateField extends BaseField {
+    protected $field_type = 'date';
     
     protected $date_type = 'date'; // date, datetime, time, time_range, date_range
     protected $date_format = 'Y-m-d'; // Default date format

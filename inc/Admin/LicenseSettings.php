@@ -46,15 +46,24 @@ class LicenseSettings {
     public function license_settings_page() {
         $license_key = get_option('ccc_license_key', '');
         $license_required = get_option('ccc_license_required', false);
-        $api_url = get_option('ccc_license_api_url', 'https://api.customcraftcomponents.com/api');
+        $api_url = get_option('ccc_license_api_url', 'https://custom-craft-component-backend.vercel.app/api');
         $api_key = get_option('ccc_license_api_key', '');
         
         // Handle license validation
         if (isset($_POST['validate_license']) && !empty($license_key)) {
             $validation = $this->license_validator->validate_license($license_key);
+            
+            // Debug information
+            $debug_info = '';
+            if (isset($validation['license'])) {
+                $debug_info .= '<p><strong>Plan:</strong> ' . esc_html($validation['license']['plan'] ?? 'Unknown') . '</p>';
+                $debug_info .= '<p><strong>Status:</strong> ' . esc_html($validation['license']['status'] ?? 'Unknown') . '</p>';
+                $debug_info .= '<p><strong>Expires:</strong> ' . esc_html($validation['license']['expiresAt'] ?? 'Unknown') . '</p>';
+            }
+            
             $validation_message = $validation['valid'] ? 
-                '<div class="notice notice-success"><p>License is valid!</p></div>' : 
-                '<div class="notice notice-error"><p>' . esc_html($validation['message']) . '</p></div>';
+                '<div class="notice notice-success"><p>License is valid!</p>' . $debug_info . '</div>' : 
+                '<div class="notice notice-error"><p>' . esc_html($validation['message']) . '</p>' . $debug_info . '</div>';
         }
         
         ?>

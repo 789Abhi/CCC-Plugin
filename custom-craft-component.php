@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas Using AI.
- * Version: 4.9.1
+ * Version: 4.9.2
  * Author: Abhishek T K
 */
 
@@ -11,9 +11,10 @@ defined('ABSPATH') || exit;
 // Define plugin constants
 define('CCC_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('CCC_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('CCC_VERSION', '4.9.1');
 
 // Define license API constants
-define('CCC_LICENSE_API_URL', get_option('ccc_license_api_url', 'https://api.customcraftcomponents.com/api'));
+define('CCC_LICENSE_API_URL', get_option('ccc_license_api_url', 'https://custom-craft-component-backend.vercel.app/api'));
 define('CCC_LICENSE_API_KEY', get_option('ccc_license_api_key', ''));
 
 // Load GLOBAL helper functions FIRST - before anything else

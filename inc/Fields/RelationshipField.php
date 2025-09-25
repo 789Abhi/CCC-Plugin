@@ -5,6 +5,7 @@ namespace CCC\Fields;
 use CCC\Fields\BaseField;
 
 class RelationshipField extends BaseField {
+    protected $field_type = 'relationship';
     
     private $post_types = [];
     private $post_status = [];

@@ -4,6 +4,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class ColorField extends BaseField {
+    protected $field_type = 'color';
   public function render($post_id, $instance_id, $value = '') {
       $field_id = "ccc_field_{$this->name}_{$instance_id}";
       $field_name = "ccc_field_values[{$this->component_id}][{$instance_id}][{$this->name}]";

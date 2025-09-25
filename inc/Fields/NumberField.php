@@ -7,6 +7,7 @@ use Exception;
 
 class NumberField extends BaseField
 {
+    protected $field_type = 'number';
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = '')
     {
         parent::__construct($label, $name, $component_id, $required, $placeholder, $config);

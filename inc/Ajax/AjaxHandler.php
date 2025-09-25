@@ -60,6 +60,7 @@ class AjaxHandler {
       add_action('wp_ajax_ccc_get_posts_with_components', [$this, 'getPostsWithComponents']);
       error_log("CCC DEBUG: Registered AJAX action: ccc_get_posts_with_components");
       add_action('wp_ajax_ccc_save_component_assignments', [$this, 'saveComponentAssignments']);
+      add_action('wp_ajax_ccc_get_field_access_data', [$this, 'getFieldAccessData']);
       add_action('wp_ajax_ccc_save_metabox_components', [$this, 'saveMetaboxComponents']);
       add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
       add_action('wp_ajax_ccc_delete_field', [$this, 'deleteField']);
@@ -3741,18 +3742,25 @@ class AjaxHandler {
           
           $license_key = sanitize_text_field($_POST['license_key'] ?? '');
           
-          if (empty($license_key)) {
-              wp_send_json_error('License key is required');
-          }
-          
-          // Save license key
+          // Save license key (even if empty to allow removal)
           update_option('ccc_license_key', $license_key);
+          
+          if (empty($license_key)) {
+              // Clear license status when key is removed
+              update_option('ccc_license_status', 'invalid');
+              update_option('ccc_license_info', 'No license key provided');
+              
+              wp_send_json_success([
+                  'status' => 'invalid',
+                  'info' => 'License key removed'
+              ]);
+          }
           
           // Validate license with backend API
           $license_validator = new \CCC\Services\LicenseValidator();
           $validation_result = $license_validator->validate_license($license_key);
           
-          if ($validation_result['success']) {
+          if ($validation_result['valid']) {
               update_option('ccc_license_status', 'valid');
               update_option('ccc_license_info', $validation_result['message']);
               
@@ -3764,7 +3772,11 @@ class AjaxHandler {
               update_option('ccc_license_status', 'invalid');
               update_option('ccc_license_info', $validation_result['message']);
               
-              wp_send_json_error($validation_result['message']);
+              wp_send_json_error([
+                  'message' => $validation_result['message'],
+                  'status' => 'invalid',
+                  'info' => $validation_result['message']
+              ]);
           }
           
       } catch (\Exception $e) {
@@ -3811,6 +3823,25 @@ class AjaxHandler {
           error_log('CCC AjaxHandler: Error validating license - ' . $e->getMessage());
           wp_send_json_error([
               'message' => 'Failed to validate license',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Get field access data for frontend
+   */
+  public function getFieldAccessData() {
+      try {
+          $pro_access_service = new \CCC\Services\ProFieldAccessService();
+          $field_access_data = $pro_access_service->get_field_access_data();
+          
+          wp_send_json_success($field_access_data);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error getting field access data - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get field access data',
               'error' => $e->getMessage()
           ]);
       }

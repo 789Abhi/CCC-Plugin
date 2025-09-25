@@ -5,6 +5,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class WysiwygField extends BaseField {
+    protected $field_type = 'wysiwyg';
     private $editor_settings = [];
 
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = []) {

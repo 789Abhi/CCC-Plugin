@@ -7,6 +7,7 @@ use Exception;
 
 class RangeField extends BaseField
 {
+    protected $field_type = 'range';
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = '')
     {
         parent::__construct($label, $name, $component_id, $required, $placeholder, $config);

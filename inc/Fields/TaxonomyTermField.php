@@ -6,6 +6,7 @@ use CCC\Fields\BaseField;
 
 class TaxonomyTermField extends BaseField
 {
+    protected $field_type = 'taxonomy_term';
     protected $type = 'taxonomy_term';
 
     public function render($field_name, $field_value, $field_config = [])

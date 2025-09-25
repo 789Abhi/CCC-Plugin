@@ -3,6 +3,7 @@
 namespace CCC\Fields;
 
 class LinkField extends BaseField {
+    protected $field_type = 'link';
     
     protected $config;
     

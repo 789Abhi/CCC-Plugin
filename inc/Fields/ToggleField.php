@@ -4,6 +4,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class ToggleField extends BaseField {
+    protected $field_type = 'toggle';
     private $conditional_logic = [];
     private $default_value = false;
     private $ui_style = 'switch'; // switch, checkbox, button

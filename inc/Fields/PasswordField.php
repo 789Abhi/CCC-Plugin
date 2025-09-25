@@ -6,6 +6,7 @@ use CCC\Fields\BaseField;
 
 class PasswordField extends BaseField
 {
+    protected $field_type = 'password';
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = '')
     {
         parent::__construct($label, $name, $component_id, $required, $placeholder, $config);

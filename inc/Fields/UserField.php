@@ -4,6 +4,7 @@ namespace CCC\Fields;
 defined('ABSPATH') || exit;
 
 class UserField extends BaseField {
+    protected $field_type = 'user';
     private $role_filter = [];
     private $multiple = false;
     private $return_type = 'id'; // 'id', 'object', 'array'

@@ -12,12 +12,12 @@ class LicenseValidator {
     private $api_key;
     
     public function __construct() {
-        $this->api_url = defined('CCC_LICENSE_API_URL') ? CCC_LICENSE_API_URL : 'https://api.customcraftcomponents.com/api';
+        $this->api_url = defined('CCC_LICENSE_API_URL') ? CCC_LICENSE_API_URL : 'https://custom-craft-component-backend.vercel.app/api';
         $this->api_key = defined('CCC_LICENSE_API_KEY') ? CCC_LICENSE_API_KEY : '';
     }
     
     /**
-     * Validate a license key with the backend API
+     * Validate a license key with the backend API and get PRO features
      */
     public function validate_license($license_key) {
         if (empty($license_key)) {
@@ -27,16 +27,68 @@ class LicenseValidator {
             ];
         }
         
-        $response = wp_remote_post($this->api_url . '/licenses/validate', [
-            'body' => json_encode(['licenseKey' => $license_key]),
+        $site_url = home_url();
+        $site_name = get_bloginfo('name');
+        
+        // Get plugin version from plugin header
+        if (!function_exists('get_plugin_data')) {
+            require_once(ABSPATH . 'wp-admin/includes/plugin.php');
+        }
+        $plugin_file = CCC_PLUGIN_PATH . 'custom-craft-component.php';
+        $plugin_data = get_plugin_data($plugin_file);
+        $version = $plugin_data['Version'] ?? (defined('CCC_VERSION') ? CCC_VERSION : '1.0.0');
+        
+        $wp_version = get_bloginfo('version');
+        $php_version = PHP_VERSION;
+        
+        // Debug logging for version info
+        error_log('CCC LicenseValidator: Plugin File: ' . $plugin_file);
+        error_log('CCC LicenseValidator: Plugin Data: ' . print_r($plugin_data, true));
+        error_log('CCC LicenseValidator: Plugin Version: ' . $version);
+        error_log('CCC LicenseValidator: WordPress Version: ' . $wp_version);
+        error_log('CCC LicenseValidator: PHP Version: ' . $php_version);
+        
+        // First validate with licenses endpoint for site tracking
+        $license_response = wp_remote_post($this->api_url . '/licenses/validate', [
+            'body' => json_encode([
+                'licenseKey' => $license_key,
+                'siteUrl' => $site_url,
+                'siteName' => $site_name,
+                'version' => $version,
+                'wpVersion' => $wp_version,
+                'phpVersion' => $php_version
+            ]),
             'headers' => [
                 'Content-Type' => 'application/json',
                 'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : ''
             ],
-            'timeout' => 10
+            'timeout' => 15
         ]);
         
+        // Then get PRO features
+        $response = wp_remote_post($this->api_url . '/pro-features/check', [
+            'body' => json_encode([
+                'licenseKey' => $license_key,
+                'siteUrl' => $site_url,
+                'siteName' => $site_name
+            ]),
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : ''
+            ],
+            'timeout' => 15
+        ]);
+        
+        // Debug logging
+        error_log('CCC LicenseValidator: API URL: ' . $this->api_url . '/pro-features/check');
+        error_log('CCC LicenseValidator: Request data: ' . json_encode([
+            'licenseKey' => $license_key,
+            'siteUrl' => $site_url,
+            'siteName' => $site_name
+        ]));
+        
         if (is_wp_error($response)) {
+            error_log('CCC LicenseValidator: WP Error: ' . $response->get_error_message());
             return [
                 'valid' => false,
                 'message' => 'Failed to validate license: ' . $response->get_error_message()
@@ -44,19 +96,25 @@ class LicenseValidator {
         }
         
         $body = wp_remote_retrieve_body($response);
+        error_log('CCC LicenseValidator: Response body: ' . $body);
+        
         $data = json_decode($body, true);
         
         if (!$data) {
+            error_log('CCC LicenseValidator: Failed to decode JSON response');
             return [
                 'valid' => false,
                 'message' => 'Invalid response from license server'
             ];
         }
         
+        error_log('CCC LicenseValidator: Decoded data: ' . json_encode($data));
+        
         return [
             'valid' => $data['success'] ?? false,
             'message' => $data['message'] ?? 'Unknown error',
-            'license' => $data['license'] ?? null
+            'license' => $data['license'] ?? null,
+            'proFeatures' => $data['proFeatures'] ?? null
         ];
     }
     
@@ -121,14 +179,18 @@ class LicenseValidator {
         }
         
         $license = $validation['license'];
-        $usage_percentage = ($license['usageCount'] / $license['maxUsage']) * 100;
+        
+        // Handle usage data safely - backend API may not include these fields
+        $usage_count = $license['usageCount'] ?? 0;
+        $max_usage = $license['maxUsage'] ?? 1; // Default to 1 to avoid division by zero
+        $usage_percentage = $max_usage > 0 ? ($usage_count / $max_usage) * 100 : 0;
         
         return [
             'status' => 'valid',
             'message' => 'License is active',
             'can_use_ai' => true,
-            'usage_count' => $license['usageCount'],
-            'max_usage' => $license['maxUsage'],
+            'usage_count' => $usage_count,
+            'max_usage' => $max_usage,
             'usage_percentage' => $usage_percentage,
             'expires_at' => $license['expiresAt'],
             'plan' => $license['plan']

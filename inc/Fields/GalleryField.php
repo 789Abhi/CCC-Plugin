@@ -9,6 +9,7 @@ class GalleryField extends BaseField {
     protected $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     protected $show_preview = true;
     protected $preview_size = 'medium';
+    protected $field_type = 'gallery';
     
     public function __construct($label, $name, $component_id, $required = false, $placeholder = '', $config = '') {
         parent::__construct($label, $name, $component_id, $required, $placeholder, $config);
@@ -57,7 +58,17 @@ class GalleryField extends BaseField {
         });
         </script>
         <?php
-        return ob_get_clean();
+        $field_content = ob_get_clean();
+        
+        // Check PRO access for gallery field
+        $pro_access_service = new \CCC\Services\ProFieldAccessService();
+        $access_check = $pro_access_service->can_access_field('gallery');
+        
+        if (!$access_check['canAccess']) {
+            return $pro_access_service->render_pro_field_disabled('gallery', $this->label, $field_content);
+        }
+        
+        return $field_content;
     }
     
     public function save() {
