@@ -118,6 +118,8 @@ class AjaxHandler {
       
       // Manifest AJAX handlers
       add_action('wp_ajax_ccc_get_field_configurations', [$this, 'getFieldConfigurations']);
+      add_action('wp_ajax_ccc_get_filtered_field_configurations', [$this, 'getFilteredFieldConfigurations']);
+      add_action('wp_ajax_ccc_get_default_field', [$this, 'getDefaultField']);
       add_action('wp_ajax_ccc_refresh_field_configuration', [$this, 'refreshFieldConfiguration']);
       add_action('wp_ajax_ccc_get_manifest_info', [$this, 'getManifestInfo']);
       
@@ -3656,6 +3658,55 @@ class AjaxHandler {
           error_log('CCC AjaxHandler: Error getting field configurations - ' . $e->getMessage());
           wp_send_json_error([
               'message' => 'Failed to get field configurations',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Get filtered field configurations based on license status
+   */
+  public function getFilteredFieldConfigurations() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $manifest_service = new \CCC\Services\ManifestService();
+          $configurations = $manifest_service->get_filtered_field_configurations();
+          
+          wp_send_json_success([
+              'fieldConfigurations' => $configurations,
+              'message' => 'Filtered field configurations retrieved successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error getting filtered field configurations - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get filtered field configurations',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+  
+  /**
+   * Get default field selection (first available field)
+   */
+  public function getDefaultField() {
+      try {
+          check_ajax_referer('ccc_nonce', 'nonce');
+          
+          $pro_access_service = new \CCC\Services\ProFieldAccessService();
+          $access_data = $pro_access_service->get_field_access_data();
+          
+          wp_send_json_success([
+              'defaultField' => $access_data['defaultField'] ?? null,
+              'fieldTypes' => $access_data['fieldTypes'],
+              'message' => 'Default field retrieved successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error getting default field - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get default field',
               'error' => $e->getMessage()
           ]);
       }

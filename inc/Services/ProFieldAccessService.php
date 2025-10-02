@@ -11,6 +11,7 @@ class ProFieldAccessService {
     private $license_validator;
     private $manifest_service;
     private $cached_features = null;
+    private $cached_license = null;
     private $cache_duration = 3600; // 1 hour
     
     public function __construct() {
@@ -80,8 +81,9 @@ class ProFieldAccessService {
             }
             
             $this->cached_features = $validation['proFeatures'];
+            $this->cached_license = $validation['license'];
             
-            // Check if field is available based on license plan
+            // Check if field is available based on license PRO status
             if ($this->cached_features && isset($this->cached_features['fieldTypes'][$field_type])) {
                 $field_availability = $this->cached_features['fieldTypes'][$field_type];
                 
@@ -89,7 +91,7 @@ class ProFieldAccessService {
                     return [
                         'canAccess' => true,
                         'message' => 'Access granted',
-                        'userPlan' => $this->cached_features['license']['plan'] ?? 'free',
+                        'userPlan' => $this->cached_license['isPro'] ? 'pro' : 'free',
                         'requiredPlan' => $field_config['required_plan'],
                         'success' => true,
                         'isPro' => true
@@ -98,11 +100,10 @@ class ProFieldAccessService {
                     return [
                         'canAccess' => false,
                         'message' => sprintf(
-                            'This field requires a %s plan or higher. Your current plan: %s',
-                            ucfirst($field_config['required_plan']),
-                            ucfirst($this->cached_features['license']['plan'] ?? 'free')
+                            'This field requires a PRO license. Your current plan: %s',
+                            $this->cached_license['isPro'] ? 'PRO' : 'Free'
                         ),
-                        'userPlan' => $this->cached_features['license']['plan'] ?? 'free',
+                        'userPlan' => $this->cached_license['isPro'] ? 'pro' : 'free',
                         'requiredPlan' => $field_config['required_plan'],
                         'success' => true,
                         'isPro' => true
@@ -110,22 +111,14 @@ class ProFieldAccessService {
                 }
             }
             
-            // Fallback: check plan hierarchy
-            $user_plan = $this->cached_features['license']['plan'] ?? 'free';
-            $required_plan = $field_config['required_plan'];
+            // Fallback: check PRO status directly
+            $user_is_pro = $this->cached_license['isPro'] ?? false;
+            $field_is_pro = $field_config['is_pro'];
             
-            $plan_hierarchy = ['free' => 0, 'basic' => 1, 'pro' => 2, 'max' => 3];
-            $user_plan_level = $plan_hierarchy[$user_plan] ?? 0;
-            $required_plan_level = $plan_hierarchy[$required_plan] ?? 0;
-            
-            $can_access = $user_plan_level >= $required_plan_level;
+            $can_access = !$field_is_pro || $user_is_pro; // Free fields always available, PRO fields only if user has PRO license
             
             if (!$can_access) {
-                $message = sprintf(
-                    'This field requires a %s plan or higher. Your current plan: %s',
-                    ucfirst($required_plan),
-                    ucfirst($user_plan)
-                );
+                $message = 'This field requires a PRO license. Your current plan: Free';
             } else {
                 $message = 'Access granted';
             }
@@ -133,8 +126,8 @@ class ProFieldAccessService {
             return [
                 'canAccess' => $can_access,
                 'message' => $message,
-                'userPlan' => $user_plan,
-                'requiredPlan' => $required_plan,
+                'userPlan' => $user_is_pro ? 'pro' : 'free',
+                'requiredPlan' => $field_config['required_plan'],
                 'success' => true,
                 'isPro' => true
             ];
@@ -160,11 +153,8 @@ class ProFieldAccessService {
             'repeater' => 'Repeater Field',
             'gallery' => 'Gallery Field',
             'date_range' => 'Date Range Field',
-            'time_range' => 'Time Range Field',
-            'ai_generator' => 'AI Component Generator',
-            'conditional_logic' => 'Conditional Logic',
-            'custom_validation' => 'Custom Validation',
-            'api_integration' => 'API Integration'
+            'time_range' => 'Time Range Field'
+            // Note: Removed special features as they are not field types
         ];
         
         $field_name = $field_label ?: (isset($field_names[$field_type]) ? $field_names[$field_type] : ucfirst($field_type));
@@ -256,11 +246,8 @@ class ProFieldAccessService {
             'repeater' => 'Repeater Field',
             'gallery' => 'Gallery Field',
             'date_range' => 'Date Range Field',
-            'time_range' => 'Time Range Field',
-            'ai_generator' => 'AI Component Generator',
-            'conditional_logic' => 'Conditional Logic',
-            'custom_validation' => 'Custom Validation',
-            'api_integration' => 'API Integration'
+            'time_range' => 'Time Range Field'
+            // Note: Removed special features as they are not field types
         ];
         
         $field_name = $field_label ?: (isset($field_names[$field_type]) ? $field_names[$field_type] : ucfirst($field_type));
@@ -409,6 +396,7 @@ class ProFieldAccessService {
      */
     public function clear_cache() {
         $this->cached_features = null;
+        $this->cached_license = null;
         delete_transient('ccc_pro_features_cache');
     }
     
@@ -422,7 +410,8 @@ class ProFieldAccessService {
             return [
                 'status' => 'no_license',
                 'message' => 'No license key found',
-                'plan' => 'free'
+                'plan' => 'free',
+                'isPro' => false
             ];
         }
         
@@ -438,8 +427,9 @@ class ProFieldAccessService {
             'link', 'email', 'number', 'range', 'file', 'wysiwyg',
             'color', 'select', 'checkbox', 'radio', 'toggle', 'date',
             'datetime', 'time', 'repeater', 'gallery', 'date_range',
-            'time_range', 'ai_generator', 'conditional_logic',
-            'custom_validation', 'api_integration'
+            'time_range'
+            // Note: Removed ai_generator, conditional_logic, custom_validation, api_integration
+            // These are special features, not field types for the dropdown
         ];
         
         $available_fields = [];
@@ -459,6 +449,17 @@ class ProFieldAccessService {
     }
     
     /**
+     * Clear license validation cache
+     */
+    public function clear_license_cache() {
+        $license_key = get_option('ccc_license_key', '');
+        if (!empty($license_key)) {
+            delete_transient('ccc_license_status_' . md5($license_key));
+            error_log('CCC ProFieldAccessService: License cache cleared for key: ' . md5($license_key));
+        }
+    }
+    
+    /**
      * Get field access data for frontend JavaScript
      */
     public function get_field_access_data() {
@@ -466,16 +467,21 @@ class ProFieldAccessService {
         $license_status = $this->get_license_status();
         
         // Get the actual user plan from license status
-        $user_plan = $license_status['plan'] ?? 'free';
+        $user_plan = $license_status['isPro'] ? 'pro' : 'free';
         
-        // Force refresh field configuration to get latest changes
-        $field_configurations = $this->manifest_service->refresh_field_configuration();
+        // Get filtered field configurations based on license status
+        $field_configurations = $this->manifest_service->get_filtered_field_configurations();
         
-        // Get available field types based on license (only core field types, not variations or special features)
+        // Get field types with availability information
         $field_types = [];
         foreach ($field_configurations as $field_type => $config) {
             // Skip special features - only include actual field types
             if ($config['category'] === 'special') {
+                continue;
+            }
+            
+            // Explicitly exclude AI generator and other special features that shouldn't appear in field type dropdown
+            if (in_array($field_type, ['ai_generator', 'conditional_logic', 'custom_validation', 'api_integration'])) {
                 continue;
             }
             
@@ -484,12 +490,15 @@ class ProFieldAccessService {
                 continue;
             }
             
-            $access = $this->can_access_field($field_type);
+            // Check if user has access to this field based on license
+            $access_result = $this->can_access_field($field_type);
+            $is_available = $access_result['canAccess'];
+            
             $field_types[$field_type] = [
-                'available' => $access['canAccess'],
+                'available' => $is_available,
                 'is_pro' => $config['is_pro'],
                 'required_plan' => $config['required_plan'],
-                'message' => $access['message'],
+                'message' => $access_result['message'],
                 'user_plan' => $user_plan,
                 'name' => $config['name'] ?? ucfirst($field_type),
                 'description' => $config['description'] ?? '',
@@ -499,10 +508,20 @@ class ProFieldAccessService {
             ];
         }
         
+        // Find the first available field for default selection
+        $default_field = null;
+        foreach ($field_types as $field_type => $field_data) {
+            if ($field_data['available']) {
+                $default_field = $field_type;
+                break;
+            }
+        }
+        
         return [
             'hasLicense' => !empty($license_key),
             'licenseStatus' => $license_status,
             'fieldTypes' => $field_types,
+            'defaultField' => $default_field,
             'proFields' => array_filter($field_types, function($field) {
                 return $field['is_pro'] && $field['category'] !== 'special';
             })

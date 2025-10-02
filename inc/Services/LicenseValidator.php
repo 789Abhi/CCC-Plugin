@@ -70,11 +70,14 @@ class LicenseValidator {
             'body' => json_encode([
                 'licenseKey' => $license_key,
                 'siteUrl' => $site_url,
-                'siteName' => $site_name
+                'siteName' => $site_name,
+                'pluginVersion' => $version,
+                'wpVersion' => $wp_version
             ]),
             'headers' => [
                 'Content-Type' => 'application/json',
-                'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : ''
+                'Authorization' => !empty($this->api_key) ? 'Bearer ' . $this->api_key : '',
+                'X-Plugin-Version' => $version
             ],
             'timeout' => 15
         ]);
@@ -193,7 +196,8 @@ class LicenseValidator {
             'max_usage' => $max_usage,
             'usage_percentage' => $usage_percentage,
             'expires_at' => $license['expiresAt'],
-            'plan' => $license['plan']
+            'plan' => $license['isPro'] ? 'pro' : 'free',
+            'isPro' => $license['isPro'] ?? false
         ];
     }
     

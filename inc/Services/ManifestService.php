@@ -21,11 +21,17 @@ class ManifestService {
      */
     public function fetch_field_configuration() {
         try {
+            $plugin_version = defined('CCC_VERSION') ? CCC_VERSION : get_option('ccc_plugin_version', '1.0.0');
+            
             $response = wp_remote_get($this->api_url . '/pro-features/config', [
                 'timeout' => 15,
                 'headers' => [
-                    'User-Agent' => 'Custom-Craft-Component-Plugin/' . get_option('ccc_plugin_version', '1.0.0'),
-                    'Accept' => 'application/json'
+                    'User-Agent' => 'Custom-Craft-Component-Plugin/' . $plugin_version,
+                    'Accept' => 'application/json',
+                    'X-Plugin-Version' => $plugin_version
+                ],
+                'body' => [
+                    'version' => $plugin_version
                 ]
             ]);
             
@@ -55,7 +61,12 @@ class ManifestService {
                         'name' => ucfirst($fieldType), // Generate name from field type
                         'icon' => '📝', // Default icon
                         'category' => 'basic', // Default category
-                        'order' => 1 // Default order
+                        'order' => 1, // Default order
+                        'version' => $config['version'] ?? '1.0.0',
+                        'min_plugin_version' => $config['minPluginVersion'] ?? '1.0.0',
+                        'max_plugin_version' => $config['maxPluginVersion'] ?? null,
+                        'effective_date' => $config['effectiveDate'] ?? null,
+                        'compatible_version' => $data['compatibleVersion'] ?? $plugin_version
                     ];
                 }
             }
@@ -70,7 +81,12 @@ class ManifestService {
                         'name' => ucfirst($featureType), // Generate name from feature type
                         'icon' => '⭐', // Default icon for special features
                         'category' => 'special',
-                        'order' => 999 // Default order for special features
+                        'order' => 999, // Default order for special features
+                        'version' => $config['version'] ?? '1.0.0',
+                        'min_plugin_version' => $config['minPluginVersion'] ?? '1.0.0',
+                        'max_plugin_version' => $config['maxPluginVersion'] ?? null,
+                        'effective_date' => $config['effectiveDate'] ?? null,
+                        'compatible_version' => $data['compatibleVersion'] ?? $plugin_version
                     ];
                 }
             }
@@ -85,37 +101,22 @@ class ManifestService {
     }
     
     /**
-     * Get cached field configuration or fetch from API
+     * Get field configuration (hardcoded - no API dependency)
      */
     public function get_field_configuration() {
-        // Try to get from cache first
-        $cached_config = get_transient($this->cache_key);
-        
-        if ($cached_config !== false) {
-            return $cached_config;
-        }
-        
-        // Fetch from API
-        $config = $this->fetch_field_configuration();
-        
-        // Cache the result
-        set_transient($this->cache_key, $config, $this->cache_duration);
-        
-        return $config;
+        // Always return hardcoded configuration - no API calls
+        return $this->get_default_field_configuration();
     }
     
     /**
-     * Force refresh field configuration from API
+     * Force refresh field configuration (hardcoded - no API dependency)
      */
     public function refresh_field_configuration() {
         // Clear cache
         delete_transient($this->cache_key);
         
-        // Fetch fresh data
-        $config = $this->fetch_field_configuration();
-        
-        // Cache the result
-        set_transient($this->cache_key, $config, $this->cache_duration);
+        // Return hardcoded configuration
+        $config = $this->get_default_field_configuration();
         
         // Update the stored configuration
         update_option('ccc_field_configuration', $config);
@@ -124,34 +125,249 @@ class ManifestService {
     }
     
     /**
-     * Get default field configuration (fallback)
+     * Get default field configuration (hardcoded - no API dependency)
      */
     private function get_default_field_configuration() {
         return [
-            'text' => ['required_plan' => 'free', 'is_pro' => false],
-            'textarea' => ['required_plan' => 'free', 'is_pro' => false],
-            'image' => ['required_plan' => 'free', 'is_pro' => false],
-            'video' => ['required_plan' => 'free', 'is_pro' => false],
-            'oembed' => ['required_plan' => 'free', 'is_pro' => false],
-            'relationship' => ['required_plan' => 'free', 'is_pro' => false],
-            'link' => ['required_plan' => 'free', 'is_pro' => false],
-            'email' => ['required_plan' => 'free', 'is_pro' => false],
-            'number' => ['required_plan' => 'free', 'is_pro' => false],
-            'range' => ['required_plan' => 'free', 'is_pro' => false],
-            'file' => ['required_plan' => 'free', 'is_pro' => false],
-            'repeater' => ['required_plan' => 'basic', 'is_pro' => true],
-            'wysiwyg' => ['required_plan' => 'free', 'is_pro' => false],
-            'color' => ['required_plan' => 'free', 'is_pro' => false],
-            'select' => ['required_plan' => 'free', 'is_pro' => false],
-            'checkbox' => ['required_plan' => 'free', 'is_pro' => false],
-            'radio' => ['required_plan' => 'free', 'is_pro' => false],
-            'toggle' => ['required_plan' => 'free', 'is_pro' => false],
-            'gallery' => ['required_plan' => 'basic', 'is_pro' => true],
-            'date' => ['required_plan' => 'free', 'is_pro' => false],
-            'ai_generator' => ['required_plan' => 'max', 'is_pro' => true],
-            'conditional_logic' => ['required_plan' => 'max', 'is_pro' => true],
-            'custom_validation' => ['required_plan' => 'max', 'is_pro' => true],
-            'api_integration' => ['required_plan' => 'max', 'is_pro' => true]
+            // Basic fields (free)
+            'text' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Text Field',
+                'description' => 'Single line text input',
+                'icon' => '📝',
+                'category' => 'basic',
+                'order' => 1
+            ],
+            'textarea' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Text Area',
+                'description' => 'Multi-line text input',
+                'icon' => '📄',
+                'category' => 'basic',
+                'order' => 2
+            ],
+            'email' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Email Field',
+                'description' => 'Email input with validation',
+                'icon' => '📧',
+                'category' => 'basic',
+                'order' => 3
+            ],
+            'number' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Number Field',
+                'description' => 'Numeric input',
+                'icon' => '🔢',
+                'category' => 'basic',
+                'order' => 4
+            ],
+            'link' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Link Field',
+                'description' => 'URL input',
+                'icon' => '🔗',
+                'category' => 'basic',
+                'order' => 5
+            ],
+            'select' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Select Field',
+                'description' => 'Dropdown selection',
+                'icon' => '📋',
+                'category' => 'basic',
+                'order' => 6
+            ],
+            'checkbox' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Checkbox Field',
+                'description' => 'Multiple checkbox options',
+                'icon' => '☑️',
+                'category' => 'basic',
+                'order' => 7
+            ],
+            'radio' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Radio Field',
+                'description' => 'Single choice options',
+                'icon' => '🔘',
+                'category' => 'basic',
+                'order' => 8
+            ],
+            'toggle' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Toggle Field',
+                'description' => 'On/off switch',
+                'icon' => '🔀',
+                'category' => 'basic',
+                'order' => 9
+            ],
+            'color' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Color Field',
+                'description' => 'Color picker',
+                'icon' => '🎨',
+                'category' => 'basic',
+                'order' => 10
+            ],
+            'range' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Range Field',
+                'description' => 'Slider input',
+                'icon' => '📊',
+                'category' => 'basic',
+                'order' => 11
+            ],
+            'date' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Date Field',
+                'description' => 'Date picker',
+                'icon' => '📅',
+                'category' => 'basic',
+                'order' => 12
+            ],
+            'file' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'File Field',
+                'description' => 'File upload',
+                'icon' => '📁',
+                'category' => 'media',
+                'order' => 13
+            ],
+            'wysiwyg' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'WYSIWYG Editor',
+                'description' => 'Rich text editor',
+                'icon' => '✏️',
+                'category' => 'advanced',
+                'order' => 14
+            ],
+            'oembed' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'oEmbed Field',
+                'description' => 'Embed external content',
+                'icon' => '🔗',
+                'category' => 'advanced',
+                'order' => 15
+            ],
+            'relationship' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Relationship Field',
+                'description' => 'Link to other posts',
+                'icon' => '🔗',
+                'category' => 'advanced',
+                'order' => 16
+            ],
+            'image' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Image Field',
+                'description' => 'Single image upload',
+                'icon' => '🖼️',
+                'category' => 'media',
+                'order' => 17
+            ],
+            'video' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Video Field',
+                'description' => 'Video upload',
+                'icon' => '🎥',
+                'category' => 'media',
+                'order' => 18
+            ],
+            'password' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Password Field',
+                'description' => 'Password input',
+                'icon' => '🔒',
+                'category' => 'basic',
+                'order' => 19
+            ],
+            'taxonomy_term' => [
+                'required_plan' => 'free', 
+                'is_pro' => false,
+                'name' => 'Taxonomy Term Field',
+                'description' => 'Select taxonomy terms',
+                'icon' => '🏷️',
+                'category' => 'advanced',
+                'order' => 20
+            ],
+            
+            // PRO fields (require license)
+            'repeater' => [
+                'required_plan' => 'basic', 
+                'is_pro' => true,
+                'name' => 'Repeater Field',
+                'description' => 'Repeatable field group',
+                'icon' => '🔄',
+                'category' => 'pro',
+                'order' => 21
+            ],
+            'gallery' => [
+                'required_plan' => 'basic', 
+                'is_pro' => true,
+                'name' => 'Gallery Field',
+                'description' => 'Multiple image uploads',
+                'icon' => '🖼️',
+                'category' => 'pro',
+                'order' => 22
+            ],
+            
+            // Special features (not field types - excluded from dropdown)
+            'ai_generator' => [
+                'required_plan' => 'max', 
+                'is_pro' => true,
+                'name' => 'AI Component Generator',
+                'description' => 'Generate components with AI',
+                'icon' => '🤖',
+                'category' => 'special',
+                'order' => 999
+            ],
+            'conditional_logic' => [
+                'required_plan' => 'max', 
+                'is_pro' => true,
+                'name' => 'Conditional Logic',
+                'description' => 'Show/hide fields based on conditions',
+                'icon' => '⚡',
+                'category' => 'special',
+                'order' => 999
+            ],
+            'custom_validation' => [
+                'required_plan' => 'max', 
+                'is_pro' => true,
+                'name' => 'Custom Validation',
+                'description' => 'Custom field validation rules',
+                'icon' => '✅',
+                'category' => 'special',
+                'order' => 999
+            ],
+            'api_integration' => [
+                'required_plan' => 'max', 
+                'is_pro' => true,
+                'name' => 'API Integration',
+                'description' => 'Connect to external APIs',
+                'icon' => '🔌',
+                'category' => 'special',
+                'order' => 999
+            ]
         ];
     }
     
@@ -189,6 +405,118 @@ class ManifestService {
      */
     public function get_all_field_configurations() {
         return $this->get_field_configuration();
+    }
+    
+    /**
+     * Get field configurations with availability flags based on license status
+     */
+    public function get_filtered_field_configurations() {
+        $license_key = get_option('ccc_license_key', '');
+        $has_valid_license = !empty($license_key);
+        $is_pro_license = false;
+        $plugin_version = defined('CCC_VERSION') ? CCC_VERSION : get_option('ccc_plugin_version', '1.0.0');
+        
+        // Check if license is valid and PRO
+        if ($has_valid_license) {
+            $license_validator = new LicenseValidator();
+            $validation = $license_validator->validate_license($license_key);
+            $is_pro_license = $validation['valid'] && ($validation['license']['isPro'] ?? false);
+            
+            // Debug logging
+            error_log('CCC ManifestService: License validation result: ' . json_encode($validation));
+            error_log('CCC ManifestService: is_pro_license: ' . ($is_pro_license ? 'true' : 'false'));
+        }
+        
+        // Get all field configurations (hardcoded)
+        $all_configs = $this->get_field_configuration();
+        $filtered_configs = [];
+        
+        foreach ($all_configs as $field_type => $config) {
+            $field_config = $config;
+            
+            // Check version compatibility (always true for hardcoded config)
+            $is_version_compatible = true;
+            
+            // Add availability flag based on license
+            if ($config['is_pro'] ?? false) {
+                // PRO field - available only if user has valid license
+                $field_config['available'] = $has_valid_license && $is_pro_license;
+                
+                // Debug logging for PRO fields
+                if ($field_type === 'repeater' || $field_type === 'gallery') {
+                    error_log("CCC ManifestService: {$field_type} field availability - has_valid_license: " . ($has_valid_license ? 'true' : 'false') . ", is_pro_license: " . ($is_pro_license ? 'true' : 'false') . ", available: " . ($field_config['available'] ? 'true' : 'false'));
+                }
+            } else {
+                // Free field - always available
+                $field_config['available'] = true;
+            }
+            
+            // Add version compatibility info
+            $field_config['version_compatible'] = $is_version_compatible;
+            $field_config['plugin_version'] = $plugin_version;
+            
+            $filtered_configs[$field_type] = $field_config;
+        }
+        
+        return $filtered_configs;
+    }
+    
+    /**
+     * Check if plugin version is compatible with field configuration
+     */
+    private function is_version_compatible($plugin_version, $config) {
+        $min_version = $config['min_plugin_version'] ?? '1.0.0';
+        $max_version = $config['max_plugin_version'] ?? null;
+        
+        // Simple version comparison (you might want to use a proper semver library)
+        $plugin_version_parts = explode('.', $plugin_version);
+        $min_version_parts = explode('.', $min_version);
+        
+        // Check minimum version
+        for ($i = 0; $i < max(count($plugin_version_parts), count($min_version_parts)); $i++) {
+            $plugin_part = intval($plugin_version_parts[$i] ?? 0);
+            $min_part = intval($min_version_parts[$i] ?? 0);
+            
+            if ($plugin_part < $min_part) {
+                return false;
+            } elseif ($plugin_part > $min_part) {
+                break;
+            }
+        }
+        
+        // Check maximum version if specified
+        if ($max_version) {
+            $max_version_parts = explode('.', $max_version);
+            
+            for ($i = 0; $i < max(count($plugin_version_parts), count($max_version_parts)); $i++) {
+                $plugin_part = intval($plugin_version_parts[$i] ?? 0);
+                $max_part = intval($max_version_parts[$i] ?? 0);
+                
+                if ($plugin_part > $max_part) {
+                    return false;
+                } elseif ($plugin_part < $max_part) {
+                    break;
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Get only free field configurations
+     */
+    private function get_free_field_configurations() {
+        $all_configs = $this->get_field_configuration();
+        $free_configs = [];
+        
+        foreach ($all_configs as $field_type => $config) {
+            if (!($config['is_pro'] ?? false)) {
+                $free_configs[$field_type] = $config;
+            }
+        }
+        
+        return $free_configs;
     }
     
     /**
