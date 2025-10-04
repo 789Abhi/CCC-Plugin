@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Custom Craft Component
  * Description: Create custom frontend components with fields like text and textareas Using AI.
- * Version: 4.9.3
+ * Version: 4.9.4
  * Author: Abhishek T K
 */
 

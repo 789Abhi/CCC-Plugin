@@ -301,15 +301,6 @@ class ManifestService {
                 'category' => 'basic',
                 'order' => 19
             ],
-            'taxonomy_term' => [
-                'required_plan' => 'free', 
-                'is_pro' => false,
-                'name' => 'Taxonomy Term Field',
-                'description' => 'Select taxonomy terms',
-                'icon' => '🏷️',
-                'category' => 'advanced',
-                'order' => 20
-            ],
             
             // PRO fields (require license)
             'repeater' => [

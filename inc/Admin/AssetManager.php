@@ -237,6 +237,7 @@ class AssetManager {
           'ajaxUrl' => admin_url('admin-ajax.php'),
           'nonce' => wp_create_nonce('ccc_nonce'),
           'postId' => $post_id,
+          'licenseKey' => get_option('ccc_license_key', ''),
       ]);
       
       // PRO field handler localization is now handled by React components

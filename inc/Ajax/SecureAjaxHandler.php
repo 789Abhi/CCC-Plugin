@@ -323,16 +323,6 @@ class SecureAjaxHandler {
                 'available' => true,
                 'required_plan' => 'free'
             ],
-            'taxonomy_term' => [
-                'name' => 'Taxonomy Term Field',
-                'description' => 'Select taxonomy terms',
-                'icon' => '🏷️',
-                'category' => 'advanced',
-                'order' => 20,
-                'is_pro' => false,
-                'available' => true,
-                'required_plan' => 'free'
-            ],
             
             // PRO fields
             'repeater' => [
@@ -367,7 +357,7 @@ class SecureAjaxHandler {
         $free_fields = [
             'text', 'textarea', 'email', 'number', 'link', 'select', 'checkbox', 
             'radio', 'toggle', 'color', 'range', 'date', 'file', 'wysiwyg', 
-            'oembed', 'relationship', 'image', 'video', 'password', 'taxonomy_term'
+            'oembed', 'relationship', 'image', 'video', 'password'
         ];
         
         $field_types = [];
