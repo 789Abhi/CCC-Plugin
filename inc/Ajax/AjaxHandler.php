@@ -61,6 +61,7 @@ class AjaxHandler {
       error_log("CCC DEBUG: Registered AJAX action: ccc_get_posts_with_components");
       add_action('wp_ajax_ccc_save_component_assignments', [$this, 'saveComponentAssignments']);
       add_action('wp_ajax_ccc_get_field_access_data', [$this, 'getFieldAccessData']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_get_field_access_data");
       add_action('wp_ajax_ccc_save_metabox_components', [$this, 'saveMetaboxComponents']);
       add_action('wp_ajax_ccc_delete_component', [$this, 'deleteComponent']);
       add_action('wp_ajax_ccc_delete_field', [$this, 'deleteField']);
@@ -95,6 +96,12 @@ class AjaxHandler {
       error_log("CCC DEBUG: Registered AJAX action: ccc_get_gallery_media");
       
       // License management
+      add_action('wp_ajax_ccc_get_license_key', [$this, 'getLicenseKey']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_get_license_key");
+      add_action('wp_ajax_ccc_get_openai_key', [$this, 'getOpenAIKey']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_get_openai_key");
+      add_action('wp_ajax_ccc_generate_component_with_ai', [$this, 'generateComponentWithAI']);
+      error_log("CCC DEBUG: Registered AJAX action: ccc_generate_component_with_ai");
       add_action('wp_ajax_ccc_get_license_info', [$this, 'getLicenseInfo']);
       add_action('wp_ajax_ccc_save_license_key', [$this, 'saveLicenseKey']);
       add_action('wp_ajax_ccc_validate_license', [$this, 'validateLicense']);
@@ -3855,7 +3862,7 @@ class AjaxHandler {
           $license_validator = new \CCC\Services\LicenseValidator();
           $validation_result = $license_validator->validate_license($license_key);
           
-          if ($validation_result['success']) {
+          if ($validation_result['valid']) {
               update_option('ccc_license_status', 'valid');
               update_option('ccc_license_info', $validation_result['message']);
               
@@ -3884,15 +3891,391 @@ class AjaxHandler {
    */
   public function getFieldAccessData() {
       try {
+          error_log("CCC DEBUG: getFieldAccessData method called");
           $pro_access_service = new \CCC\Services\ProFieldAccessService();
+          error_log("CCC DEBUG: ProFieldAccessService created successfully");
           $field_access_data = $pro_access_service->get_field_access_data();
+          error_log("CCC DEBUG: Field access data retrieved successfully");
           
           wp_send_json_success($field_access_data);
           
       } catch (\Exception $e) {
           error_log('CCC AjaxHandler: Error getting field access data - ' . $e->getMessage());
+          error_log('CCC AjaxHandler: Error stack trace - ' . $e->getTraceAsString());
           wp_send_json_error([
               'message' => 'Failed to get field access data',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+
+  /**
+   * Return stored license key for admin app
+   */
+  public function getLicenseKey() {
+      try {
+          // Accept either 'nonce' or 'ccc_nonce' for compatibility
+          $nonce = $_POST['nonce'] ?? ($_POST['ccc_nonce'] ?? '');
+          if (!empty($nonce)) {
+              check_ajax_referer('ccc_nonce', !empty($_POST['nonce']) ? 'nonce' : 'ccc_nonce');
+          }
+
+          $license_key = get_option('ccc_license_key', '');
+
+          wp_send_json_success([
+              'license_key' => $license_key,
+              'status' => !empty($license_key) ? 'set' : 'empty'
+          ]);
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error in getLicenseKey - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to load license key',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+
+  /**
+   * Get OpenAI API key from backend for plugin use
+   */
+  public function getOpenAIKey() {
+      try {
+          error_log("CCC DEBUG: getOpenAIKey method called");
+          
+          // Get license key from WordPress options
+          $license_key = get_option('ccc_license_key', '');
+          
+          if (empty($license_key)) {
+              wp_send_json_error([
+                  'message' => 'No license key configured'
+              ]);
+              return;
+          }
+          
+          // Call backend API to get OpenAI key
+          $backend_url = 'https://custom-craft-component-backend.vercel.app/api/admin/openai/get-key-for-plugin';
+          
+          $response = wp_remote_post($backend_url, [
+              'headers' => [
+                  'Content-Type' => 'application/json'
+              ],
+              'body' => json_encode([
+                  'license_key' => $license_key
+              ]),
+              'timeout' => 30
+          ]);
+          
+          if (is_wp_error($response)) {
+              error_log('CCC AjaxHandler: Error calling backend API - ' . $response->get_error_message());
+              wp_send_json_error([
+                  'message' => 'Failed to connect to backend API'
+              ]);
+              return;
+          }
+          
+          $response_code = wp_remote_retrieve_response_code($response);
+          $response_body = wp_remote_retrieve_body($response);
+          
+          error_log("CCC DEBUG: Backend response code: " . $response_code);
+          error_log("CCC DEBUG: Backend response body: " . $response_body);
+          
+          if ($response_code !== 200) {
+              wp_send_json_error([
+                  'message' => 'Backend API error: ' . $response_code
+              ]);
+              return;
+          }
+          
+          $data = json_decode($response_body, true);
+          
+          if (!$data || !$data['success']) {
+              wp_send_json_error([
+                  'message' => $data['message'] ?? 'Failed to get OpenAI API key'
+              ]);
+              return;
+          }
+          
+          // Return the OpenAI API key to the frontend
+          wp_send_json_success([
+              'api_key' => $data['data']['api_key'],
+              'message' => 'OpenAI API key retrieved successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error in getOpenAIKey - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to get OpenAI API key',
+              'error' => $e->getMessage()
+          ]);
+      }
+  }
+
+  /**
+   * Generate component with AI using OpenAI API key from backend
+   */
+  public function generateComponentWithAI() {
+      try {
+          error_log("CCC DEBUG: generateComponentWithAI method called");
+          
+          // Get license key from WordPress options
+          $license_key = get_option('ccc_license_key', '');
+          error_log("CCC DEBUG: License key retrieved: " . (!empty($license_key) ? 'YES' : 'NO'));
+          
+          if (empty($license_key)) {
+              error_log("CCC DEBUG: No license key configured");
+              wp_send_json_error([
+                  'message' => 'No license key configured'
+              ]);
+              return;
+          }
+          
+          // Get prompt and site URL from request
+          $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+          $site_url = sanitize_url($_POST['site_url'] ?? '');
+          error_log("CCC DEBUG: Prompt received: " . (!empty($prompt) ? 'YES' : 'NO'));
+          error_log("CCC DEBUG: Site URL: " . $site_url);
+          
+          if (empty($prompt)) {
+              error_log("CCC DEBUG: Prompt is empty");
+              wp_send_json_error([
+                  'message' => 'Prompt is required'
+              ]);
+              return;
+          }
+          
+          // First, validate generation limits with backend
+          $track_url = 'https://custom-craft-component-backend.vercel.app/api/admin/openai/track-generation';
+          error_log("CCC DEBUG: Calling tracking API: " . $track_url);
+          
+          $track_response = wp_remote_post($track_url, [
+              'headers' => [
+                  'Content-Type' => 'application/json'
+              ],
+              'body' => json_encode([
+                  'license_key' => $license_key,
+                  'site_url' => $site_url,
+                  'prompt' => $prompt
+              ]),
+              'timeout' => 30
+          ]);
+          
+          if (is_wp_error($track_response)) {
+              error_log('CCC AjaxHandler: Error calling tracking API - ' . $track_response->get_error_message());
+              wp_send_json_error([
+                  'message' => 'Failed to validate generation limits'
+              ]);
+              return;
+          }
+          
+          $track_response_code = wp_remote_retrieve_response_code($track_response);
+          $track_response_body = wp_remote_retrieve_body($track_response);
+          error_log("CCC DEBUG: Tracking API response code: " . $track_response_code);
+          error_log("CCC DEBUG: Tracking API response body: " . $track_response_body);
+          
+          if ($track_response_code !== 200) {
+              $track_data = json_decode($track_response_body, true);
+              error_log("CCC DEBUG: Generation limit reached or error");
+              wp_send_json_error([
+                  'message' => $track_data['message'] ?? 'Generation limit reached or validation failed'
+              ]);
+              return;
+          }
+          
+          // Now get the OpenAI API key from backend
+          $backend_url = 'https://custom-craft-component-backend.vercel.app/api/admin/openai/get-key-for-plugin';
+          error_log("CCC DEBUG: Calling backend API: " . $backend_url);
+          
+          $key_response = wp_remote_post($backend_url, [
+              'headers' => [
+                  'Content-Type' => 'application/json'
+              ],
+              'body' => json_encode([
+                  'license_key' => $license_key
+              ]),
+              'timeout' => 30
+          ]);
+          
+          if (is_wp_error($key_response)) {
+              error_log('CCC AjaxHandler: Error getting OpenAI key - ' . $key_response->get_error_message());
+              wp_send_json_error([
+                  'message' => 'Failed to get OpenAI API key'
+              ]);
+              return;
+          }
+          
+          $key_response_code = wp_remote_retrieve_response_code($key_response);
+          $key_response_body = wp_remote_retrieve_body($key_response);
+          error_log("CCC DEBUG: Backend API response code: " . $key_response_code);
+          error_log("CCC DEBUG: Backend API response body: " . $key_response_body);
+          
+          if ($key_response_code !== 200) {
+              error_log("CCC DEBUG: Backend API returned error code: " . $key_response_code);
+              wp_send_json_error([
+                  'message' => 'Failed to get OpenAI API key: ' . $key_response_code
+              ]);
+              return;
+          }
+          
+          $key_data = json_decode($key_response_body, true);
+          error_log("CCC DEBUG: Key data decoded: " . json_encode($key_data));
+          
+          if (!$key_data || !$key_data['success']) {
+              error_log("CCC DEBUG: Key data validation failed");
+              wp_send_json_error([
+                  'message' => $key_data['message'] ?? 'Failed to get OpenAI API key'
+              ]);
+              return;
+          }
+          
+          $openai_api_key = $key_data['data']['api_key'];
+          error_log("CCC DEBUG: OpenAI API key retrieved: " . (!empty($openai_api_key) ? 'YES' : 'NO'));
+          error_log("CCC DEBUG: API key starts with: " . substr($openai_api_key, 0, 10) . '...');
+          
+          // Now call OpenAI API directly with the retrieved key
+          error_log("CCC DEBUG: Calling OpenAI API...");
+          $openai_response = wp_remote_post('https://api.openai.com/v1/chat/completions', [
+              'headers' => [
+                  'Authorization' => 'Bearer ' . $openai_api_key,
+                  'Content-Type' => 'application/json'
+              ],
+              'body' => json_encode([
+                  'model' => 'gpt-4o-mini',
+                  'messages' => [
+                      [
+                          'role' => 'system',
+                          'content' => 'You are a WordPress component generator. You MUST return JSON in this EXACT structure:
+
+{
+  "component": {
+    "name": "Component Name",
+    "handle": "component_handle",
+    "description": "Component description"
+  },
+  "fields": [
+    {
+      "label": "Field Label",
+      "name": "field_name",
+      "type": "field_type",
+      "required": true/false,
+      "placeholder": "Placeholder text"
+    }
+  ]
+}
+
+Available field types: text, textarea, image, video, color, select, checkbox, radio, wysiwyg, link, repeater, oembed, email, number, password, file, range
+
+Return ONLY the JSON response, no additional text or explanations.'
+                      ],
+                      [
+                          'role' => 'user',
+                          'content' => 'Create a WordPress component for: ' . $prompt . '\n\nReturn ONLY the JSON response with the exact structure shown above.'
+                      ]
+                  ],
+                  'temperature' => 0.7,
+                  'max_tokens' => 2000
+              ]),
+              'timeout' => 60
+          ]);
+          
+          if (is_wp_error($openai_response)) {
+              error_log('CCC AjaxHandler: Error calling OpenAI API - ' . $openai_response->get_error_message());
+              wp_send_json_error([
+                  'message' => 'Failed to call OpenAI API'
+              ]);
+              return;
+          }
+          
+          $openai_response_code = wp_remote_retrieve_response_code($openai_response);
+          $openai_response_body = wp_remote_retrieve_body($openai_response);
+          error_log("CCC DEBUG: OpenAI API response code: " . $openai_response_code);
+          error_log("CCC DEBUG: OpenAI API response body length: " . strlen($openai_response_body));
+          
+          if ($openai_response_code !== 200) {
+              error_log('CCC AjaxHandler: OpenAI API error - ' . $openai_response_code . ': ' . $openai_response_body);
+              wp_send_json_error([
+                  'message' => 'OpenAI API error: ' . $openai_response_code
+              ]);
+              return;
+          }
+          
+          $openai_data = json_decode($openai_response_body, true);
+          error_log("CCC DEBUG: OpenAI data decoded: " . (isset($openai_data['choices'][0]['message']['content']) ? 'YES' : 'NO'));
+          
+          if (!isset($openai_data['choices'][0]['message']['content'])) {
+              error_log("CCC DEBUG: No content in OpenAI response");
+              wp_send_json_error([
+                  'message' => 'Invalid response from OpenAI API'
+              ]);
+              return;
+          }
+          
+          $component_json = $openai_data['choices'][0]['message']['content'];
+          error_log("CCC DEBUG: Component JSON length: " . strlen($component_json));
+          error_log("CCC DEBUG: Raw component JSON: " . $component_json);
+          
+          // Clean up the JSON response - remove any markdown formatting
+          $cleaned_json = $component_json;
+          
+          // Remove markdown code blocks if present
+          if (strpos($cleaned_json, '```json') !== false) {
+              $cleaned_json = preg_replace('/```json\s*/', '', $cleaned_json);
+              $cleaned_json = preg_replace('/\s*```/', '', $cleaned_json);
+          } elseif (strpos($cleaned_json, '```') !== false) {
+              $cleaned_json = preg_replace('/```\s*/', '', $cleaned_json);
+              $cleaned_json = preg_replace('/\s*```/', '', $cleaned_json);
+          }
+          
+          // Trim whitespace
+          $cleaned_json = trim($cleaned_json);
+          
+          error_log("CCC DEBUG: Cleaned JSON: " . $cleaned_json);
+          
+          // Parse and validate the component JSON
+          $component_data = json_decode($cleaned_json, true);
+          $json_error = json_last_error_msg();
+          error_log("CCC DEBUG: Component data parsed: " . ($component_data ? 'YES' : 'NO'));
+          error_log("CCC DEBUG: JSON error: " . $json_error);
+          
+          if (!$component_data) {
+              error_log("CCC DEBUG: Failed to parse component JSON");
+              wp_send_json_error([
+                  'message' => 'Invalid JSON response from AI: ' . $json_error
+              ]);
+              return;
+          }
+          
+          error_log("CCC DEBUG: Successfully generated component, updating tracking...");
+          
+          // Update tracking to mark generation as successful
+          $update_url = 'https://custom-craft-component-backend.vercel.app/api/admin/openai/update-generation-success';
+          $update_response = wp_remote_post($update_url, [
+              'headers' => [
+                  'Content-Type' => 'application/json'
+              ],
+              'body' => json_encode([
+                  'license_key' => $license_key,
+                  'site_url' => $site_url,
+                  'response_time' => 0 // We can calculate this if needed
+              ]),
+              'timeout' => 30
+          ]);
+          
+          if (is_wp_error($update_response)) {
+              error_log('CCC AjaxHandler: Warning - Failed to update generation tracking: ' . $update_response->get_error_message());
+          } else {
+              error_log("CCC DEBUG: Generation tracking updated successfully");
+          }
+          
+          // Return the component data to the frontend
+          wp_send_json_success([
+              'component' => $component_data,
+              'message' => 'Component generated successfully'
+          ]);
+          
+      } catch (\Exception $e) {
+          error_log('CCC AjaxHandler: Error in generateComponentWithAI - ' . $e->getMessage());
+          wp_send_json_error([
+              'message' => 'Failed to generate component with AI',
               'error' => $e->getMessage()
           ]);
       }
